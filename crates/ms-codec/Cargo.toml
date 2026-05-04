@@ -1,0 +1,16 @@
+[package]
+name = "ms-codec"
+version = "0.1.0-dev"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+description = "Reference implementation of the ms1 (HRP `ms`) backup format — BIP-93 codex32 directly applied to secret material (BIP-39 entropy, BIP-32 master seed, xpriv)."
+documentation = "https://docs.rs/ms-codec"
+readme = "README.md"
+keywords = ["bitcoin", "codex32", "bip93", "backup", "engraving"]
+categories = ["cryptography::cryptocurrencies"]
+
+[dependencies]
+codex32 = { workspace = true }

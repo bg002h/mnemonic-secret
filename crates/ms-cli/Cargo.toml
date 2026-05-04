@@ -1,0 +1,13 @@
+# placeholder — ms-cli is reserved for v0.x; do not remove from workspace.
+# The `ms` binary will be implemented after ms-codec v0.1 ships, per
+# the staged plan in /home/bcg/.claude/plans/c-ultimately-what-we-quirky-avalanche.md.
+[package]
+name = "ms-cli"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "ms"
+path = "src/main.rs"
