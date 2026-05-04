@@ -92,8 +92,9 @@ Defaults:
 | `--phrase " "` (whitespace only) | `Bip39(BadWordCount)` (post-trim, 0 words) | 1 |
 | `--phrase "abandon"` (1 word) | `Bip39(BadWordCount)` | 1 |
 | `--phrase "abandon abandon … about " + 13th word` | `Bip39(BadWordCount)` (only 12/15/18/21/24 accepted) | 1 |
+| `--phrase "abandon  abandon  about"` (extra spaces) | OK if word count is valid (`bip39::Mnemonic::parse_in` uses `split_whitespace` which collapses runs); reaches checksum check | depends |
 | `--hex ""` (empty) | `BadInput("expected hex of length 32/40/48/56/64 chars")` | 1 |
-| `--hex "ZZ"` (non-hex chars) | `BadInput("invalid hex character 'Z' at position 0")` | 1 |
+| `--hex "ZZ"` (non-hex chars) | `BadInput` (e.g., `"invalid character 'Z' at position 0"` — exact wording is the underlying `hex` crate's; the CLI may paraphrase) | 1 |
 | `--hex "00"` (too short, even) | `BadInput("hex decodes to 1 byte; expected 16/20/24/28/32")` | 1 |
 | `--hex "0".repeat(31)` (odd length) | `BadInput("expected even-length hex…")` | 1 |
 | both `--phrase` and `--hex` supplied | clap usage error (mutually-exclusive group) | 64 |
@@ -226,6 +227,19 @@ The order matters: an engraver who typed back a corrupt ms1 AND supplied a wrong
 
 `verify` is the engraver round-trip command: type back the engraved ms1, supply the original phrase, exit code tells you if the engraving + your record are mutually consistent.
 
+### §2.5 `ms vectors` — dump the SHA-pinned test-vector corpus
+
+```text
+ms vectors [--pretty]
+```
+
+**Behavior:**
+
+1. Print the embedded v0.1 corpus JSON to stdout. Compact by default; `--pretty` indents via `serde_json::to_string_pretty`.
+2. Exit 0 always. No subcommand-specific failure modes.
+
+The corpus is `include_str!`-baked at build time from `crates/ms-cli/vectors/v0.1.json`, which is logically identical to `crates/ms-codec/tests/vectors/v0.1.json` (parsed-JSON equality — the parity test in §10.2 asserts `serde_json::Value`-equal, not byte-equal, to avoid spurious failures from whitespace or line-ending differences).
+
 ### §2.6 Per-subcommand `--help` text (locked)
 
 clap derive emits `--help` per subcommand from the `about` and (optional) `after_long_help` attributes. The locked strings:
@@ -256,19 +270,6 @@ enum Command {
 ```
 
 Top-level `Cli::about` is `"ms — engrave-friendly BIP-39 entropy backups (the ms1 format)"`. clap auto-generates `ms --help` from the subcommand list. Examples in `after_long_help` use only documented invocations; no flag combinations not covered elsewhere in this SPEC.
-
-### §2.5 `ms vectors` — dump the SHA-pinned test-vector corpus
-
-```text
-ms vectors [--pretty]
-```
-
-**Behavior:**
-
-1. Print the embedded v0.1 corpus JSON to stdout. Compact by default; `--pretty` indents via `serde_json::to_string_pretty`.
-2. Exit 0 always. No subcommand-specific failure modes.
-
-The corpus is `include_str!`-baked at build time from `crates/ms-cli/vectors/v0.1.json`, which is logically identical to `crates/ms-codec/tests/vectors/v0.1.json` (parsed-JSON equality — the parity test in §10.2 asserts `serde_json::Value`-equal, not byte-equal, to avoid spurious failures from whitespace or line-ending differences).
 
 ---
 
@@ -790,6 +791,8 @@ Per the 2026-05-03 workflow refinement, brainstorm/spec/plan reviewer reports st
 (Tracks this SPEC's reviewer-loop convergence. Independent of brainstorm-stage architect rounds.)
 
 - **r1** — 2026-05-04 initial draft from converged brainstorm.
+- **r5** — 2026-05-04 r3 SPEC review terminator (0 critical / 0 important / 6 nits). 3 actionable r3 nits applied inline: §2.1 edge-case table gains an "extra spaces in phrase" row noting `bip39::parse_in` uses `split_whitespace` (resolves r3-N2); §2.1 hex-error row marked illustrative ("e.g.") rather than verbatim, since exact wording comes from the upstream `hex` crate (resolves r3-N3); §2.5 / §2.6 reordered in source so file order matches numerical order (resolves r3-N5). 3 r3 nits skipped as already-affirmations: r3-N1 (already correct), r3-N4 (Rust raw-string style is impl-detail), r3-N6 (em-dash matches md-cli precedent).
+
 - **r4** — 2026-05-04 user-requested completion of all 5 deferred r2 SPEC-review nits inline (no longer FOLLOWUPS-deferred): §2.4.1 prose clarification on "first" meaning "earlier in pipeline" not severity (resolves r2-nit-1); §2.3.1 explicit acknowledgement that inspect cannot route exit 3 (resolves r2-nit-3); new §2.6 lockdown of per-subcommand clap `about` + `after_long_help` strings with concrete EXAMPLES blocks (resolves r2-nit-4); §5 preamble adds JSON key-ordering stability note (resolves r2-nit-6); §2.1 "Encoder pre-checks" gains an edge-case enumeration table covering empty/whitespace/short/non-hex/conflict/missing inputs (resolves r2-nit-7). Corresponding FOLLOWUPS entries `ms-cli-v01-spec-r2-nit-{1,3,4,6,7}` updated to status `resolved 2026-05-04`.
 
 - **r3** — 2026-05-04 reviewer-loop terminator (r2 SPEC review returned 0 critical / 0 important / 8 nits; recommendation = ship for user review). 3 high-value nits applied inline: §5.4 locks `details` field as always-present (null when empty) to remove JSON-schema ambiguity; §2.1 adds explicit BIP-39 wordlist-mismatch behavior note (`bip39::parse_in` is language-strict; no silent transcoding); §2.4.1 step 1 adds concurrent-stdin guard (`ms verify - --phrase -` exits 1 with `BadInput`). Remaining 5 nits deferred to IMPLEMENTATION_PLAN or FOLLOWUPS at SPEC user-review time.
