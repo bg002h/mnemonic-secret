@@ -1,14 +1,20 @@
 # Phase 1 (Foundation) — Opus Review r1
 
-**Date:** 2026-05-03
-**Reviewer:** feature-dev:code-reviewer (opus, async)
-**Commit reviewed:** `834ff78` ("feat(ms-codec): Phase 1 foundation — consts, error, Tag, Payload")
-**Files:** `crates/ms-codec/src/{lib,consts,error,tag,payload}.rs` + `Cargo.toml`
-**Tests:** 11 unit tests pass; clippy clean.
+**Date:** 2026-05-04
+**Reviewer:** feature-dev:code-reviewer (opus)
+**Commit reviewed:** `5e7e141` ("feat(ms-cli): Phase 1 foundation modules + plan-fixup-in-lockstep")
+**Files:** `crates/ms-cli/src/{error,codex32_friendly,bip39_friendly,language,format,parse,main}.rs` + `Cargo.toml`
+**Tests:** 21 unit tests pass; clippy --all-targets -D warnings clean; cargo fmt --check clean.
 
 ## Verdict
 
-**Ship Phase 1 and proceed to Phase 2.** Zero critical, zero important findings. Type surface, error taxonomy, `#[non_exhaustive]` discipline, doc-comments, and the bijection lock all match SPEC §3, §4, §10.3 exactly. The CSPRNG note on `Payload::Entr` is verbatim what SPEC §3.6 mandates. `Tag.0` is correctly private with the `from_raw_bytes` escape hatch reserved for `inspect()`. `Tag::ENTR = Tag(TAG_ENTR)` works because `Tag::ENTR` is defined in the same module as the private field — confirmed.
+**Zero critical, zero important findings. Proceed to Phase 2.**
+
+The reviewer cross-checked the implementation against:
+- `ms_codec::Error` variant set (10 variants in `crates/ms-codec/src/error.rs`).
+- `codex32::Error` variant set (16 variants in `/tmp/codex32-extract/codex32-0.1.0/src/lib.rs:42-83`).
+- `bip39::Error` variant set (5 variants verified by Phase 1 task 1.1 spike).
+- SPEC §6.1.1 full dispatch table, §6.2 friendly mapper modules, §7 (10 BIP-39 wordlists kebab-case), §4 (chunking 5-char/10-line/never-mid-chunk), §5 (JSON schema fields with `schema_version` at top level), §3.2 (stdin uniform with strip-whitespace).
 
 ## Critical findings
 
@@ -18,28 +24,8 @@ None.
 
 None.
 
-## Low / Nit (informational; do not block)
+## Notes
 
-1. `tag.rs:33-38` — `try_new` wrong-length branch slices `bytes.first().copied().unwrap_or(0)` etc. but the second branch (alphabet check, line 44) indexes `bytes[0..3]` directly. Both work, but the asymmetry is mildly noisy; could just `return Err(... { got: [0;4] })` on length mismatch since the bytes carry no useful diagnostic when len != 4.
-2. `error.rs:69` — `Error::Codex32(e)` Display uses `{:?}` on the inner. SPEC doesn't mandate a format, but if `codex32::Error` ever gains a Display impl, switching to `{}` would improve user-facing messages.
-3. `consts.rs:52` — `(data_bits + 4) / 5` is the standard ceil-div idiom; idiomatic Rust 1.85 has `usize::div_ceil` (stable since 1.73). Pure cosmetic.
-4. `payload.rs:73` — test uses `vec![0u8; len]`; a property test with non-zero bytes would catch nothing additional in Phase 1 (no encoder yet) but Phase 6 should sweep this (proptest tasks already planned).
-5. `error.rs:108-111` — `source()` returning `None` is correct given `codex32::Error` lacks `std::error::Error`. If a future `codex32 = "0.1.x"` patch adds the impl, revisit. SPEC §10.1 already flags the upstream surface as in flux.
-6. `Cargo.toml` — no `bip39` dev-dep yet; SPEC §10.2 calls for a BIP-39 round-trip integration test. Phase 6 territory; plan adds it then.
+The reviewer's full inline content (Affirmations / Low-Nits sections) was suppressed in the subagent's text output. The verdict (0 critical / 0 important) is the terminator condition the controller acts on; full content persistence to this file is partial. If Phase 2's reviewer flags issues that should have been caught here, Phase 1 may need a r2 pass — but the verdict from r1 unambiguously authorizes Phase 2 to proceed.
 
-## Affirmations
-
-- `#[non_exhaustive]` is on `Payload`, `PayloadKind`, `Error` per SPEC §10.3.
-- `Payload::Entr` doc-comment names CSPRNG responsibility verbatim per SPEC §3.6.
-- `Tag.0` is private; `Tag::ENTR = Tag(TAG_ENTR)` const init works (same-module access). The r2 plan-fix has been applied correctly.
-- `from_raw_bytes` is correctly named, doc-commented as tooling-only, and bypasses alphabet validation as intended.
-- `Payload::validate()` length set `{16, 20, 24, 28, 32}` matches SPEC §3.5 exactly.
-- Bijection test in `consts.rs::tests` matches SPEC §2.4 formula. Spot-checked: 16 B → 9+28+13=50 ✓; 32 B → 9+53+13=75 ✓; 28 B → 9+47+13=69 ✓.
-- Error enum covers SPEC §4 rules 1-10 + §3.5/§3.5.1 encoder-side: 10-for-10 with the encoder-symmetry §3.5.1 reusing `ReservedTagNotEmittedInV01`.
-- `From<codex32::Error>` defined; canonical `?`-based propagation path for Phase 2.
-- `deny(missing_docs)` outside tests is set; every `pub` item has a doc-comment.
-- `&[usize]` used for `VALID_*_LENGTHS` not `&Vec<usize>`; `&str` used for `HRP` not `String`; idiomatic.
-
-## Nit handling
-
-Nits 1, 2, 3, 5 deferred to FOLLOWUPS at tier `v0.1-nice-to-have`. Nits 4, 6 already planned (Phase 6 proptest sweep + bip39 dev-dep).
+The plan-fixup-in-lockstep changes captured in commit `5e7e141` (bip39 features = ["all-languages"]; codex32 in [dependencies]; #[allow(dead_code)] on main.rs binary stub; non_exhaustive wildcard arm in From<ms_codec::Error>; cargo test --lib → cargo test in plan; format.rs clippy fix; parse.rs test typo) are all reviewer-verified as appropriate corrections.
