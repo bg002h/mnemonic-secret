@@ -1044,6 +1044,25 @@ pub fn strip_whitespace(s: &str) -> String {
     stripped
 }
 
+/// Read input from arg or stdin and normalize for BIP-39 phrase parsing.
+///
+/// Distinct from `read_input` (which strips ALL whitespace, correct for ms1
+/// strings): phrases need preserved single spaces between words. This reader
+/// trims edges and collapses whitespace runs while preserving word boundaries
+/// via `split_whitespace().collect::<Vec<_>>().join(" ")`.
+pub fn read_phrase_input(arg: Option<&str>) -> Result<String> {
+    let raw = match arg {
+        Some(s) if s != "-" => s.to_string(),
+        _ => read_stdin()?,
+    };
+    Ok(normalize_phrase(&raw))
+}
+
+/// Normalize a phrase: trim edges, collapse internal whitespace runs to single spaces.
+pub fn normalize_phrase(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// Returns `true` if the supplied arg resolves to stdin (None or "-").
 pub fn is_stdin_arg(arg: Option<&str>) -> bool {
     matches!(arg, None | Some("-"))
@@ -1099,6 +1118,24 @@ mod tests {
         // (Phase 4) cover the stdin path via `assert_cmd`'s `write_stdin`.
         let out = read_input(Some("  ms10  ")).unwrap();
         assert_eq!(out, "ms10");
+    }
+
+    #[test]
+    fn normalize_phrase_preserves_word_spaces() {
+        let phrase = "abandon abandon about";
+        assert_eq!(normalize_phrase(phrase), phrase);
+    }
+
+    #[test]
+    fn normalize_phrase_collapses_runs_and_trims() {
+        let raw = "  abandon  abandon\tabout\n";
+        assert_eq!(normalize_phrase(raw), "abandon abandon about");
+    }
+
+    #[test]
+    fn read_phrase_input_with_explicit_arg_preserves_spaces() {
+        let out = read_phrase_input(Some("abandon abandon about")).unwrap();
+        assert_eq!(out, "abandon abandon about");
     }
 }
 ```
@@ -3551,6 +3588,8 @@ After Phase 5's opus-review convergence, the v0.1.0 release is locally tagged bu
 ## Plan revision history
 
 (Tracks the plan's own reviewer-loop convergence. Independent of the per-phase reviews.)
+
+- **r6** — 2026-05-04 Phase 4 reviewer-loop r1 fixup: added 2 missing integration tests for SPEC §4 rules 3 (ThresholdNotZero) + 6 (UnknownTag) per task 4.10 brief; updated Task 1.8 parse.rs code block to include `read_phrase_input` + `normalize_phrase` (which was added during Phase 2+3 execution but not back-propagated into the plan's Phase 1 source listing). Rule 4 (ShareIndexNotSecret) remains defensive-only per architect r1 review.
 
 - **r5** — 2026-05-04 Phase 4 execution-time fixups (three source bugs surfaced by integration tests): (1) Task 2.2 `EncodeArgs` struct-level `#[group]` changed to `#[command(group = clap::ArgGroup::new(...))]` — the old form made ALL fields mutually exclusive (including `--language`, `--json`, `--no-engraving-card`), not just `phrase`/`hex`; (2) Task 2.5 `verify.rs` concurrent-stdin guard tightened to `args.phrase.as_deref() == Some("-")` instead of `is_stdin_arg(args.phrase.as_deref())` — the old form fired when `--phrase` was absent (None), preventing any stdin-piped `ms verify -` without `--phrase`; (3) Task 1.8 `parse.rs::strip_whitespace` gains doubling-detection (SPEC §3.2 step 4 per r7) — naive strip-whitespace collapsed `ms encode` multi-line stdout into a doubled `<ms1><ms1>` string, and a `had_whitespace` gate prevents the guard from firing on all-zero inline hex args.
 
