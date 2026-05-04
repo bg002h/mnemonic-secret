@@ -1251,11 +1251,12 @@ use codex32::Codex32String;
 /// Decode a v0.1 ms1 string into `(Tag, Payload)`.
 ///
 /// Rejects per SPEC §4 rules 1-10:
-/// 1. Upstream codex32 parse failure (Codex32 variant).
-/// 2-4, 8. Wire-invariant violations (delegated to envelope::discriminate).
-/// 5-7. Tag-table membership rules (here).
-/// 9. Total string length not in v0.1-emittable set (here).
-/// 10. Payload byte length mismatch for the tag (here, via Payload::validate()).
+///
+/// - Rule 1: upstream codex32 parse failure (Codex32 variant).
+/// - Rules 2-4, 8: wire-invariant violations (delegated to envelope::discriminate).
+/// - Rules 5-7: tag-table membership rules (here).
+/// - Rule 9: total string length not in v0.1-emittable set (here, before parse).
+/// - Rule 10: payload byte length mismatch for the tag (here, via Payload::validate()).
 pub fn decode(s: &str) -> Result<(Tag, Payload)> {
     // §4 rule 9: total string length must be in the v0.1 set.
     if !VALID_STR_LENGTHS.contains(&s.len()) {

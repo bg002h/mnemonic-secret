@@ -30,6 +30,42 @@ Single source of truth for items that surfaced during a review or implementation
 
 ## Open items
 
+### `phase-1-low-1` — `Tag::try_new` wrong-length branch produces noisy diagnostic bytes
+
+- **Surfaced:** Phase 1 review r1 (`design/agent-reports/phase-1-foundation-review-r1.md` low-1).
+- **Where:** `crates/ms-codec/src/tag.rs:33-38`.
+- **What:** The wrong-length branch reconstructs partial input bytes via `bytes.first().copied().unwrap_or(0)` etc., but those bytes carry no diagnostic value when `len != 4`. Could just return `Error::TagInvalidAlphabet { got: [0; 4] }`.
+- **Why deferred:** cosmetic; tests assert variant only, not bytes.
+- **Status:** `open`
+- **Tier:** `v0.1-nice-to-have`
+
+### `phase-1-low-2` — `Error::Codex32` Display uses `{:?}` on inner
+
+- **Surfaced:** Phase 1 review r1 (low-2).
+- **Where:** `crates/ms-codec/src/error.rs::Display::fmt` Codex32 arm.
+- **What:** `codex32::Error` doesn't impl Display in v0.1.0. If a future `codex32` patch adds Display, switch from `{:?}` to `{}` for user-facing messages.
+- **Why deferred:** dependent on upstream change.
+- **Status:** `open`
+- **Tier:** `external`
+
+### `phase-1-low-3` — `consts.rs` ceil-div could use `usize::div_ceil`
+
+- **Surfaced:** Phase 1 review r1 (low-3).
+- **Where:** `crates/ms-codec/src/consts.rs::tests` bijection test.
+- **What:** `(data_bits + 4) / 5` is the standard ceil-div idiom; stable `usize::div_ceil` (Rust 1.73+) is more readable. MSRV 1.85 supports it.
+- **Why deferred:** cosmetic.
+- **Status:** `open`
+- **Tier:** `v0.1-nice-to-have`
+
+### `phase-1-low-5` — `Error::source()` returns `None` always
+
+- **Surfaced:** Phase 1 review r1 (low-5).
+- **Where:** `crates/ms-codec/src/error.rs::std::error::Error::source`.
+- **What:** Correct given `codex32::Error` lacks `std::error::Error` impl in v0.1.0. If a future `codex32` patch adds the impl, change `Codex32` arm to `Some(e)`. Tracked alongside the parallel `external`-tier note in SPEC §10.1.
+- **Why deferred:** dependent on upstream change.
+- **Status:** `open`
+- **Tier:** `external`
+
 ### `plan-r2-nit-followups-slug-format` — Phase 1 Task 1.7 nit-format snippet uses `\`slug\`` heading style
 
 - **Surfaced:** IMPLEMENTATION_PLAN review r1 (2026-05-03; finding nit #1).
