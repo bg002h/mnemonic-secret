@@ -11,6 +11,9 @@ use crate::error::{CliError, Result};
 /// Read input from either the supplied arg (if `Some` and not `"-"`) or stdin.
 /// The returned String is whitespace-stripped (per `char::is_whitespace`).
 ///
+/// Use for ms1 string inputs where ALL whitespace is removed so that chunked /
+/// pipe-round-trip / copy-paste forms all reach the same canonical string.
+///
 /// The `arg` is `None` when the positional was omitted, `Some("-")` when the
 /// user explicitly requested stdin, or `Some(s)` when the user provided a value.
 pub fn read_input(arg: Option<&str>) -> Result<String> {
@@ -19,6 +22,23 @@ pub fn read_input(arg: Option<&str>) -> Result<String> {
         _ => read_stdin()?,
     };
     Ok(strip_whitespace(&raw))
+}
+
+/// Read a BIP-39 phrase from either the supplied arg or stdin.
+/// The returned String is edge-trimmed and internal whitespace runs are
+/// collapsed to single spaces — preserving the space-separated word structure
+/// that `bip39::Mnemonic::parse_in` requires.
+pub fn read_phrase_input(arg: Option<&str>) -> Result<String> {
+    let raw = match arg {
+        Some(s) if s != "-" => s.to_string(),
+        _ => read_stdin()?,
+    };
+    Ok(normalize_phrase(&raw))
+}
+
+/// Normalize a BIP-39 phrase: trim edges and collapse whitespace runs.
+fn normalize_phrase(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn read_stdin() -> Result<String> {
@@ -71,5 +91,23 @@ mod tests {
         // (Phase 4) cover the stdin path via `assert_cmd`'s `write_stdin`.
         let out = read_input(Some("  ms10  ")).unwrap();
         assert_eq!(out, "ms10");
+    }
+
+    #[test]
+    fn normalize_phrase_preserves_word_spaces() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        assert_eq!(normalize_phrase(phrase), phrase);
+    }
+
+    #[test]
+    fn normalize_phrase_collapses_runs_and_trims() {
+        let phrase = "  abandon  abandon  about  ";
+        assert_eq!(normalize_phrase(phrase), "abandon abandon about");
+    }
+
+    #[test]
+    fn read_phrase_input_with_explicit_arg_preserves_spaces() {
+        let out = read_phrase_input(Some("abandon abandon about")).unwrap();
+        assert_eq!(out, "abandon abandon about");
     }
 }

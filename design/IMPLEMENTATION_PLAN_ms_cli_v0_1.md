@@ -1486,6 +1486,9 @@ pub fn run(args: DecodeArgs) -> Result<()> {
     let (_tag, payload) = ms_codec::decode(&ms1)?;
     let entropy = match payload {
         Payload::Entr(b) => b,
+        // ms_codec::Payload is #[non_exhaustive]; v0.2+ may add variants.
+        // v0.1 ms-codec emits Entr only — unreachable in practice.
+        _ => unreachable!("ms-codec v0.1 only decodes to Payload::Entr"),
     };
 
     let mnemonic = Mnemonic::from_entropy_in(lang, &entropy)
@@ -1803,6 +1806,9 @@ pub fn run(args: VerifyArgs) -> Result<()> {
     let decoded = ms_codec::decode(&ms1);
     let entropy = match decoded {
         Ok((_tag, Payload::Entr(b))) => b,
+        // ms_codec::Payload is #[non_exhaustive]; v0.2+ may add variants.
+        // v0.1 ms-codec only decodes to Payload::Entr; defensive arm only.
+        Ok((_, _)) => unreachable!("ms-codec v0.1 only decodes to Payload::Entr"),
         Err(ms_codec::Error::ReservedTagNotEmittedInV01 { got }) => {
             // Exit 3 path: print the success-shaped "valid future format" message.
             return emit_future_format(&got, args.json);
@@ -3511,6 +3517,8 @@ After Phase 5's opus-review convergence, the v0.1.0 release is locally tagged bu
 (Tracks the plan's own reviewer-loop convergence. Independent of the per-phase reviews.)
 
 - **r1** — 2026-05-04 initial draft via `superpowers:writing-plans` skill (~3500 lines, 5 phases, 32 tasks, ~21 unit + ~30 integration tests projected).
+- **r4** — 2026-05-04 Phase 2 execution-time fixup: ms_codec::Payload is also #[non_exhaustive] (parallel to ms_codec::Error in r2), so cmd/decode.rs and cmd/verify.rs match expressions need wildcard arms. Two unreachable!() arms added to each file inline; same plan-r2-fix-pattern.
+
 - **r3** — 2026-05-04 architect r2 plan-review terminator (0 critical / 0 important / 6 nits). 2 high-value nits applied: Phase 4 task 4.10 reviewer brief now explicitly calls out rules 3/4/6 coverage gaps with concrete fixture commands (resolves r2-N5); 2 nits deferred to FOLLOWUPS as `ms-cli-v01-plan-r2-nit-N1` (verify --phrase language masking) and `ms-cli-v01-plan-r2-nit-N3` (parse_hex_entropy length pre-check).
 
 - **r2** — 2026-05-04 architect r1 plan-review surfaced 2 critical + 5 important + 6 nits, all resolved inline:
