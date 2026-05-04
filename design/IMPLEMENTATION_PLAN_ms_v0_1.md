@@ -255,26 +255,55 @@ pub enum Error {
     /// Upstream codex32 parse / checksum failure (delegated from rust-codex32).
     Codex32(codex32::Error),
     /// HRP was not "ms" (SPEC §4 rule 2).
-    WrongHrp { got: String },
+    WrongHrp {
+        /// The HRP that was observed.
+        got: String,
+    },
     /// Threshold was not 0 (SPEC §4 rule 3).
-    ThresholdNotZero { got: u8 },
+    ThresholdNotZero {
+        /// The threshold-position byte (ASCII digit) that was observed.
+        got: u8,
+    },
     /// Share-index was not 's' — BIP-93 requires 's' for threshold=0 (SPEC §4 rule 4).
-    ShareIndexNotSecret { got: char },
+    ShareIndexNotSecret {
+        /// The share-index character that was observed.
+        got: char,
+    },
     /// Tag bytes were not in the codex32 alphabet (SPEC §4 rule 5).
-    TagInvalidAlphabet { got: [u8; 4] },
+    TagInvalidAlphabet {
+        /// The 4-byte id-field bytes that failed alphabet validation.
+        got: [u8; 4],
+    },
     /// Tag was structurally valid but not in RESERVED_TAG_TABLE (SPEC §4 rule 6).
-    UnknownTag { got: [u8; 4] },
+    UnknownTag {
+        /// The 4-byte tag that was not recognized.
+        got: [u8; 4],
+    },
     /// Tag was in RESERVED_TAG_TABLE but reserved-not-emitted in v0.1 (SPEC §4 rule 7,
     /// SPEC §3.5.1 encoder symmetry).
-    ReservedTagNotEmittedInV01 { got: [u8; 4] },
+    ReservedTagNotEmittedInV01 {
+        /// The 4-byte reserved tag (one of seed/xprv/mnem/prvk in v0.1).
+        got: [u8; 4],
+    },
     /// Reserved-prefix byte was not 0x00 (SPEC §4 rule 8).
-    ReservedPrefixViolation { got: u8 },
+    ReservedPrefixViolation {
+        /// The non-zero prefix byte that was observed.
+        got: u8,
+    },
     /// Total string length was outside the v0.1 emittable set (SPEC §4 rule 9).
-    UnexpectedStringLength { got: usize, allowed: &'static [usize] },
+    UnexpectedStringLength {
+        /// The total string length that was observed.
+        got: usize,
+        /// The set of v0.1-emittable lengths.
+        allowed: &'static [usize],
+    },
     /// Payload byte length did not match the tag's spec (SPEC §3.5, §4 rule 10).
     PayloadLengthMismatch {
+        /// The 4-byte tag whose length set was checked against.
         tag: [u8; 4],
+        /// The set of valid byte lengths for this tag.
         expected: &'static [usize],
+        /// The observed payload byte length (after stripping the prefix byte).
         got: usize,
     },
 }

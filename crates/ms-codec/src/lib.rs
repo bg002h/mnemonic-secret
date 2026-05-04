@@ -1,17 +1,21 @@
 //! `ms-codec` — reference implementation of the **ms1** backup format (HRP `ms`).
 //!
-//! Status: pre-v0.1 scaffold. Wire format and public API are specified
-//! in [`design/SPEC_ms_v0_1.md`](../../design/SPEC_ms_v0_1.md). The
-//! brainstorm rationale chain is in
-//! [`design/BRAINSTORM_ms_v0_1.md`](../../design/BRAINSTORM_ms_v0_1.md).
-//! Phase-by-phase implementation is tracked in
-//! [`design/IMPLEMENTATION_PLAN_ms_v0_1.md`](../../design/IMPLEMENTATION_PLAN_ms_v0_1.md).
+//! Status: pre-v0.1.0. Wire format and public API are specified in
+//! [`design/SPEC_ms_v0_1.md`](../../design/SPEC_ms_v0_1.md). See also
+//! [`MIGRATION.md`](../../MIGRATION.md) for the v0.1 → v0.2 contract.
 //!
-//! # v0.1 → v0.2 migration contract
-//!
-//! v0.1 always emits BIP-93 threshold = 0 (single-string secret).
-//! v0.2 will add K-of-N share encoding. v0.1 reserves a `0x00`
-//! payload-prefix byte so v0.2 strings (prefix ≥ `0x01`) never collide
-//! with v0.1 strings on disambiguation. See `MIGRATION.md`.
+//! v0.1 emits BIP-39 entropy only (16/20/24/28/32 B). Direct BIP-32 master seed
+//! and xpriv payloads are reserved-not-emitted in v0.1 and deferred to v0.2+
+//! with separate framing (they overflow BIP-93 codex32's length brackets when
+//! prepended with the v0.2-migration prefix byte).
 
 #![cfg_attr(not(test), deny(missing_docs))]
+
+pub mod consts;
+pub mod error;
+pub mod payload;
+pub mod tag;
+
+pub use error::{Error, Result};
+pub use payload::{Payload, PayloadKind};
+pub use tag::Tag;
