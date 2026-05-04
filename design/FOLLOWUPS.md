@@ -30,6 +30,24 @@ Single source of truth for items that surfaced during a review or implementation
 
 ## Open items
 
+### `phase-2-3-low-1` — envelope.rs defensive empty-payload arm yields misleading error variant
+
+- **Surfaced:** Phase 2+3 review r1 (`design/agent-reports/phase-2-3-envelope-encode-decode-review-r1.md` low-1).
+- **Where:** `crates/ms-codec/src/envelope.rs:108` (the `payload_with_prefix.is_empty()` defensive arm).
+- **What:** Returns `Error::ReservedPrefixViolation { got: 0 }`, but `got: 0` is what a *valid* prefix byte looks like — confusing in logs. Unreachable for valid v0.1 strings (rule 9 length check guarantees payload non-empty), but the code path exists for direct envelope-internal calls. Consider `Error::UnexpectedStringLength` or a dedicated invariant-broken variant.
+- **Why deferred:** unreachable in practice; cosmetic-only diagnostic improvement.
+- **Status:** `open`
+- **Tier:** `v0.1-nice-to-have`
+
+### `phase-2-3-low-2` — extract_wire_fields length-check arithmetic is cryptic
+
+- **Surfaced:** Phase 2+3 review r1 (low-2).
+- **Where:** `crates/ms-codec/src/envelope.rs::extract_wire_fields` length-check expression.
+- **What:** `s.len() < sep + PAYLOAD_START_OFFSET + CHECKSUM_LEN_SHORT` is correct but reads cryptically. A comment "minimum sep+20 for any v0.1-shaped string" or refactor against `VALID_STR_LENGTHS.iter().min()` would aid readability.
+- **Why deferred:** stylistic.
+- **Status:** `open`
+- **Tier:** `v0.1-nice-to-have`
+
 ### `phase-1-low-1` — `Tag::try_new` wrong-length branch produces noisy diagnostic bytes
 
 - **Surfaced:** Phase 1 review r1 (`design/agent-reports/phase-1-foundation-review-r1.md` low-1).
