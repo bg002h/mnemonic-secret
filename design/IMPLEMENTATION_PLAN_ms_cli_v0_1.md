@@ -3283,7 +3283,15 @@ EOF
 
 - [ ] **Step 1: Dispatch reviewer.**
 
-Brief: verify each SPEC §4 decoder rule has at least one negative integration test (1, 2, 3, 4, 6, 7, 8, 9 all need coverage; 5 and 10 are unreachable per ms-codec audit and can be no-op tests); verify all 8 closed-set kebab-case `failure_reasons` tags are exercised by at least one test; verify the parametric `exit_codes_table.rs` actually parameterizes (or upgrade to data-driven if not); verify `verify --phrase` mismatch test does NOT echo either phrase to any output stream. Persist to `design/agent-reports/phase-4-integration-review-r1.md`. Iterate until convergence.
+Brief: verify each SPEC §4 decoder rule has at least one negative integration test. Per the plan r2 review (nit N5), the following rules currently lack direct integration tests and should be added before Phase 4 ships:
+
+- **Rule 3 (threshold ≠ 0):** add `tests/decode_rejects_threshold_not_zero.rs` using `Codex32String::from_seed("ms", 2, "entr", Fe::A, &[0x00, ...16])` (threshold=2, share=A — codex32 lib accepts arbitrary threshold + share at construction).
+- **Rule 4 (share-index ≠ 's'):** add `tests/decode_rejects_share_index_not_secret.rs` — but per ms-codec audit, threshold=0 + share != 's' is rejected at upstream parse with `Codex32`; reachable rule 4 path requires threshold > 0 AND share-index parse to succeed, which is mutually exclusive in v0.1 emitted strings. May be defensive-only — confirm with reviewer.
+- **Rule 6 (unknown tag):** add `tests/decode_rejects_unknown_tag.rs` using `Codex32String::from_seed("ms", 0, "wxyz", Fe::S, &[0x00, ...16])` ("wxyz" is alphabet-valid but not in RESERVED_TAG_TABLE; same fixture pattern as ms-codec's negative.rs).
+
+Other reviewer concerns: verify all 8 closed-set kebab-case `failure_reasons` tags are exercised by at least one test; verify the parametric `exit_codes_table.rs` actually parameterizes (or upgrade to data-driven if not); verify `verify --phrase` mismatch test does NOT echo either phrase to any output stream.
+
+Persist to `design/agent-reports/phase-4-integration-review-r1.md`. Iterate until convergence.
 
 ---
 
@@ -3493,6 +3501,8 @@ After Phase 5's opus-review convergence, the v0.1.0 release is locally tagged bu
 (Tracks the plan's own reviewer-loop convergence. Independent of the per-phase reviews.)
 
 - **r1** — 2026-05-04 initial draft via `superpowers:writing-plans` skill (~3500 lines, 5 phases, 32 tasks, ~21 unit + ~30 integration tests projected).
+- **r3** — 2026-05-04 architect r2 plan-review terminator (0 critical / 0 important / 6 nits). 2 high-value nits applied: Phase 4 task 4.10 reviewer brief now explicitly calls out rules 3/4/6 coverage gaps with concrete fixture commands (resolves r2-N5); 2 nits deferred to FOLLOWUPS as `ms-cli-v01-plan-r2-nit-N1` (verify --phrase language masking) and `ms-cli-v01-plan-r2-nit-N3` (parse_hex_entropy length pre-check).
+
 - **r2** — 2026-05-04 architect r1 plan-review surfaced 2 critical + 5 important + 6 nits, all resolved inline:
   - **C1:** `bip39::Error::BadChecksum` → `InvalidChecksum` (4 places in plan; SPEC also fixed `InvalidWord` → `UnknownWord` in 2 places, in lockstep).
   - **C2:** Task 1.1 spike notes that the registry is populated by step 1's `cargo run` so step 2's grep works (or implementer can run `cargo fetch` defensively).

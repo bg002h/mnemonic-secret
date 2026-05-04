@@ -165,6 +165,24 @@ Single source of truth for items that surfaced during a review or implementation
 - **Status:** `resolved 2026-05-04 — §2.1 "Encoder pre-checks" gains a 10-row edge-case table at user request: empty/whitespace/short/odd/non-hex/conflict/missing inputs each map to specific CliError + exit code.`
 - **Tier:** `v0.1-nice-to-have`
 
+### `ms-cli-v01-plan-r2-nit-N1` — `verify --phrase` uses single `args.language` for both supplied phrase parse + entropy re-derivation
+
+- **Surfaced:** IMPLEMENTATION_PLAN_ms_cli_v0_1 review r2 (in-conversation; 2026-05-04).
+- **Where:** `cmd/verify.rs::run` (per IMPLEMENTATION_PLAN Phase 2 Task 2.5).
+- **What:** Round-trip check parses supplied phrase with `args.language` AND re-derives mnemonic from decoded entropy with `args.language` — so the comparison happens in language space rather than entropy space. If a user originally encoded with English but supplied `--language french` along with a French phrase, both `parse_in(French)` succeeds (assuming the French phrase has valid checksum) and `from_entropy_in(French)` produces a French mnemonic; the comparison agrees if the user's French phrase happens to encode the same entropy. This is semantically correct (verifies the language-and-phrase tuple round-trips) but doesn't catch "user encoded with English, recorded the French translation, supplied the French translation at verify time" — which would round-trip OK under French even though the originally-engraved card was English-derived. SPEC §6.3 hazard surfaces this orthogonally via the language warning; verify could surface a stronger warning when args.language differs from the encoder's claimed language at engrave time, but ms1 v0.1 wire format doesn't carry that.
+- **Why deferred:** correctness for the documented use case; the failure mode requires a language change between encode and verify which is itself an inconsistency the user should have caught at the SPEC §6.3 hazard surface.
+- **Status:** `open`
+- **Tier:** `v0.1-nice-to-have`
+
+### `ms-cli-v01-plan-r2-nit-N3` — `parse_hex_entropy` defers length-set validation to `ms_codec::encode`
+
+- **Surfaced:** IMPLEMENTATION_PLAN_ms_cli_v0_1 review r2 (2026-05-04).
+- **Where:** `cmd/encode.rs::parse_hex_entropy` (per IMPLEMENTATION_PLAN Phase 2 Task 2.2).
+- **What:** Hex like `--hex 0011223344` (5 bytes) passes hex parse and is handed to `ms_codec::encode`, which rejects with `PayloadLengthMismatch` (mapped to CliError::PayloadLengthMismatch — exit 1). User sees `tag "entr" payload length 5 not in expected set [16, 20, 24, 28, 32]`. Functionally correct but the message wording comes from ms-codec rather than a hex-specific pre-check. SPEC §2.1 edge-case row would prefer "hex decodes to 5 bytes; expected 16/20/24/28/32" wording.
+- **Why deferred:** Functionally identical exit code + similar message; cosmetic improvement only.
+- **Status:** `open`
+- **Tier:** `v0.1-nice-to-have`
+
 ### `ms1-v01-payload-bracket-overflow-prefix-byte-incompatibility` — v0.1 `0x00`-prefix-byte design overflows BIP-93 codex32's long-code length bracket for `seed` / `xprv` payloads
 
 - **Surfaced:** 2026-05-03 pre-SPEC spike against `rust-codex32 = "=0.1.0"` (in conversation; before SPEC drafted). Companion mirrors: same-id entry in `mnemonic-key/design/FOLLOWUPS.md` and `descriptor-mnemonic/design/FOLLOWUPS.md`, both at tier `cross-repo`.
