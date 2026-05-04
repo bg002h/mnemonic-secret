@@ -120,6 +120,51 @@ Single source of truth for items that surfaced during a review or implementation
 - **Status:** `resolved 2026-05-03 — added a Naming-convention paragraph to the consts.rs module-level doc-comment explaining the rule (ASCII byte literals for character semantics, hex literals for byte semantics; both produce u8).`
 - **Tier:** `v0.1-nice-to-have`
 
+### `ms-cli-v01-spec-r2-nit-1` — §2.4.1 verify validation-order prose clarity
+
+- **Surfaced:** SPEC_ms_cli_v0_1 review r2 (in-conversation; 2026-05-04).
+- **Where:** `design/SPEC_ms_cli_v0_1.md` §2.4.1 step 2 prose.
+- **What:** "ms1-side error first" framing reads as severity-ordering when it actually means "before phrase parsing." Add a one-line clarification at draft time of the IMPLEMENTATION_PLAN or in a SPEC patch.
+- **Why deferred:** cosmetic; impl is unambiguous from §6.1.1 dispatch table.
+- **Status:** `open`
+- **Tier:** `v0.1-nice-to-have`
+
+### `ms-cli-v01-spec-r2-nit-3` — §2.3.1 inspect cannot route exit 3 for future-format strings
+
+- **Surfaced:** SPEC_ms_cli_v0_1 review r2.
+- **Where:** `design/SPEC_ms_cli_v0_1.md` §2.3.1.
+- **What:** Inspect on a string that fails BIP-93 parse (e.g., long-checksum framing that's actually a future v0.2+ string) returns exit 1, not exit 3. Only `verify` post-decode can route exit 3. Add a one-line acknowledgement to §2.3.1.
+- **Why deferred:** correctness is unaffected; users discover this via inspect's `failure_reasons` field.
+- **Status:** `open`
+- **Tier:** `v0.1-nice-to-have`
+
+### `ms-cli-v01-spec-r2-nit-4` — Per-subcommand clap `about` / `after_long_help` strings unspecified
+
+- **Surfaced:** SPEC_ms_cli_v0_1 review r2.
+- **Where:** SPEC §2 (commands) + future IMPLEMENTATION_PLAN.
+- **What:** SPEC doesn't pin the `--help` output text per subcommand. md-cli precedent (`crates/md-cli/src/main.rs:50, 59, 95, 144`) uses `after_long_help = "EXAMPLES:..."`. The IMPLEMENTATION_PLAN should write per-subcommand `about` + `after_long_help` strings and SPEC §2.6 should reference them.
+- **Why deferred:** mechanical fill-in at IMPLEMENTATION_PLAN draft time.
+- **Status:** `open`
+- **Tier:** `v0.1-nice-to-have`
+
+### `ms-cli-v01-spec-r2-nit-6` — JSON object key ordering not pinned
+
+- **Surfaced:** SPEC_ms_cli_v0_1 review r2.
+- **Where:** SPEC §5.
+- **What:** `serde_json` preserves struct-field declaration order, but the SPEC doesn't pin this as a stability guarantee. Tools that diff outputs care. Add one sentence: "JSON object key order is the schema-declaration order (struct field order); stable across v0.1.x."
+- **Why deferred:** convention rather than requirement; impl observably stable.
+- **Status:** `open`
+- **Tier:** `v0.1-nice-to-have`
+
+### `ms-cli-v01-spec-r2-nit-7` — Encoder edge-case enumeration in §2.1
+
+- **Surfaced:** SPEC_ms_cli_v0_1 review r2.
+- **Where:** SPEC §2.1 "Encoder pre-checks".
+- **What:** `--phrase ""`, `--phrase " "`, `--hex ""`, `--hex "ZZ"` produce specific errors but aren't enumerated. All hit exit 1 (Bip39 BadWordCount / Bip39 BadWordCount / PayloadLengthMismatch / BadInput). Adding the enumeration removes test-surface ambiguity.
+- **Why deferred:** behaviors are unambiguous; spec can be tightened at IMPLEMENTATION_PLAN time when test fixtures are written.
+- **Status:** `open`
+- **Tier:** `v0.1-nice-to-have`
+
 ### `ms1-v01-payload-bracket-overflow-prefix-byte-incompatibility` — v0.1 `0x00`-prefix-byte design overflows BIP-93 codex32's long-code length bracket for `seed` / `xprv` payloads
 
 - **Surfaced:** 2026-05-03 pre-SPEC spike against `rust-codex32 = "=0.1.0"` (in conversation; before SPEC drafted). Companion mirrors: same-id entry in `mnemonic-key/design/FOLLOWUPS.md` and `descriptor-mnemonic/design/FOLLOWUPS.md`, both at tier `cross-repo`.
