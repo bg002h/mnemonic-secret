@@ -36,7 +36,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **Where:** `crates/ms-codec/src/envelope.rs:108` (the `payload_with_prefix.is_empty()` defensive arm).
 - **What:** Returns `Error::ReservedPrefixViolation { got: 0 }`, but `got: 0` is what a *valid* prefix byte looks like — confusing in logs. Unreachable for valid v0.1 strings (rule 9 length check guarantees payload non-empty), but the code path exists for direct envelope-internal calls. Consider `Error::UnexpectedStringLength` or a dedicated invariant-broken variant.
 - **Why deferred:** unreachable in practice; cosmetic-only diagnostic improvement.
-- **Status:** `open`
+- **Status:** `resolved 2026-05-03 — defensive empty-check removed entirely. Reasoning documented inline: any string that passed extract_wire_fields (≥sep+20 chars) and Codex32String::from_string (≥48 chars for short codex32) yields a payload of ≥26 codex32 symbols ≈ 16 raw bytes, so payload cannot be empty.`
 - **Tier:** `v0.1-nice-to-have`
 
 ### `phase-2-3-low-2` — extract_wire_fields length-check arithmetic is cryptic
@@ -45,7 +45,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **Where:** `crates/ms-codec/src/envelope.rs::extract_wire_fields` length-check expression.
 - **What:** `s.len() < sep + PAYLOAD_START_OFFSET + CHECKSUM_LEN_SHORT` is correct but reads cryptically. A comment "minimum sep+20 for any v0.1-shaped string" or refactor against `VALID_STR_LENGTHS.iter().min()` would aid readability.
 - **Why deferred:** stylistic.
-- **Status:** `open`
+- **Status:** `resolved 2026-05-03 — added explanatory comment "fixed wire prefix after sep is 7 chars (threshold + 4-char id + share-index) + 13-char short checksum = 20" above the length check.`
 - **Tier:** `v0.1-nice-to-have`
 
 ### `phase-1-low-1` — `Tag::try_new` wrong-length branch produces noisy diagnostic bytes
@@ -54,7 +54,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **Where:** `crates/ms-codec/src/tag.rs:33-38`.
 - **What:** The wrong-length branch reconstructs partial input bytes via `bytes.first().copied().unwrap_or(0)` etc., but those bytes carry no diagnostic value when `len != 4`. Could just return `Error::TagInvalidAlphabet { got: [0; 4] }`.
 - **Why deferred:** cosmetic; tests assert variant only, not bytes.
-- **Status:** `open`
+- **Status:** `resolved 2026-05-03 — simplified to Err(Error::TagInvalidAlphabet { got: [0; 4] }) with explanatory comment.`
 - **Tier:** `v0.1-nice-to-have`
 
 ### `phase-1-low-2` — `Error::Codex32` Display uses `{:?}` on inner
@@ -72,7 +72,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **Where:** `crates/ms-codec/src/consts.rs::tests` bijection test.
 - **What:** `(data_bits + 4) / 5` is the standard ceil-div idiom; stable `usize::div_ceil` (Rust 1.73+) is more readable. MSRV 1.85 supports it.
 - **Why deferred:** cosmetic.
-- **Status:** `open`
+- **Status:** `resolved 2026-05-03 — switched to data_bits.div_ceil(5).`
 - **Tier:** `v0.1-nice-to-have`
 
 ### `phase-1-low-5` — `Error::source()` returns `None` always
@@ -90,7 +90,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **Where:** `design/IMPLEMENTATION_PLAN_ms_v0_1.md` Phase 1 Task 1.7 Step 4 (FOLLOWUPS entry template).
 - **What:** The template uses `### \`phase-1-low-N\`` heading. Other entries in this repo's FOLLOWUPS use kebab-case slugs without backticks. Cosmetic; verify against this file's existing entries' header style and adjust the template before Phase 1 review fires.
 - **Why deferred:** template-only; doesn't affect implementation correctness.
-- **Status:** `open`
+- **Status:** `resolved 2026-05-03 — plan template updated to plain kebab-case slug heading (no backticks) per the actual style used by all real entries in this file.`
 - **Tier:** `v0.1-nice-to-have`
 
 ### `plan-r2-nit-readme-step-granularity` — Phase 7 Task 7.5 README rewrite is one chunky step
@@ -99,7 +99,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **Where:** `design/IMPLEMENTATION_PLAN_ms_v0_1.md` Phase 7 Task 7.5.
 - **What:** writing-plans skill recommends 2-5 minutes per step; the README rewrite is a single ~80-line step. Consider splitting into "draft README content" + "verify links" sub-steps for cleaner progress tracking.
 - **Why deferred:** cosmetic; doesn't affect content quality.
-- **Status:** `open`
+- **Status:** `wont-fix 2026-05-03 — the plan is now historical (used to drive the implementation, won't be re-executed). Splitting steps post-execution would be churn without value. Future plans should observe the 2-5-minute granularity guideline at draft time.`
 - **Tier:** `v0.1-nice-to-have`
 
 ### `plan-r2-nit-rule2-comment-wording` — Phase 5 rule_2 test comment wording
@@ -108,7 +108,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **Where:** `design/IMPLEMENTATION_PLAN_ms_v0_1.md` Phase 5 Task 5.1 `tests/negative.rs` rule_2 test (build_with HRP "mq").
 - **What:** The "Note:" comment reads as if SPEC §4 mandates rule-9-before-rule-1 ordering. SPEC §4 numbers rules but doesn't strictly mandate check-order; the implementation chose rule 9 first as a defensive optimization. Reword to "implementation choice" not "SPEC mandate."
 - **Why deferred:** cosmetic; doesn't affect test behavior.
-- **Status:** `open`
+- **Status:** `resolved 2026-05-03 — comment in tests/negative.rs rule_2 test reworded to clarify rule 9 ordering is an implementation choice / defensive optimization, not a SPEC requirement.`
 - **Tier:** `v0.1-nice-to-have`
 
 ### `plan-r2-nit-consts-naming-style` — `consts.rs` mixes naming/value-style conventions
@@ -117,7 +117,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **Where:** `design/IMPLEMENTATION_PLAN_ms_v0_1.md` Phase 1 Task 1.2 Step 3 (`crates/ms-codec/src/consts.rs`).
 - **What:** Three naming conventions in one file: `THRESHOLD_V01: u8 = b'0'` (ASCII byte literal), `SHARE_INDEX_V01: u8 = b's'` (ASCII byte literal), `RESERVED_PREFIX: u8 = 0x00` (hex literal). Reviewer-flaggable but not behaviorally significant. Pick one convention or document why each chose its form.
 - **Why deferred:** cosmetic; doesn't affect code behavior.
-- **Status:** `open`
+- **Status:** `resolved 2026-05-03 — added a Naming-convention paragraph to the consts.rs module-level doc-comment explaining the rule (ASCII byte literals for character semantics, hex literals for byte semantics; both produce u8).`
 - **Tier:** `v0.1-nice-to-have`
 
 ### `ms1-v01-payload-bracket-overflow-prefix-byte-incompatibility` — v0.1 `0x00`-prefix-byte design overflows BIP-93 codex32's long-code length bracket for `seed` / `xprv` payloads

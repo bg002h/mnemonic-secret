@@ -1,4 +1,11 @@
 //! v0.1 wire-format constants.
+//!
+//! **Naming convention:** ASCII byte literals (`b'0'`, `b's'`) are used for
+//! values whose semantic meaning is the *character* on the wire (threshold
+//! digit, share-index letter); hex literals (`0x00`) are used for values
+//! whose semantic meaning is the *byte* on the wire (the reserved-prefix
+//! byte). Both produce `u8`; the form chosen reflects which mental model
+//! is more natural at the use site.
 
 /// HRP for ms1 strings (BIP-93 codex32 HRP).
 pub const HRP: &str = "ms";
@@ -44,7 +51,7 @@ mod tests {
         assert_eq!(VALID_ENTR_LENGTHS.len(), VALID_STR_LENGTHS.len());
         for (i, &entropy_bytes) in VALID_ENTR_LENGTHS.iter().enumerate() {
             let data_bits = (entropy_bytes + 1) * 8; // +1 for the 0x00 prefix byte
-            let payload_symbols = (data_bits + 4) / 5; // ceil(bits/5)
+            let payload_symbols = data_bits.div_ceil(5);
             let total = 9 + payload_symbols + CHECKSUM_LEN_SHORT;
             assert_eq!(
                 total, VALID_STR_LENGTHS[i],

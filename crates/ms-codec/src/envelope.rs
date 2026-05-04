@@ -60,6 +60,9 @@ pub(crate) fn extract_wire_fields(s: &str) -> Result<WireFields<'_>> {
     let sep = s
         .rfind(SEPARATOR)
         .ok_or_else(|| Error::WrongHrp { got: s.to_string() })?;
+    // The fixed wire prefix after the separator is 7 chars (threshold + 4-char
+    // id + share-index) + 13-char short checksum = 20. Any v0.1-shaped string
+    // therefore needs at least sep + 20 bytes.
     if s.len() < sep + PAYLOAD_START_OFFSET + CHECKSUM_LEN_SHORT {
         return Err(Error::UnexpectedStringLength {
             got: s.len(),
@@ -111,12 +114,12 @@ pub(crate) fn discriminate(c: &Codex32String) -> Result<(Tag, Vec<u8>)> {
         .map_err(|_| Error::TagInvalidAlphabet { got: tag_bytes })?;
     let tag = Tag::try_new(tag_str)?;
 
-    // Payload extraction via the upstream Parts::data().
+    // Payload extraction via the upstream Parts::data(). For any string that
+    // passed `extract_wire_fields` (s.len >= sep + 7 + 13 = at least 22 chars)
+    // and `Codex32String::from_string` (s.len >= 48 for short codex32), the
+    // payload is at least 26 codex32 symbols ≈ 16 raw bytes, so it cannot be
+    // empty. No defensive `is_empty` arm needed.
     let payload_with_prefix = c.parts().data();
-    if payload_with_prefix.is_empty() {
-        // Defensive: unreachable for valid v0.1 strings (the prefix byte is always present).
-        return Err(Error::ReservedPrefixViolation { got: 0 });
-    }
 
     // Reserved-prefix-byte check (SPEC §4 rule 8).
     if payload_with_prefix[0] != RESERVED_PREFIX {

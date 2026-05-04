@@ -28,14 +28,10 @@ impl Tag {
     pub fn try_new(s: &str) -> Result<Self> {
         let bytes = s.as_bytes();
         if bytes.len() != 4 {
-            return Err(Error::TagInvalidAlphabet {
-                got: [
-                    bytes.first().copied().unwrap_or(0),
-                    bytes.get(1).copied().unwrap_or(0),
-                    bytes.get(2).copied().unwrap_or(0),
-                    bytes.get(3).copied().unwrap_or(0),
-                ],
-            });
+            // Length mismatch: the partial-input bytes carry no useful diagnostic
+            // information (the tag wasn't even the right shape). Return an empty
+            // 4-byte sentinel to keep the error variant payload simple.
+            return Err(Error::TagInvalidAlphabet { got: [0; 4] });
         }
         let mut out = [0u8; 4];
         for (i, b) in bytes.iter().enumerate() {

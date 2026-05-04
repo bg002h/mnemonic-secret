@@ -39,7 +39,9 @@ fn rule_2_wrong_hrp_rejected() {
     // Build with HRP "mq" instead of "ms". HRP byte length is the same (2);
     // total string length is identical to the "ms" case (50). Length check
     // passes, upstream parse passes, our envelope::discriminate fires
-    // WrongHrp deterministically.
+    // WrongHrp deterministically. (SPEC §4 numbers the rules but doesn't
+    // mandate check-order; rule 9 happens before rule 1 in our impl as a
+    // defensive optimization, not as a SPEC requirement.)
     let s = build_with("mq", 0, "entr", Fe::S, VALID_PREFIX, ENTROPY_16);
     assert_eq!(s.len(), 50, "sanity: HRP swap doesn't change string length");
     assert!(matches!(decode(&s), Err(Error::WrongHrp { .. })));

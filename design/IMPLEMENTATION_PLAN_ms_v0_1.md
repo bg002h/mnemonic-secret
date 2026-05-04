@@ -739,10 +739,10 @@ Re-dispatch the reviewer (fresh agent for independence; persist `phase-1-foundat
 
 - [ ] **Step 4: Capture remaining nits in FOLLOWUPS**
 
-For any low/nit findings not applied inline, append to `design/FOLLOWUPS.md` at tier `v0.1-nice-to-have`:
+For any low/nit findings not applied inline, append to `design/FOLLOWUPS.md` at tier `v0.1-nice-to-have`. Use a kebab-case slug heading (no backticks):
 
 ```markdown
-### `phase-1-low-N` — <one-line title>
+### phase-1-low-N — <one-line title>
 
 - **Surfaced:** Phase 1 review (`design/agent-reports/phase-1-foundation-review-rN.md` finding XX)
 - **Where:** `crates/ms-codec/src/<file>.rs:<line>`
