@@ -91,7 +91,10 @@ mod tests {
     #[test]
     fn entr_rejects_zero_length() {
         let p = Payload::Entr(vec![]);
-        assert!(matches!(p.validate(), Err(Error::PayloadLengthMismatch { .. })));
+        assert!(matches!(
+            p.validate(),
+            Err(Error::PayloadLengthMismatch { .. })
+        ));
     }
 
     #[test]

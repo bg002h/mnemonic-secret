@@ -81,8 +81,8 @@ fn bip39_random_entropy_round_trips_at_all_word_counts() {
         let s = encode(Tag::ENTR, &Payload::Entr(entropy.clone())).unwrap();
         let (_tag, recovered_payload) = decode(&s).unwrap();
         let Payload::Entr(recovered_entropy) = recovered_payload else {
-        panic!("expected Payload::Entr after decode");
-    };
+            panic!("expected Payload::Entr after decode");
+        };
         assert_eq!(recovered_entropy, entropy);
 
         let recovered_mnemonic =

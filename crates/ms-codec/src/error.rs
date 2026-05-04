@@ -69,10 +69,18 @@ impl fmt::Display for Error {
             Error::Codex32(e) => write!(f, "codex32 parse error: {:?}", e),
             Error::WrongHrp { got } => write!(f, "wrong HRP: got {:?}, expected \"ms\"", got),
             Error::ThresholdNotZero { got } => {
-                write!(f, "threshold not 0 (got '{}'); v0.1 is single-string only", *got as char)
+                write!(
+                    f,
+                    "threshold not 0 (got '{}'); v0.1 is single-string only",
+                    *got as char
+                )
             }
             Error::ShareIndexNotSecret { got } => {
-                write!(f, "share-index not 's' (got '{}'); BIP-93 requires 's' for threshold=0", got)
+                write!(
+                    f,
+                    "share-index not 's' (got '{}'); BIP-93 requires 's' for threshold=0",
+                    got
+                )
             }
             Error::TagInvalidAlphabet { got } => {
                 write!(f, "tag bytes not in codex32 alphabet: {:?}", got)

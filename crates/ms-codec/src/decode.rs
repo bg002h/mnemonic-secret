@@ -34,7 +34,9 @@ pub fn decode(s: &str) -> Result<(Tag, Payload)> {
 
     // §4 rule 7: reserved-not-emitted tags.
     if RESERVED_NOT_EMITTED_V01.contains(tag.as_bytes()) {
-        return Err(Error::ReservedTagNotEmittedInV01 { got: *tag.as_bytes() });
+        return Err(Error::ReservedTagNotEmittedInV01 {
+            got: *tag.as_bytes(),
+        });
     }
 
     // §4 rule 6: tag must be in the v0.1 accept set (currently {entr}).
@@ -46,7 +48,9 @@ pub fn decode(s: &str) -> Result<(Tag, Payload)> {
             p
         }
         _ => {
-            return Err(Error::UnknownTag { got: *tag.as_bytes() });
+            return Err(Error::UnknownTag {
+                got: *tag.as_bytes(),
+            });
         }
     };
 
@@ -61,7 +65,9 @@ mod tests {
     #[test]
     fn round_trip_entr_all_lengths() {
         for len in [16usize, 20, 24, 28, 32] {
-            let entropy = (0..len as u8).map(|i| i.wrapping_mul(7)).collect::<Vec<_>>();
+            let entropy = (0..len as u8)
+                .map(|i| i.wrapping_mul(7))
+                .collect::<Vec<_>>();
             let p = Payload::Entr(entropy.clone());
             let s = encode::encode(Tag::ENTR, &p).unwrap();
             let (tag, recovered) = decode(&s).unwrap();

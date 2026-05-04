@@ -26,7 +26,9 @@
 //! For v0.1 we never see long-checksum strings (rejected by SPEC §4 rule 9
 //! before this module is reached); `CHECKSUM_LEN_SHORT = 13` is hard-coded.
 
-use crate::consts::{CHECKSUM_LEN_SHORT, HRP, RESERVED_PREFIX, SEPARATOR, SHARE_INDEX_V01, THRESHOLD_V01};
+use crate::consts::{
+    CHECKSUM_LEN_SHORT, HRP, RESERVED_PREFIX, SEPARATOR, SHARE_INDEX_V01, THRESHOLD_V01,
+};
 use crate::error::{Error, Result};
 use crate::tag::Tag;
 use codex32::{Codex32String, Fe};
@@ -55,7 +57,9 @@ pub(crate) struct WireFields<'s> {
 /// contain the fixed wire prefix (defensive only; unreachable for inputs that
 /// passed BIP-93 parsing).
 pub(crate) fn extract_wire_fields(s: &str) -> Result<WireFields<'_>> {
-    let sep = s.rfind(SEPARATOR).ok_or_else(|| Error::WrongHrp { got: s.to_string() })?;
+    let sep = s
+        .rfind(SEPARATOR)
+        .ok_or_else(|| Error::WrongHrp { got: s.to_string() })?;
     if s.len() < sep + PAYLOAD_START_OFFSET + CHECKSUM_LEN_SHORT {
         return Err(Error::UnexpectedStringLength {
             got: s.len(),
@@ -86,13 +90,19 @@ pub(crate) fn discriminate(c: &Codex32String) -> Result<(Tag, Vec<u8>)> {
 
     // Wire-invariant checks (SPEC §4 rules 2, 3, 4).
     if fields.hrp != HRP {
-        return Err(Error::WrongHrp { got: fields.hrp.to_string() });
+        return Err(Error::WrongHrp {
+            got: fields.hrp.to_string(),
+        });
     }
     if fields.threshold_byte != THRESHOLD_V01 {
-        return Err(Error::ThresholdNotZero { got: fields.threshold_byte });
+        return Err(Error::ThresholdNotZero {
+            got: fields.threshold_byte,
+        });
     }
     if fields.share_index_byte != SHARE_INDEX_V01 {
-        return Err(Error::ShareIndexNotSecret { got: fields.share_index_byte as char });
+        return Err(Error::ShareIndexNotSecret {
+            got: fields.share_index_byte as char,
+        });
     }
 
     // Tag construction (SPEC §4 rule 5; rule 6/7 happen later in decode.rs).
@@ -110,7 +120,9 @@ pub(crate) fn discriminate(c: &Codex32String) -> Result<(Tag, Vec<u8>)> {
 
     // Reserved-prefix-byte check (SPEC §4 rule 8).
     if payload_with_prefix[0] != RESERVED_PREFIX {
-        return Err(Error::ReservedPrefixViolation { got: payload_with_prefix[0] });
+        return Err(Error::ReservedPrefixViolation {
+            got: payload_with_prefix[0],
+        });
     }
 
     Ok((tag, payload_with_prefix[1..].to_vec()))
@@ -131,7 +143,13 @@ pub(crate) fn package(tag: Tag, payload_bytes: &[u8]) -> Result<Codex32String> {
 
     // Delegate to rust-codex32. v0.1 always uses threshold=0, share=Fe::S.
     // `?` leverages the From<codex32::Error> for Error impl in error.rs.
-    Ok(Codex32String::from_seed(HRP, 0, tag.as_str(), Fe::S, &data)?)
+    Ok(Codex32String::from_seed(
+        HRP,
+        0,
+        tag.as_str(),
+        Fe::S,
+        &data,
+    )?)
 }
 
 #[cfg(test)]

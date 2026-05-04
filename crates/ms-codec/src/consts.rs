@@ -29,12 +29,7 @@ pub const VALID_STR_LENGTHS: &[usize] = &[50, 56, 62, 69, 75];
 pub const TAG_ENTR: [u8; 4] = *b"entr";
 
 /// 4-byte type tags reserved-not-emitted in v0.1 (decoder rejects).
-pub const RESERVED_NOT_EMITTED_V01: &[[u8; 4]] = &[
-    *b"seed",
-    *b"xprv",
-    *b"mnem",
-    *b"prvk",
-];
+pub const RESERVED_NOT_EMITTED_V01: &[[u8; 4]] = &[*b"seed", *b"xprv", *b"mnem", *b"prvk"];
 
 #[cfg(test)]
 mod tests {

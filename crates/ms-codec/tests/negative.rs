@@ -8,7 +8,14 @@ use ms_codec::{decode, Error};
 const VALID_PREFIX: u8 = 0x00;
 const ENTROPY_16: &[u8] = &[0xAAu8; 16];
 
-fn build_with(hrp: &str, threshold: usize, id: &str, share: Fe, prefix: u8, payload: &[u8]) -> String {
+fn build_with(
+    hrp: &str,
+    threshold: usize,
+    id: &str,
+    share: Fe,
+    prefix: u8,
+    payload: &[u8],
+) -> String {
     let mut data = vec![prefix];
     data.extend_from_slice(payload);
     Codex32String::from_seed(hrp, threshold, id, share, &data)
@@ -46,7 +53,11 @@ fn rule_3_threshold_not_zero_rejected() {
     // (parts_inner rejects threshold=0 + share!=S only); our envelope
     // discriminate fires ThresholdNotZero deterministically.
     let s = build_with("ms", 2, "entr", Fe::A, VALID_PREFIX, ENTROPY_16);
-    assert_eq!(s.len(), 50, "sanity: 16-B + 0x00 prefix in threshold-2 form is 50 chars");
+    assert_eq!(
+        s.len(),
+        50,
+        "sanity: 16-B + 0x00 prefix in threshold-2 form is 50 chars"
+    );
     assert!(matches!(decode(&s), Err(Error::ThresholdNotZero { .. })));
 }
 
@@ -58,7 +69,11 @@ fn rule_4_share_index_not_secret_rejected() {
     // Build a valid-length, valid-checksum string with share=Fe::C and confirm
     // our decoder surfaces Error::Codex32 wrapping the upstream error.
     let s = build_with("ms", 0, "entr", Fe::C, VALID_PREFIX, ENTROPY_16);
-    assert_eq!(s.len(), 50, "sanity: valid v0.1 length so the rule 9 length-check passes");
+    assert_eq!(
+        s.len(),
+        50,
+        "sanity: valid v0.1 length so the rule 9 length-check passes"
+    );
     assert!(matches!(decode(&s), Err(Error::Codex32(_))));
 }
 

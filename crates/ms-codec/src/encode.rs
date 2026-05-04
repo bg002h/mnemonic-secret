@@ -16,7 +16,9 @@ use crate::tag::Tag;
 pub fn encode(tag: Tag, payload: &Payload) -> Result<String> {
     // §3.5.1: encoder symmetry on reserved-not-emitted tags.
     if RESERVED_NOT_EMITTED_V01.contains(tag.as_bytes()) {
-        return Err(Error::ReservedTagNotEmittedInV01 { got: *tag.as_bytes() });
+        return Err(Error::ReservedTagNotEmittedInV01 {
+            got: *tag.as_bytes(),
+        });
     }
     // §3.5: payload length validation.
     payload.validate()?;
