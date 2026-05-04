@@ -30,6 +30,42 @@ Single source of truth for items that surfaced during a review or implementation
 
 ## Open items
 
+### `plan-r2-nit-followups-slug-format` — Phase 1 Task 1.7 nit-format snippet uses `\`slug\`` heading style
+
+- **Surfaced:** IMPLEMENTATION_PLAN review r1 (2026-05-03; finding nit #1).
+- **Where:** `design/IMPLEMENTATION_PLAN_ms_v0_1.md` Phase 1 Task 1.7 Step 4 (FOLLOWUPS entry template).
+- **What:** The template uses `### \`phase-1-low-N\`` heading. Other entries in this repo's FOLLOWUPS use kebab-case slugs without backticks. Cosmetic; verify against this file's existing entries' header style and adjust the template before Phase 1 review fires.
+- **Why deferred:** template-only; doesn't affect implementation correctness.
+- **Status:** `open`
+- **Tier:** `v0.1-nice-to-have`
+
+### `plan-r2-nit-readme-step-granularity` — Phase 7 Task 7.5 README rewrite is one chunky step
+
+- **Surfaced:** IMPLEMENTATION_PLAN review r1 (2026-05-03; finding nit #3).
+- **Where:** `design/IMPLEMENTATION_PLAN_ms_v0_1.md` Phase 7 Task 7.5.
+- **What:** writing-plans skill recommends 2-5 minutes per step; the README rewrite is a single ~80-line step. Consider splitting into "draft README content" + "verify links" sub-steps for cleaner progress tracking.
+- **Why deferred:** cosmetic; doesn't affect content quality.
+- **Status:** `open`
+- **Tier:** `v0.1-nice-to-have`
+
+### `plan-r2-nit-rule2-comment-wording` — Phase 5 rule_2 test comment wording
+
+- **Surfaced:** IMPLEMENTATION_PLAN review r1 (2026-05-03; finding nit #4).
+- **Where:** `design/IMPLEMENTATION_PLAN_ms_v0_1.md` Phase 5 Task 5.1 `tests/negative.rs` rule_2 test (build_with HRP "mq").
+- **What:** The "Note:" comment reads as if SPEC §4 mandates rule-9-before-rule-1 ordering. SPEC §4 numbers rules but doesn't strictly mandate check-order; the implementation chose rule 9 first as a defensive optimization. Reword to "implementation choice" not "SPEC mandate."
+- **Why deferred:** cosmetic; doesn't affect test behavior.
+- **Status:** `open`
+- **Tier:** `v0.1-nice-to-have`
+
+### `plan-r2-nit-consts-naming-style` — `consts.rs` mixes naming/value-style conventions
+
+- **Surfaced:** IMPLEMENTATION_PLAN review r1 (2026-05-03; finding nit #5).
+- **Where:** `design/IMPLEMENTATION_PLAN_ms_v0_1.md` Phase 1 Task 1.2 Step 3 (`crates/ms-codec/src/consts.rs`).
+- **What:** Three naming conventions in one file: `THRESHOLD_V01: u8 = b'0'` (ASCII byte literal), `SHARE_INDEX_V01: u8 = b's'` (ASCII byte literal), `RESERVED_PREFIX: u8 = 0x00` (hex literal). Reviewer-flaggable but not behaviorally significant. Pick one convention or document why each chose its form.
+- **Why deferred:** cosmetic; doesn't affect code behavior.
+- **Status:** `open`
+- **Tier:** `v0.1-nice-to-have`
+
 ### `ms1-v01-payload-bracket-overflow-prefix-byte-incompatibility` — v0.1 `0x00`-prefix-byte design overflows BIP-93 codex32's long-code length bracket for `seed` / `xprv` payloads
 
 - **Surfaced:** 2026-05-03 pre-SPEC spike against `rust-codex32 = "=0.1.0"` (in conversation; before SPEC drafted). Companion mirrors: same-id entry in `mnemonic-key/design/FOLLOWUPS.md` and `descriptor-mnemonic/design/FOLLOWUPS.md`, both at tier `cross-repo`.
