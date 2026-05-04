@@ -82,7 +82,7 @@ Defaults:
 - `--hex <bytes>`: odd-length input rejected with friendly error "expected even-length hex (one byte = 2 chars)" (exit 1, `CliError::BadInput`).
 - `--language <name>`: must be one of the 10 BIP-39 wordlists (see §8). clap value-enum rejects unknowns with usage error (exit 64).
 - BIP-39 checksum mismatch: `CliError::Bip39(bip39::Error::InvalidChecksum)` → exit 1 with friendly message.
-- BIP-39 wordlist mismatch: `bip39::Mnemonic::parse_in` is language-strict — `--language japanese` with English words yields `CliError::Bip39(bip39::Error::InvalidWord)` (exit 1). The CLI does not silently transcode across wordlists.
+- BIP-39 wordlist mismatch: `bip39::Mnemonic::parse_in` is language-strict — `--language japanese` with English words yields `CliError::Bip39(bip39::Error::UnknownWord)` (exit 1). The CLI does not silently transcode across wordlists.
 
 **Edge-case enumeration** (locked at v0.1; tests must cover each row):
 
@@ -529,7 +529,7 @@ The `kind` field in the §5.4 error JSON is the discriminant of the CliError var
 Two modules own the variant-to-message translation:
 
 - `codex32_friendly.rs::friendly_codex32(&codex32::Error) -> String` — covers all ~15 upstream variants of `codex32::Error` (see `/tmp/codex32-extract/codex32-0.1.0/src/lib.rs:42-83`). Stable since the upstream dep is exact-pinned `=0.1.0`.
-- `bip39_friendly.rs::friendly_bip39(&bip39::Error) -> String` — covers `BadEntropyBitCount`, `BadWordCount`, `InvalidWord`, `InvalidChecksum`, `AmbiguousLanguages`, etc.
+- `bip39_friendly.rs::friendly_bip39(&bip39::Error) -> String` — covers `BadEntropyBitCount`, `BadWordCount`, `UnknownWord`, `InvalidChecksum`, `AmbiguousLanguages`, etc.
 
 Both produce one-line user-facing messages. The unfriendly `{:?}` form is never shown to end users.
 
@@ -791,6 +791,8 @@ Per the 2026-05-03 workflow refinement, brainstorm/spec/plan reviewer reports st
 (Tracks this SPEC's reviewer-loop convergence. Independent of brainstorm-stage architect rounds.)
 
 - **r1** — 2026-05-04 initial draft from converged brainstorm.
+- **r6** — 2026-05-04 lockstep correction during IMPLEMENTATION_PLAN r1 review: `bip39::Error::InvalidWord` → `UnknownWord` (the actual variant name in `bip39 = "2.2.2"`; verified against the upstream crate's source). Two places in this SPEC: §2.1 BIP-39 wordlist mismatch row, §6.2 mapper variant list. The plan inherited this typo from the SPEC; both corrected together. Mechanical correction (variant-name only); no behavioral semantic change.
+
 - **r5** — 2026-05-04 r3 SPEC review terminator (0 critical / 0 important / 6 nits). 3 actionable r3 nits applied inline: §2.1 edge-case table gains an "extra spaces in phrase" row noting `bip39::parse_in` uses `split_whitespace` (resolves r3-N2); §2.1 hex-error row marked illustrative ("e.g.") rather than verbatim, since exact wording comes from the upstream `hex` crate (resolves r3-N3); §2.5 / §2.6 reordered in source so file order matches numerical order (resolves r3-N5). 3 r3 nits skipped as already-affirmations: r3-N1 (already correct), r3-N4 (Rust raw-string style is impl-detail), r3-N6 (em-dash matches md-cli precedent).
 
 - **r4** — 2026-05-04 user-requested completion of all 5 deferred r2 SPEC-review nits inline (no longer FOLLOWUPS-deferred): §2.4.1 prose clarification on "first" meaning "earlier in pipeline" not severity (resolves r2-nit-1); §2.3.1 explicit acknowledgement that inspect cannot route exit 3 (resolves r2-nit-3); new §2.6 lockdown of per-subcommand clap `about` + `after_long_help` strings with concrete EXAMPLES blocks (resolves r2-nit-4); §5 preamble adds JSON key-ordering stability note (resolves r2-nit-6); §2.1 "Encoder pre-checks" gains an edge-case enumeration table covering empty/whitespace/short/non-hex/conflict/missing inputs (resolves r2-nit-7). Corresponding FOLLOWUPS entries `ms-cli-v01-spec-r2-nit-{1,3,4,6,7}` updated to status `resolved 2026-05-04`.
