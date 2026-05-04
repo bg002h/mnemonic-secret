@@ -126,7 +126,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **Where:** `design/SPEC_ms_cli_v0_1.md` §2.4.1 step 2 prose.
 - **What:** "ms1-side error first" framing reads as severity-ordering when it actually means "before phrase parsing." Add a one-line clarification at draft time of the IMPLEMENTATION_PLAN or in a SPEC patch.
 - **Why deferred:** cosmetic; impl is unambiguous from §6.1.1 dispatch table.
-- **Status:** `open`
+- **Status:** `resolved 2026-05-04 — §2.4.1 prose clarified inline at user request: "first" explicitly means "earlier in validation pipeline" not severity tier.`
 - **Tier:** `v0.1-nice-to-have`
 
 ### `ms-cli-v01-spec-r2-nit-3` — §2.3.1 inspect cannot route exit 3 for future-format strings
@@ -135,7 +135,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **Where:** `design/SPEC_ms_cli_v0_1.md` §2.3.1.
 - **What:** Inspect on a string that fails BIP-93 parse (e.g., long-checksum framing that's actually a future v0.2+ string) returns exit 1, not exit 3. Only `verify` post-decode can route exit 3. Add a one-line acknowledgement to §2.3.1.
 - **Why deferred:** correctness is unaffected; users discover this via inspect's `failure_reasons` field.
-- **Status:** `open`
+- **Status:** `resolved 2026-05-04 — §2.3.1 gains explicit "Note on exit-3 routing" paragraph at user request.`
 - **Tier:** `v0.1-nice-to-have`
 
 ### `ms-cli-v01-spec-r2-nit-4` — Per-subcommand clap `about` / `after_long_help` strings unspecified
@@ -144,7 +144,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **Where:** SPEC §2 (commands) + future IMPLEMENTATION_PLAN.
 - **What:** SPEC doesn't pin the `--help` output text per subcommand. md-cli precedent (`crates/md-cli/src/main.rs:50, 59, 95, 144`) uses `after_long_help = "EXAMPLES:..."`. The IMPLEMENTATION_PLAN should write per-subcommand `about` + `after_long_help` strings and SPEC §2.6 should reference them.
 - **Why deferred:** mechanical fill-in at IMPLEMENTATION_PLAN draft time.
-- **Status:** `open`
+- **Status:** `resolved 2026-05-04 — new §2.6 added at user request: locks `about` + `after_long_help` strings for all 5 subcommands with concrete EXAMPLES blocks.`
 - **Tier:** `v0.1-nice-to-have`
 
 ### `ms-cli-v01-spec-r2-nit-6` — JSON object key ordering not pinned
@@ -153,7 +153,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **Where:** SPEC §5.
 - **What:** `serde_json` preserves struct-field declaration order, but the SPEC doesn't pin this as a stability guarantee. Tools that diff outputs care. Add one sentence: "JSON object key order is the schema-declaration order (struct field order); stable across v0.1.x."
 - **Why deferred:** convention rather than requirement; impl observably stable.
-- **Status:** `open`
+- **Status:** `resolved 2026-05-04 — §5 preamble adds the stability note at user request.`
 - **Tier:** `v0.1-nice-to-have`
 
 ### `ms-cli-v01-spec-r2-nit-7` — Encoder edge-case enumeration in §2.1
@@ -162,7 +162,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **Where:** SPEC §2.1 "Encoder pre-checks".
 - **What:** `--phrase ""`, `--phrase " "`, `--hex ""`, `--hex "ZZ"` produce specific errors but aren't enumerated. All hit exit 1 (Bip39 BadWordCount / Bip39 BadWordCount / PayloadLengthMismatch / BadInput). Adding the enumeration removes test-surface ambiguity.
 - **Why deferred:** behaviors are unambiguous; spec can be tightened at IMPLEMENTATION_PLAN time when test fixtures are written.
-- **Status:** `open`
+- **Status:** `resolved 2026-05-04 — §2.1 "Encoder pre-checks" gains a 10-row edge-case table at user request: empty/whitespace/short/odd/non-hex/conflict/missing inputs each map to specific CliError + exit code.`
 - **Tier:** `v0.1-nice-to-have`
 
 ### `ms1-v01-payload-bracket-overflow-prefix-byte-incompatibility` — v0.1 `0x00`-prefix-byte design overflows BIP-93 codex32's long-code length bracket for `seed` / `xprv` payloads

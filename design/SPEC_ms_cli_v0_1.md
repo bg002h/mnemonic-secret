@@ -84,6 +84,21 @@ Defaults:
 - BIP-39 checksum mismatch: `CliError::Bip39(bip39::Error::InvalidChecksum)` → exit 1 with friendly message.
 - BIP-39 wordlist mismatch: `bip39::Mnemonic::parse_in` is language-strict — `--language japanese` with English words yields `CliError::Bip39(bip39::Error::InvalidWord)` (exit 1). The CLI does not silently transcode across wordlists.
 
+**Edge-case enumeration** (locked at v0.1; tests must cover each row):
+
+| input | resulting error | exit |
+|---|---|---|
+| `--phrase ""` (empty) | `Bip39(BadWordCount)` "expected 12/15/18/21/24 words, got 0" | 1 |
+| `--phrase " "` (whitespace only) | `Bip39(BadWordCount)` (post-trim, 0 words) | 1 |
+| `--phrase "abandon"` (1 word) | `Bip39(BadWordCount)` | 1 |
+| `--phrase "abandon abandon … about " + 13th word` | `Bip39(BadWordCount)` (only 12/15/18/21/24 accepted) | 1 |
+| `--hex ""` (empty) | `BadInput("expected hex of length 32/40/48/56/64 chars")` | 1 |
+| `--hex "ZZ"` (non-hex chars) | `BadInput("invalid hex character 'Z' at position 0")` | 1 |
+| `--hex "00"` (too short, even) | `BadInput("hex decodes to 1 byte; expected 16/20/24/28/32")` | 1 |
+| `--hex "0".repeat(31)` (odd length) | `BadInput("expected even-length hex…")` | 1 |
+| both `--phrase` and `--hex` supplied | clap usage error (mutually-exclusive group) | 64 |
+| neither `--phrase` nor `--hex` supplied | clap usage error (required group) | 64 |
+
 ### §2.2 `ms decode` — recover a BIP-39 mnemonic from an ms1 string
 
 ```text
@@ -176,6 +191,8 @@ When this happens, ms-cli `inspect` treats the error like any other CliError per
 
 This is consistent with the audit's C3 "decode vs inspect routing" — `inspect` is more lenient than `decode` only over the *post-BIP-93-parse* surface. A string that fails BIP-93 parsing has no inspectable structure for either command.
 
+**Note on exit-3 routing:** `inspect` cannot route exit 3 (`FutureFormat` / `ReservedTagNotEmittedInV01`). Reaching that signal requires a full `ms_codec::decode()` pass, which only `verify` does post-decode. A string that fails BIP-93 parsing because (e.g.) it uses a long-checksum framing reserved for v0.2+ surfaces here as exit 1 (`Codex32`) — the user must run `ms verify <string>` to learn whether it's a recognizable future format or genuinely malformed.
+
 ### §2.4 `ms verify` — exit-code-only validity (and optional round-trip)
 
 ```text
@@ -205,9 +222,40 @@ Verify executes in a strict order so behavior is deterministic regardless of how
 3. **Parse `--phrase` if present** via `bip39::Mnemonic::parse_in(language, phrase)`. On bip39 failure → exit 1, `CliError::Bip39` with friendly message.
 4. **Compare** the decoded entropy's re-derivation against the parsed phrase. Match → exit 0; mismatch → exit 4, `CliError::VerifyPhraseMismatch`.
 
-The order matters: an engraver who typed back a corrupt ms1 AND supplied a wrong-language phrase should see the ms1-side error first (exit 2 or 1), because that's the engraving-correctness signal — they can't proceed to round-trip checking until the engraving is valid.
+The order matters: an engraver who typed back a corrupt ms1 AND supplied a wrong-language phrase should see the ms1-side error first (i.e., **before** phrase parsing — "first" here means "earlier in the validation pipeline," not "higher severity"). Step 2's exit codes are still 1, 2, or 3 per §6.1.1; the dispatch is by error variant, not by some external severity ordering. The point of the "first" framing is that the phrase is never even read in step 3 if the ms1 already failed in step 2 — so a wrong-language phrase cannot mask an engraving-side error.
 
 `verify` is the engraver round-trip command: type back the engraved ms1, supply the original phrase, exit code tells you if the engraving + your record are mutually consistent.
+
+### §2.6 Per-subcommand `--help` text (locked)
+
+clap derive emits `--help` per subcommand from the `about` and (optional) `after_long_help` attributes. The locked strings:
+
+```rust
+#[derive(Subcommand)]
+enum Command {
+    /// Encode a BIP-39 mnemonic (or hex entropy) as an ms1 string for engraving.
+    #[command(after_long_help = "EXAMPLES:\n  ms encode --phrase \"abandon abandon … about\"\n  ms encode --phrase - < phrase.txt\n  ms encode --hex 00000000000000000000000000000000 --no-engraving-card\n  ms encode --phrase \"...\" --json | jq .ms1")]
+    Encode(EncodeArgs),
+
+    /// Decode an ms1 string back to its BIP-39 mnemonic and entropy bytes.
+    #[command(after_long_help = "EXAMPLES:\n  ms decode ms10entrs…\n  ms decode - < engraved.txt\n  ms decode <ms1> --language french\n  ms decode <ms1> --json | jq .phrase")]
+    Decode(DecodeArgs),
+
+    /// Inspect an ms1 string's structural fields and decoder verdict.
+    #[command(after_long_help = "EXAMPLES:\n  ms inspect <ms1>          # verdict + fields\n  ms inspect <ms1> --json   # structured output for tooling\n  printf \"ms10e ntrsq…\" | ms inspect -   # back-typed chunked form")]
+    Inspect(InspectArgs),
+
+    /// Verify an ms1 string is valid (and optionally round-trips against a phrase).
+    #[command(after_long_help = "EXAMPLES:\n  ms verify <ms1>                          # exit 0 = valid v0.1\n  ms verify <ms1> --phrase \"abandon … about\"   # round-trip; exit 4 on mismatch\n  ms verify <ms1> --phrase \"...\" --json    # structured outcome")]
+    Verify(VerifyArgs),
+
+    /// Print the SHA-pinned v0.1 test-vector corpus as JSON.
+    #[command(after_long_help = "EXAMPLES:\n  ms vectors                # compact JSON\n  ms vectors --pretty       # indented JSON\n  ms vectors | jq '.[0]'    # filter via jq")]
+    Vectors(VectorsArgs),
+}
+```
+
+Top-level `Cli::about` is `"ms — engrave-friendly BIP-39 entropy backups (the ms1 format)"`. clap auto-generates `ms --help` from the subcommand list. Examples in `after_long_help` use only documented invocations; no flag combinations not covered elsewhere in this SPEC.
 
 ### §2.5 `ms vectors` — dump the SHA-pinned test-vector corpus
 
@@ -285,6 +333,8 @@ The chunked form is for proofreading by eye, not machine consumption. The canoni
 ## §5. JSON output schemas
 
 All `--json` outputs include `"schema_version": "1"` at the **top level**. v0.1.x adds fields additively (semver-minor); v0.2 may bump to `"2"`.
+
+**Object key ordering** is the schema-declaration order shown in the examples below — `serde_json` preserves struct field declaration order, and ms-cli's output structs declare fields in the documented order. Tooling that diffs ms-cli outputs across runs / versions can rely on stable insertion order across v0.1.x; v0.2 may reorder freely (consumers should JSON-parse rather than diff verbatim if portability matters).
 
 ### §5.1 `encode --json`
 
@@ -740,6 +790,8 @@ Per the 2026-05-03 workflow refinement, brainstorm/spec/plan reviewer reports st
 (Tracks this SPEC's reviewer-loop convergence. Independent of brainstorm-stage architect rounds.)
 
 - **r1** — 2026-05-04 initial draft from converged brainstorm.
+- **r4** — 2026-05-04 user-requested completion of all 5 deferred r2 SPEC-review nits inline (no longer FOLLOWUPS-deferred): §2.4.1 prose clarification on "first" meaning "earlier in pipeline" not severity (resolves r2-nit-1); §2.3.1 explicit acknowledgement that inspect cannot route exit 3 (resolves r2-nit-3); new §2.6 lockdown of per-subcommand clap `about` + `after_long_help` strings with concrete EXAMPLES blocks (resolves r2-nit-4); §5 preamble adds JSON key-ordering stability note (resolves r2-nit-6); §2.1 "Encoder pre-checks" gains an edge-case enumeration table covering empty/whitespace/short/non-hex/conflict/missing inputs (resolves r2-nit-7). Corresponding FOLLOWUPS entries `ms-cli-v01-spec-r2-nit-{1,3,4,6,7}` updated to status `resolved 2026-05-04`.
+
 - **r3** — 2026-05-04 reviewer-loop terminator (r2 SPEC review returned 0 critical / 0 important / 8 nits; recommendation = ship for user review). 3 high-value nits applied inline: §5.4 locks `details` field as always-present (null when empty) to remove JSON-schema ambiguity; §2.1 adds explicit BIP-39 wordlist-mismatch behavior note (`bip39::parse_in` is language-strict; no silent transcoding); §2.4.1 step 1 adds concurrent-stdin guard (`ms verify - --phrase -` exits 1 with `BadInput`). Remaining 5 nits deferred to IMPLEMENTATION_PLAN or FOLLOWUPS at SPEC user-review time.
 
 - **r2** — 2026-05-04 integrated 2 critical + 3 important findings from r1 SPEC review: §6.1.1 complete dispatch table mapping every `ms_codec::Error` variant → `CliError` + JSON `details` shape (resolves r1-C1 ambiguity); §2.4.1 verify validation-order subsection (resolves r1-C2 dispatch ambiguity); §2.3.1 explicit handling for `inspect()` BIP-93-parse failures (resolves r1-I3); §10.0 module dependency graph + build phase ordering (resolves r1-I2); §6 note clarifying clap exit-code override to 64 (resolves r1-nit on clap default); §5.1 second JSON example for `--hex` invocation (resolves r1-nit); §5.3 explicit JSON value-type clarifications for `prefix_byte` / `payload_bytes_hex` / `threshold` / `tag` (resolves r1-nit on JSON types); test surface gains `inspect_codex32_parse_failure.rs` + `json_error_envelope_per_kind.rs` (resolves r1-nits on missing tests). §10 module layout updated to drop `build.rs` (`include_str!` is sufficient) and clarify vectors corpus is JSON-equal not byte-equal to ms-codec (resolves nit on build.rs vs include_str! inconsistency, in lockstep with self-review fix to §2.5).
