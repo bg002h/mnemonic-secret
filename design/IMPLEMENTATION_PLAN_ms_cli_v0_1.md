@@ -24,7 +24,7 @@
 
 ## Phase 1: Foundation modules (leaves)
 
-**Goal:** Land the 6 leaf modules (`error`, `codex32_friendly`, `bip39_friendly`, `language`, `format`, `parse`) plus the `Cargo.toml` dep additions. Each module has unit tests; no internal-crate dependencies between them. By end of phase: `cargo build -p ms-cli` clean (no `main` yet beyond the stub), `cargo test -p ms-cli --lib` runs all unit tests.
+**Goal:** Land the 6 leaf modules (`error`, `codex32_friendly`, `bip39_friendly`, `language`, `format`, `parse`) plus the `Cargo.toml` dep additions. Each module has unit tests; no internal-crate dependencies between them. By end of phase: `cargo build -p ms-cli` clean (no `main` yet beyond the stub), `cargo test -p ms-cli` runs all unit tests.
 
 **Files:**
 - Modify: `crates/ms-cli/Cargo.toml` (add deps + dev-deps)
@@ -124,8 +124,11 @@ Modify `crates/ms-cli/Cargo.toml`. Replace the file's `[dependencies]` section (
 ```toml
 [dependencies]
 ms-codec = { path = "../ms-codec", version = "=0.1.0" }
-bip39 = "2"
+# bip39's non-English languages are feature-gated; "all-languages" enables all 9.
+bip39 = { version = "2", features = ["all-languages"] }
 clap = { version = "4", features = ["derive"] }
+# codex32 is used in production code (error.rs, codex32_friendly.rs), not just tests.
+codex32 = { workspace = true }
 hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -133,7 +136,7 @@ serde_json = "1"
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
-codex32 = "=0.1.0"
+codex32 = { workspace = true }
 ```
 
 Keep the existing `[package]`, `[[bin]]`, and `publish = false` lines unchanged. Do NOT yet flip `publish` or bump `version` — those are Phase 5 tasks.
@@ -371,6 +374,13 @@ impl From<ms_codec::Error> for CliError {
             ms_codec::Error::PayloadLengthMismatch { got, tag, expected: _ } => {
                 CliError::PayloadLengthMismatch { got, tag }
             }
+            // ms_codec::Error is #[non_exhaustive]; v0.2+ may add variants.
+            // If you hit this in production, ms-codec added a variant ms-cli
+            // hasn't dispatched yet — add an arm above for the new variant.
+            other => CliError::BadInput(format!(
+                "unhandled ms_codec::Error variant: {:?}",
+                other
+            )),
         }
     }
 }
@@ -575,7 +585,7 @@ mod tests {
 - [ ] **Step 2: Run codex32_friendly tests in isolation.**
 
 ```bash
-cargo test --manifest-path /scratch/code/shibboleth/mnemonic-secret/Cargo.toml -p ms-cli --lib codex32_friendly 2>&1 | tail -10
+cargo test --manifest-path /scratch/code/shibboleth/mnemonic-secret/Cargo.toml -p ms-cli codex32_friendly 2>&1 | tail -10
 ```
 
 Expected: 2 tests pass. (Build still fails overall because bip39_friendly.rs doesn't exist; the `--lib codex32_friendly` filter scopes to just this module's tests.)
@@ -654,7 +664,7 @@ find ~/.cargo/registry/src -name "lib.rs" -path "*bip39-2*" | head -1 | xargs gr
 - [ ] **Step 3: Run lib tests.** Now error.rs + codex32_friendly.rs + bip39_friendly.rs all exist; the partial build should compile.
 
 ```bash
-cargo test --manifest-path /scratch/code/shibboleth/mnemonic-secret/Cargo.toml -p ms-cli --lib bip39_friendly codex32_friendly error 2>&1 | tail -20
+cargo test --manifest-path /scratch/code/shibboleth/mnemonic-secret/Cargo.toml -p ms-cli bip39_friendly codex32_friendly error 2>&1 | tail -20
 ```
 
 Expected: ~10 tests pass (3 bip39_friendly + 2 codex32_friendly + 5 error).
@@ -776,7 +786,7 @@ mod tests {
 - [ ] **Step 2: Run language tests.**
 
 ```bash
-cargo test --manifest-path /scratch/code/shibboleth/mnemonic-secret/Cargo.toml -p ms-cli --lib language 2>&1 | tail -10
+cargo test --manifest-path /scratch/code/shibboleth/mnemonic-secret/Cargo.toml -p ms-cli language 2>&1 | tail -10
 ```
 
 Expected: 3 tests pass.
@@ -964,7 +974,7 @@ mod tests {
 - [ ] **Step 2: Run format tests.**
 
 ```bash
-cargo test --manifest-path /scratch/code/shibboleth/mnemonic-secret/Cargo.toml -p ms-cli --lib format 2>&1 | tail -10
+cargo test --manifest-path /scratch/code/shibboleth/mnemonic-secret/Cargo.toml -p ms-cli format 2>&1 | tail -10
 ```
 
 Expected: 5 tests pass.
@@ -1059,7 +1069,7 @@ mod tests {
 - [ ] **Step 2: Run parse tests.**
 
 ```bash
-cargo test --manifest-path /scratch/code/shibboleth/mnemonic-secret/Cargo.toml -p ms-cli --lib parse 2>&1 | tail -10
+cargo test --manifest-path /scratch/code/shibboleth/mnemonic-secret/Cargo.toml -p ms-cli parse 2>&1 | tail -10
 ```
 
 Expected: 3 tests pass.
@@ -1069,7 +1079,7 @@ Expected: 3 tests pass.
 - [ ] **Step 1: Run all Phase 1 tests + build + clippy.**
 
 ```bash
-cargo test --manifest-path /scratch/code/shibboleth/mnemonic-secret/Cargo.toml -p ms-cli --lib 2>&1 | grep "test result"
+cargo test --manifest-path /scratch/code/shibboleth/mnemonic-secret/Cargo.toml -p ms-cli 2>&1 | grep "test result"
 cargo build --manifest-path /scratch/code/shibboleth/mnemonic-secret/Cargo.toml -p ms-cli 2>&1 | tail -3
 cargo clippy --manifest-path /scratch/code/shibboleth/mnemonic-secret/Cargo.toml -p ms-cli --all-targets -- -D warnings 2>&1 | tail -3
 ```
@@ -1149,7 +1159,7 @@ Brief the agent with:
 
 - [ ] **Step 2: Apply critical/important findings inline.**
 
-Each critical/important finding gets fixed inline. Re-run `cargo test -p ms-cli --lib && cargo clippy -p ms-cli --all-targets -- -D warnings` after each fix. Commit fixes as a fixup:
+Each critical/important finding gets fixed inline. Re-run `cargo test -p ms-cli && cargo clippy -p ms-cli --all-targets -- -D warnings` after each fix. Commit fixes as a fixup:
 
 ```bash
 git -C /scratch/code/shibboleth/mnemonic-secret add <fixed paths>
@@ -1414,7 +1424,7 @@ mod tests {
 - [ ] **Step 2: Run encode unit tests.**
 
 ```bash
-cargo test --manifest-path /scratch/code/shibboleth/mnemonic-secret/Cargo.toml -p ms-cli --lib cmd::encode 2>&1 | tail -10
+cargo test --manifest-path /scratch/code/shibboleth/mnemonic-secret/Cargo.toml -p ms-cli cmd::encode 2>&1 | tail -10
 ```
 
 Expected: 4 tests pass.
@@ -1979,7 +1989,7 @@ Modules:
 Build is intentionally broken at this commit's HEAD (vectors/v0.1.json
 missing). Phase 3 task 3.1 lands the file; Phase 3 commit is the first
 build-clean checkpoint. Tests still pass for Phase 1 modules in
-isolation (cargo test -p ms-cli --lib --no-run for cmd::encode passes
+isolation (cargo test -p ms-cli --no-run for cmd::encode passes
 because encode doesn't reach into vectors).
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>

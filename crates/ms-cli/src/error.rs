@@ -1,0 +1,266 @@
+//! CliError enum + exit-code mapping + From<ms_codec::Error> dispatch.
+//!
+//! Realizes SPEC §6 (exit-code table), §6.1 (CliError enum), §6.1.1
+//! (dispatch table from ms_codec::Error).
+
+use serde_json::json;
+
+use crate::bip39_friendly::friendly_bip39;
+use crate::codex32_friendly::friendly_codex32;
+
+/// All CLI failure modes. `exit_code()` maps each to the SPEC §6 table.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum CliError {
+    /// User-input error: bad hex, missing args, runtime input failure.
+    BadInput(String),
+    /// BIP-39 phrase parse / checksum failure.
+    Bip39(bip39::Error),
+    /// codex32 parse / BCH-checksum failure (delegated from ms_codec).
+    Codex32(codex32::Error),
+    /// String length not in v0.1 set (delegated from ms_codec).
+    UnexpectedStringLength { got: usize },
+    /// Payload byte length mismatch (delegated from ms_codec).
+    PayloadLengthMismatch { got: usize, tag: [u8; 4] },
+    /// Format violation — wrong HRP/threshold/share/tag/prefix.
+    /// Carries the originating ms-codec variant name + structured fields.
+    FormatViolation {
+        /// e.g., "WrongHrp", "ReservedPrefixViolation"
+        underlying_kind: &'static str,
+        /// Human-readable one-line message.
+        message: String,
+        /// Structured fields preserving the underlying variant's data.
+        details: Option<serde_json::Value>,
+    },
+    /// Valid-but-future-version format (`ReservedTagNotEmittedInV01`).
+    FutureFormat { tag: [u8; 4] },
+    /// Verify round-trip phrase mismatch.
+    VerifyPhraseMismatch,
+}
+
+impl CliError {
+    /// SPEC §6 exit-code mapping.
+    pub fn exit_code(&self) -> u8 {
+        match self {
+            CliError::BadInput(_)
+            | CliError::Bip39(_)
+            | CliError::Codex32(_)
+            | CliError::UnexpectedStringLength { .. }
+            | CliError::PayloadLengthMismatch { .. } => 1,
+            CliError::FormatViolation { .. } => 2,
+            CliError::FutureFormat { .. } => 3,
+            CliError::VerifyPhraseMismatch => 4,
+        }
+    }
+
+    /// Stable kebab-case-style discriminant for JSON `kind` field (SPEC §5.4).
+    pub fn kind(&self) -> &'static str {
+        match self {
+            CliError::BadInput(_) => "BadInput",
+            CliError::Bip39(_) => "Bip39",
+            CliError::Codex32(_) => "Codex32",
+            CliError::UnexpectedStringLength { .. } => "UnexpectedStringLength",
+            CliError::PayloadLengthMismatch { .. } => "PayloadLengthMismatch",
+            CliError::FormatViolation {
+                underlying_kind, ..
+            } => underlying_kind,
+            CliError::FutureFormat { .. } => "FutureFormat",
+            CliError::VerifyPhraseMismatch => "VerifyPhraseMismatch",
+        }
+    }
+
+    /// Friendly human-readable message (stderr text-mode + JSON `message`).
+    pub fn message(&self) -> String {
+        match self {
+            CliError::BadInput(m) => m.clone(),
+            CliError::Bip39(e) => friendly_bip39(e),
+            CliError::Codex32(e) => friendly_codex32(e),
+            CliError::UnexpectedStringLength { got } => {
+                format!("string length {} not in v0.1 set [50, 56, 62, 69, 75]", got)
+            }
+            CliError::PayloadLengthMismatch { got, tag } => format!(
+                "tag {:?} payload length {} not in expected set [16, 20, 24, 28, 32]",
+                std::str::from_utf8(tag).unwrap_or("<non-utf8>"),
+                got
+            ),
+            CliError::FormatViolation { message, .. } => message.clone(),
+            CliError::FutureFormat { tag } => format!(
+                "tag {:?} reserved-not-emitted in v0.1; deferred to v0.2+",
+                std::str::from_utf8(tag).unwrap_or("<non-utf8>")
+            ),
+            CliError::VerifyPhraseMismatch => {
+                "phrase mismatch (decoded does not match --phrase)".to_string()
+            }
+        }
+    }
+
+    /// Structured `details` field for JSON output (SPEC §6.1.1 dispatch table).
+    pub fn details(&self) -> Option<serde_json::Value> {
+        match self {
+            CliError::UnexpectedStringLength { got } => Some(json!({
+                "got": got,
+                "allowed": [50, 56, 62, 69, 75],
+            })),
+            CliError::PayloadLengthMismatch { got, tag } => Some(json!({
+                "tag": std::str::from_utf8(tag).unwrap_or("<non-utf8>"),
+                "got": got,
+                "expected": [16, 20, 24, 28, 32],
+            })),
+            CliError::FormatViolation { details, .. } => details.clone(),
+            CliError::FutureFormat { tag } => Some(json!({
+                "tag": std::str::from_utf8(tag).unwrap_or("<non-utf8>"),
+            })),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for CliError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "error: {}", self.message())
+    }
+}
+
+impl std::error::Error for CliError {}
+
+impl From<bip39::Error> for CliError {
+    fn from(e: bip39::Error) -> Self {
+        CliError::Bip39(e)
+    }
+}
+
+impl From<ms_codec::Error> for CliError {
+    /// SPEC §6.1.1 dispatch table.
+    fn from(e: ms_codec::Error) -> Self {
+        match e {
+            ms_codec::Error::Codex32(c) => CliError::Codex32(c),
+            ms_codec::Error::WrongHrp { got } => CliError::FormatViolation {
+                underlying_kind: "WrongHrp",
+                message: format!("wrong HRP: got {:?}, expected \"ms\"", got),
+                details: Some(json!({ "got": got })),
+            },
+            ms_codec::Error::ThresholdNotZero { got } => CliError::FormatViolation {
+                underlying_kind: "ThresholdNotZero",
+                message: format!(
+                    "threshold not 0 (got '{}'); v0.1 is single-string only",
+                    got as char
+                ),
+                details: Some(json!({ "got": (got as char).to_string() })),
+            },
+            ms_codec::Error::ShareIndexNotSecret { got } => CliError::FormatViolation {
+                underlying_kind: "ShareIndexNotSecret",
+                message: format!(
+                    "share-index not 's' (got '{}'); BIP-93 requires 's' for threshold=0",
+                    got
+                ),
+                details: Some(json!({ "got": got.to_string() })),
+            },
+            ms_codec::Error::TagInvalidAlphabet { got } => CliError::FormatViolation {
+                underlying_kind: "TagInvalidAlphabet",
+                message: format!("tag bytes not in codex32 alphabet: {:?}", got),
+                details: Some(json!({ "got_hex": hex::encode(got) })),
+            },
+            ms_codec::Error::UnknownTag { got } => CliError::FormatViolation {
+                underlying_kind: "UnknownTag",
+                message: format!(
+                    "unknown tag {:?}; not a member of RESERVED_TAG_TABLE",
+                    std::str::from_utf8(&got).unwrap_or("<non-utf8>")
+                ),
+                details: Some(json!({
+                    "tag": std::str::from_utf8(&got).unwrap_or("<non-utf8>")
+                })),
+            },
+            ms_codec::Error::ReservedTagNotEmittedInV01 { got } => {
+                CliError::FutureFormat { tag: got }
+            }
+            ms_codec::Error::ReservedPrefixViolation { got } => CliError::FormatViolation {
+                underlying_kind: "ReservedPrefixViolation",
+                message: format!("reserved-prefix byte was 0x{:02x}, expected 0x00", got),
+                details: Some(json!({ "got": got })),
+            },
+            ms_codec::Error::UnexpectedStringLength { got, allowed: _ } => {
+                CliError::UnexpectedStringLength { got }
+            }
+            ms_codec::Error::PayloadLengthMismatch {
+                got,
+                tag,
+                expected: _,
+            } => CliError::PayloadLengthMismatch { got, tag },
+            // ms_codec::Error is #[non_exhaustive]; v0.2+ may add variants.
+            // If you hit this in production, ms-codec added a variant ms-cli
+            // hasn't dispatched yet — add an arm above for the new variant.
+            other => CliError::BadInput(format!("unhandled ms_codec::Error variant: {:?}", other)),
+        }
+    }
+}
+
+/// Result alias for ms-cli.
+pub type Result<T> = std::result::Result<T, CliError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exit_code_table_per_variant() {
+        assert_eq!(CliError::BadInput("x".into()).exit_code(), 1);
+        assert_eq!(CliError::UnexpectedStringLength { got: 51 }.exit_code(), 1);
+        assert_eq!(
+            CliError::PayloadLengthMismatch {
+                got: 17,
+                tag: *b"entr"
+            }
+            .exit_code(),
+            1
+        );
+        assert_eq!(
+            CliError::FormatViolation {
+                underlying_kind: "WrongHrp",
+                message: "x".into(),
+                details: None,
+            }
+            .exit_code(),
+            2
+        );
+        assert_eq!(CliError::FutureFormat { tag: *b"seed" }.exit_code(), 3);
+        assert_eq!(CliError::VerifyPhraseMismatch.exit_code(), 4);
+    }
+
+    #[test]
+    fn from_ms_codec_dispatches_correctly() {
+        let e: CliError = ms_codec::Error::WrongHrp { got: "mq".into() }.into();
+        assert_eq!(e.kind(), "WrongHrp");
+        assert_eq!(e.exit_code(), 2);
+
+        let e: CliError = ms_codec::Error::ReservedTagNotEmittedInV01 { got: *b"seed" }.into();
+        assert_eq!(e.kind(), "FutureFormat");
+        assert_eq!(e.exit_code(), 3);
+
+        let e: CliError = ms_codec::Error::UnexpectedStringLength {
+            got: 51,
+            allowed: &[],
+        }
+        .into();
+        assert_eq!(e.kind(), "UnexpectedStringLength");
+        assert_eq!(e.exit_code(), 1);
+    }
+
+    #[test]
+    fn details_carries_structure_for_format_violations() {
+        let e: CliError = ms_codec::Error::ReservedPrefixViolation { got: 0x01 }.into();
+        let details = e.details().expect("FormatViolation has details");
+        assert_eq!(details["got"], 1);
+    }
+
+    #[test]
+    fn kind_for_format_violation_carries_underlying() {
+        let e: CliError = ms_codec::Error::TagInvalidAlphabet { got: [b'A'; 4] }.into();
+        assert_eq!(e.kind(), "TagInvalidAlphabet");
+    }
+
+    #[test]
+    fn display_includes_message() {
+        let e = CliError::BadInput("test message".into());
+        assert_eq!(e.to_string(), "error: test message");
+    }
+}
