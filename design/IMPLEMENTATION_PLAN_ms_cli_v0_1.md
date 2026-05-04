@@ -1021,8 +1021,27 @@ fn read_stdin() -> Result<String> {
 }
 
 /// Strip ALL Unicode whitespace from `s` (per `char::is_whitespace`).
+///
+/// SPEC §3.2 doubling-detection: `ms encode` stdout is the multi-line form
+/// `<ms1>\n\n<chunked-form>` where `<chunked-form>` is the same ms1 with
+/// spaces interspersed. Strip-whitespace collapses these into `<ms1><ms1>`.
+/// Detect even-length stripped output where the first half equals the second
+/// half AND the original input contained whitespace, and return just the first
+/// half. The whitespace guard prevents spurious deduplication of inline args
+/// that happen to have all-repeated bytes (e.g. all-zero hex).
 pub fn strip_whitespace(s: &str) -> String {
-    s.chars().filter(|c| !c.is_whitespace()).collect()
+    let had_whitespace = s.chars().any(|c| c.is_whitespace());
+    let stripped: String = s.chars().filter(|c| !c.is_whitespace()).collect();
+    if had_whitespace {
+        let len = stripped.len();
+        if len > 0 && len % 2 == 0 {
+            let half = len / 2;
+            if stripped.is_char_boundary(half) && stripped[..half] == stripped[half..] {
+                return stripped[..half].to_string();
+            }
+        }
+    }
+    stripped
 }
 
 /// Returns `true` if the supplied arg resolves to stdin (None or "-").
@@ -1036,17 +1055,35 @@ mod tests {
 
     #[test]
     fn strip_whitespace_handles_all_three_workflows() {
-        // Pipe round-trip: encode emits multi-line stdout (ms1 + blank + chunked).
+        // Pipe round-trip with non-equal halves (no dedupe triggered):
         let pipe = "ms10entrsqqqq\n\nms10e ntrsq qqqq qqqq";
-        assert_eq!(strip_whitespace(pipe), "ms10entrsqqqqms10entrsqqqqqqqq");
+        assert_eq!(strip_whitespace(pipe), "ms10entrsqqqqms10entrsqqqqqqqqq");
 
         // Engraver-typed-back chunked form.
         let typed = "ms10e ntrsq qqqqq\nqqqqq cj9sx";
-        assert_eq!(strip_whitespace(typed), "ms10entrsqqqqqqqqqqcj9sx");
+        assert_eq!(strip_whitespace(typed), "ms10entrsqqqqqqqqqqqcj9sx");
 
         // Terminal copy-paste artifacts: leading/trailing whitespace + tabs.
         let pasted = "\t  ms10entrsqqqq  \n";
         assert_eq!(strip_whitespace(pasted), "ms10entrsqqqq");
+    }
+
+    #[test]
+    fn strip_whitespace_dedupes_doubled_content() {
+        // Simulates `ms encode --phrase X | ms decode -` input:
+        // encode stdout is "<ms1>\n\n<chunked>"; chunked is ms1 with spaces.
+        // After strip_whitespace, content is doubled — dedupe to single copy.
+        let canonical = "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f";
+        let chunked = "ms10e ntrsq qqqqq qqqqq qqqqq qqqqq qqqqq qqcj9 sxraq 34v7f";
+        let encode_stdout = format!("{}\n\n{}", canonical, chunked);
+        assert_eq!(strip_whitespace(&encode_stdout), canonical);
+
+        // Single-line ms1 (no doubling) — pass through.
+        assert_eq!(strip_whitespace(canonical), canonical);
+
+        // Multi-line back-typed chunked form (single ms1 across lines) — strip ok.
+        let back_typed = "ms10e ntrsq qqqqq qqqqq qqqqq qqqqq\nqqqqq qqcj9 sxraq 34v7f";
+        assert_eq!(strip_whitespace(back_typed), canonical);
     }
 
     #[test]
@@ -1251,19 +1288,18 @@ use crate::parse::read_input;
 /// `ms encode` arguments.
 ///
 /// `--phrase` and `--hex` form a mutually-exclusive group; exactly one MUST
-/// be supplied. The struct-level `#[group(required = true)]` enforces both
-/// "exactly one" and "at least one" at the clap layer; encode_arg_group_
-/// violations.rs (Phase 4) tests this with exit 64 on both-supplied and
-/// neither-supplied inputs.
+/// be supplied. The `#[command(group = ...)]` declaration scopes the exclusion
+/// to just `phrase` + `hex`; encode_arg_group_violations.rs (Phase 4) tests
+/// this with exit 64 on both-supplied and neither-supplied inputs.
 #[derive(Args, Debug)]
-#[group(id = "input", required = true, multiple = false)]
+#[command(group = clap::ArgGroup::new("input").required(true).args(["phrase", "hex"]))]
 pub struct EncodeArgs {
     /// BIP-39 mnemonic. Use `-` to read from stdin.
-    #[arg(long, group = "input")]
+    #[arg(long)]
     pub phrase: Option<String>,
 
     /// Hex-encoded entropy bytes (16/20/24/28/32 B = 32/40/48/56/64 hex chars).
-    #[arg(long, group = "input")]
+    #[arg(long)]
     pub hex: Option<String>,
 
     /// BIP-39 wordlist for the input phrase. Ignored under --hex.
@@ -1794,7 +1830,7 @@ pub struct VerifyArgs {
 pub fn run(args: VerifyArgs) -> Result<()> {
     // Step 1: read ms1 input. Concurrent-stdin guard: if both ms1 and --phrase
     // resolve to stdin, exit immediately (clap can't catch this).
-    if is_stdin_arg(args.ms1.as_deref()) && is_stdin_arg(args.phrase.as_deref()) {
+    if is_stdin_arg(args.ms1.as_deref()) && args.phrase.as_deref() == Some("-") {
         return Err(CliError::BadInput(
             "cannot read both ms1 and --phrase from stdin".into(),
         ));
@@ -3515,6 +3551,8 @@ After Phase 5's opus-review convergence, the v0.1.0 release is locally tagged bu
 ## Plan revision history
 
 (Tracks the plan's own reviewer-loop convergence. Independent of the per-phase reviews.)
+
+- **r5** — 2026-05-04 Phase 4 execution-time fixups (three source bugs surfaced by integration tests): (1) Task 2.2 `EncodeArgs` struct-level `#[group]` changed to `#[command(group = clap::ArgGroup::new(...))]` — the old form made ALL fields mutually exclusive (including `--language`, `--json`, `--no-engraving-card`), not just `phrase`/`hex`; (2) Task 2.5 `verify.rs` concurrent-stdin guard tightened to `args.phrase.as_deref() == Some("-")` instead of `is_stdin_arg(args.phrase.as_deref())` — the old form fired when `--phrase` was absent (None), preventing any stdin-piped `ms verify -` without `--phrase`; (3) Task 1.8 `parse.rs::strip_whitespace` gains doubling-detection (SPEC §3.2 step 4 per r7) — naive strip-whitespace collapsed `ms encode` multi-line stdout into a doubled `<ms1><ms1>` string, and a `had_whitespace` gate prevents the guard from firing on all-zero inline hex args.
 
 - **r1** — 2026-05-04 initial draft via `superpowers:writing-plans` skill (~3500 lines, 5 phases, 32 tasks, ~21 unit + ~30 integration tests projected).
 - **r4** — 2026-05-04 Phase 2 execution-time fixup: ms_codec::Payload is also #[non_exhaustive] (parallel to ms_codec::Error in r2), so cmd/decode.rs and cmd/verify.rs match expressions need wildcard arms. Two unreachable!() arms added to each file inline; same plan-r2-fix-pattern.

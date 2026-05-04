@@ -19,19 +19,18 @@ use crate::parse::{read_input, read_phrase_input};
 /// `ms encode` arguments.
 ///
 /// `--phrase` and `--hex` form a mutually-exclusive group; exactly one MUST
-/// be supplied. The struct-level `#[group(required = true)]` enforces both
-/// "exactly one" and "at least one" at the clap layer; encode_arg_group_
-/// violations.rs (Phase 4) tests this with exit 64 on both-supplied and
-/// neither-supplied inputs.
+/// be supplied. The `#[command(group = ...)]` declaration scopes the exclusion
+/// to just `phrase` + `hex`; encode_arg_group_violations.rs (Phase 4) tests
+/// this with exit 64 on both-supplied and neither-supplied inputs.
 #[derive(Args, Debug)]
-#[group(id = "input", required = true, multiple = false)]
+#[command(group = clap::ArgGroup::new("input").required(true).args(["phrase", "hex"]))]
 pub struct EncodeArgs {
     /// BIP-39 mnemonic. Use `-` to read from stdin.
-    #[arg(long, group = "input")]
+    #[arg(long)]
     pub phrase: Option<String>,
 
     /// Hex-encoded entropy bytes (16/20/24/28/32 B = 32/40/48/56/64 hex chars).
-    #[arg(long, group = "input")]
+    #[arg(long)]
     pub hex: Option<String>,
 
     /// BIP-39 wordlist for the input phrase. Ignored under --hex.

@@ -39,7 +39,7 @@ pub struct VerifyArgs {
 pub fn run(args: VerifyArgs) -> Result<()> {
     // Step 1: read ms1 input. Concurrent-stdin guard: if both ms1 and --phrase
     // resolve to stdin, exit immediately (clap can't catch this).
-    if is_stdin_arg(args.ms1.as_deref()) && is_stdin_arg(args.phrase.as_deref()) {
+    if is_stdin_arg(args.ms1.as_deref()) && args.phrase.as_deref() == Some("-") {
         return Err(CliError::BadInput(
             "cannot read both ms1 and --phrase from stdin".into(),
         ));

@@ -288,6 +288,7 @@ Every command accepts its primary input (the ms1 string for decode/inspect/verif
 1. Read until EOF.
 2. Strip ALL Unicode whitespace (per `char::is_whitespace`) from the input.
 3. Pass the resulting string to the parser.
+4. **Doubling-detection guard:** if the stripped result has even length AND its first half equals its second half, take only the first half. This covers the `ms encode | ms decode -` pipe case where encode's multi-line stdout (`<ms1>\n\n<chunked-form-with-spaces>`) collapses under naive strip-whitespace into a literal `<ms1><ms1>` doubled string. The doubling-detection guard preserves the architect r1-C2 resolution (one mechanism handles three workflows) without forcing encode to abandon its engraving-friendly multi-line stdout.
 
 This handles three cases with one mechanism:
 
@@ -789,6 +790,8 @@ Per the 2026-05-03 workflow refinement, brainstorm/spec/plan reviewer reports st
 ## Revision history
 
 (Tracks this SPEC's reviewer-loop convergence. Independent of brainstorm-stage architect rounds.)
+
+- **r7** — 2026-05-04 SPEC §3.2 amended for stdin doubling-detection guard, surfaced by Phase 4 integration test `encode_pipe_to_decode_recovers_phrase`. The architect r1-C2 strip-whitespace resolution had an unforeseen interaction with Q6's multi-line encode stdout: under naive strip-whitespace, the pipe input collapsed to a literal `<ms1><ms1>` doubled string, failing the v0.1 length check. SPEC §3.2 step 4 adds an even-length-half-equal guard that yields the first half. Implementation in `parse.rs::strip_whitespace`. Single covered unit test (`strip_whitespace_dedupes_doubled_content`) + integration test re-pass.
 
 - **r1** — 2026-05-04 initial draft from converged brainstorm.
 - **r6** — 2026-05-04 lockstep correction during IMPLEMENTATION_PLAN r1 review: `bip39::Error::InvalidWord` → `UnknownWord` (the actual variant name in `bip39 = "2.2.2"`; verified against the upstream crate's source). Two places in this SPEC: §2.1 BIP-39 wordlist mismatch row, §6.2 mapper variant list. The plan inherited this typo from the SPEC; both corrected together. Mechanical correction (variant-name only); no behavioral semantic change.
