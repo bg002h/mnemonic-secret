@@ -31,7 +31,7 @@ contract still round-trip through ms-codec's higher-level decode/encode?"
 | 93.1 | `ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw` | 0 | `test` | 128-bit (short) | OUT-OF-SCOPE-PER-SPEC | id `test` is not in ms-codec's `RESERVED_TAG_TABLE` (`entr` only emit; `seed`/`xprv`/`mnem`/`prvk` reserved-not-emitted). BIP-93 valid → ms-codec rejects with reserved-tag error. Negative test in `tests/negative.rs::rule_6_unknown_tag_rejected` covers a structurally-similar case. |
 | 93.2 | `MS12NAMEA320...870HKKQRM` (and 4 sibling shares) | 2 | `name` | 128-bit shares | OUT-OF-SCOPE-PER-USER | v0.1 emits threshold = 0 only; share-decoding is v0.2+ scope. Negative test `rule_3_threshold_not_zero_rejected` already covers the rejection. |
 | 93.3 | `ms13cashs...d6nln` (5 shares) | 3 | `cash` | 128-bit shares | OUT-OF-SCOPE-PER-USER | same as 93.2 |
-| 93.4 | `ms10leetsllhdmn9m42vcsamx24zrxgs3qrl7ahwvhw4fnzrhve25gvezzyqqtum9pgv99ycma` | 0 | `leet` | 256-bit (short) | OUT-OF-SCOPE-PER-SPEC | id `leet` not in `RESERVED_TAG_TABLE`; 32-byte payload IS within ms-codec's `entr` byte-length set, so the equivalent ms-codec input (`ms10entr...` + same payload bits) DOES round-trip. Phase 10 pins the `entr`-tagged 256-bit equivalent. |
+| 93.4 | `ms10leetsllhdmn9m42vcsamx24zrxgs3qrl7ahwvhw4fnzrhve25gvezzyqqtum9pgv99ycma` | 0 | `leet` | 256-bit (short) | COVERED | id `leet` not in `RESERVED_TAG_TABLE`; 32-byte payload IS within ms-codec's `entr` byte-length set. `tests/bip93_cross_format.rs::bip93_vector_4_payload_extracts_via_upstream` + `bip93_vector_4_payload_round_trips_as_ms_codec_entr` pin the 32-byte payload extraction + entr re-encoding round-trip + upstream-parser conformance of the ms-codec output. |
 | 93.5 | `MS100C8VSM32ZX...` 64-byte master seed (long) | 0 | `0C8V` (random) | 512-bit (long) | OUT-OF-SCOPE-PER-USER | 64-byte payload + ms-codec's 0x00 prefix overflows BIP-93 long bracket (proven in `BRAINSTORM_ms_v0_1.md` r6 spike); v0.1 reserves `seed` but rejects emit/decode. |
 
 ### Invalid vectors (42 strings)
@@ -46,28 +46,28 @@ are direct delegates to BIP-93 invariants.
 
 ### ms-codec custom corpus
 
-`tests/vectors/v0.1.json` — 2 vectors. Source: hand-computed against
-BIP-39 abandon canonical entropies; `tests/vectors.rs::v01_corpus_round_trips`
-asserts decode + re-encode bit-identity.
+`tests/vectors/v0.1.json` — 6 vectors (was 2 in v0.1.0; +4 in v0.1.1).
+Source: hand-computed against BIP-39 abandon canonical entropies (and one
+non-zero vector); `tests/vectors.rs::v01_corpus_round_trips` asserts
+decode + re-encode bit-identity.
 
 | # | Description | Entropy | ms1 | Status | Notes |
 |---|---|---|---|---|---|
 | MSV1 | 12-word abandon | `00000000000000000000000000000000` | `ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f` | COVERED | `tests/vectors.rs::v01_corpus_round_trips` |
-| MSV2 | 24-word abandon | `0000...` (32 B) | `ms10entrsqqq...qqqqcwugpdxtfme2w` | COVERED | same |
-
-Phase 10 deliverable: extend the corpus with at least one vector each at
-the remaining 3 BIP-39-bijective lengths (15-word/20 B, 18-word/24 B,
-21-word/28 B) so the v0.1 emit-set boundary is fully pinned. Optional:
-add a non-zero entropy vector (currently both vectors are all-zero).
+| MSV2 | 15-word all-zero | `0000...` (20 B) | `ms10entrsqqq...qqqqke34pjrgn5p6k` | COVERED | same (added v0.1.1) |
+| MSV3 | 18-word all-zero | `0000...` (24 B) | `ms10entrsqqq...qqqqsqgw5k4rjyhy0` | COVERED | same (added v0.1.1) |
+| MSV4 | 21-word all-zero | `0000...` (28 B) | `ms10entrsqqq...qqqqkt649dq594pyz` | COVERED | same (added v0.1.1) |
+| MSV5 | 24-word abandon | `0000...` (32 B) | `ms10entrsqqq...qqqqcwugpdxtfme2w` | COVERED | same |
+| MSV6 | 15-word non-zero | `0123...4567` (20 B) | `ms10entrsqqqjx3t83x4ummcpydzk0zdtehhszg69vucrgd4pcjx3kkj` | COVERED | same (added v0.1.1; catches entropy-bit-ordering bugs zero-entropy vectors miss) |
 
 ### BIP-93 valid-string conversions to ms-codec equivalents
 
-Phase 10 deliverable: pin a "BIP-93 §Test Vector 93.4 (256-bit `leet`)
-re-encoded with tag `entr` round-trips" test, verifying ms-codec is a
-proper sub-format of upstream codex32 at the byte level for the entr
-length bucket. This catches any drift in the upstream bit-packing across
-`rust-codex32` patch versions (we exact-pin at `=0.1.0`, so drift is gated
-to manual bumps).
+**RESOLVED v0.1.1.** `tests/bip93_cross_format.rs` pins BIP-93 §93.4's 32-byte
+payload extraction via upstream `rust-codex32` and re-encoding as ms-codec
+entr; the ms-codec output is then re-parsed by upstream codex32 to confirm
+ms-codec is a proper sub-format. This catches any drift in upstream bit-packing
+across `rust-codex32` patch versions (we exact-pin at `=0.1.0`, so drift is
+gated to manual bumps).
 
 ---
 
@@ -108,14 +108,18 @@ Phase 10 also adds (or audits the absence of):
 
 | Category | Total vectors | Covered | Missing (in-scope) | Out-of-scope-per-user | Out-of-scope-per-spec |
 |---|---|---|---|---|---|
-| BIP-93 valid (5) | 5 | 0 | 1 (Phase 10 — re-encode 93.4 as entr) | 3 (shares + 64-B seed) | 1 (id `test`) |
+| BIP-93 valid (5) | 5 | 1 (93.4 via cross-format pin, v0.1.1) | 0 | 3 (shares + 64-B seed) | 1 (id `test`) |
 | BIP-93 invalid (42) | 42 | rules 1–14 in `negative.rs` | 0 | 0 | 42 (delegated upstream) |
-| ms-codec custom corpus | 2 | 2 | 3 (other entr lengths) + 1 non-zero | 0 | 0 |
+| ms-codec custom corpus | 6 | 6 | 0 | 0 | 0 |
 | BIP-39 entropy↔mnemonic | n/a | 3 (12/24 + property) | 0 | 0 | Trezor byte pin → toolkit |
-| **TOTAL net-new pins (Phase 10)** | — | — | **~5** | — | — |
+| **TOTAL net-new pins (Phase 10, shipped v0.1.1)** | — | **6** (4 corpus entries + 2 cross-format tests) | — | — | — |
 
-Phase 10 target: ~5 net-new tests (3 length-bucket vectors + 1 non-zero
-entropy + 1 BIP-93→entr conversion).
+Phase 10 shipped: 4 corpus entries (15/18/21-word all-zero + 1 non-zero
+20-B) extending `tests/vectors/v0.1.json` from 2 → 6 vectors, plus
+`tests/bip93_cross_format.rs` with 2 cross-format conformance tests.
+Test count delta: 127 → 129 (+2 distinct test functions; the corpus loop
+test absorbs the 4 new corpus entries without adding test-function
+counts).
 
 ---
 
@@ -128,11 +132,10 @@ entropy + 1 BIP-93→entr conversion).
    contract), all of which are already exercised in `tests/forward_compat.rs`,
    `tests/negative.rs`, `tests/round_trip.rs`.
 
-2. **AMBIGUOUS — non-zero entropy not yet in custom corpus.** Both
-   `tests/vectors/v0.1.json` entries have all-zero entropy. A bug
-   that flips entropy-bit ordering would not surface against zero
-   entropy. **Action:** Phase 10 adds at least one non-zero entropy
-   vector at one of the 5 length buckets. Cheap; high catch value.
+2. **RESOLVED v0.1.1 — non-zero entropy added to custom corpus.** MSV6
+   in `tests/vectors/v0.1.json` is a 20-byte non-zero vector
+   (`0123456789abcdef0123456789abcdef01234567`). A bug that flipped
+   entropy-bit ordering would now surface as an MSV6 mismatch.
 
 3. **No cross-impl conformance corpus exists.** ms1 has no second
    independent encoder to cross-validate against (rust-codex32 is the
