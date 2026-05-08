@@ -69,4 +69,4 @@ ms1 v0.1 does NOT carry the BIP-39 wordlist language on the wire. A user whose o
 
 ## License
 
-CC0 1.0 Universal. See [LICENSE](LICENSE).
+MIT License. See [LICENSE](LICENSE).

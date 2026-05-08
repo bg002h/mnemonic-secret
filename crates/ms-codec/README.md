@@ -57,4 +57,4 @@ Full design documents live in the [parent repo](https://github.com/bg002h/mnemon
 
 ## License
 
-CC0 1.0 Universal.
+MIT License.
