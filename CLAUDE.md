@@ -31,6 +31,10 @@ The user established this workflow on md1 v0.6 / v0.7 and applied it consistentl
 8. **Per-phase commit cadence:** feature commit + fixup commit (after review). Sometimes a third nit-cleanup commit.
 9. **Terse code and doc-comments.** Short doc-comments, no narrative module prose.
 
+## Manual coverage
+
+The end-user manual for the m-format star lives in the sibling `bg002h/mnemonic-toolkit` repo at `docs/manual/`. v0.1 of the manual mirrors `ms-cli` verbatim under `docs/manual/src/40-cli-reference/43-ms.md`. **Any flag/API change to `ms-cli` in this repo must update that chapter in lockstep with the implementing PR.** The manual's `tests/lint.sh flag-coverage` step gates on missing flags. See `design/FOLLOWUPS.md` entry `manual-cli-surface-mirror` for the canonical record; primary entry lives in the toolkit repo.
+
 ## Cross-repo coordination
 
 Four-way star: `descriptor-mnemonic` (md1) ↔ `mnemonic-key` (mk1) ↔ `mnemonic-secret` (ms1) ↔ future `mnemonic-toolkit`.

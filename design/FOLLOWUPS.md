@@ -30,6 +30,15 @@ Single source of truth for items that surfaced during a review or implementation
 
 ## Open items
 
+### `manual-cli-surface-mirror` — ms-cli flag/API changes must mirror to the toolkit-side user manual
+
+- **Surfaced:** 2026-05-07, m-format-star user manual v0.1 release in `bg002h/mnemonic-toolkit` (`manual-v0.1.0` tag; toolkit PR #1).
+- **Where:** Cross-repo coordination only; no ms-codec / ms-cli source change required at filing time. Future ms-cli flag additions must touch `mnemonic-toolkit/docs/manual/src/40-cli-reference/43-ms.md` in lockstep.
+- **What:** v0.1 of the m-format-star user manual lives in the `mnemonic-toolkit` repo and mirrors `ms-cli`'s 5 subcommands verbatim against ms-codec v0.1.1 / ms-cli v0.1.0. The manual's `tests/lint.sh flag-coverage` CI step parses `--help` output for each `<binary, subcommand>` pair and asserts each flag appears in the manual chapter. Adding or removing a flag in `ms-cli` without updating the manual will fail the manual-side CI on the next push to `docs/manual/`. **Companion:** primary entry `manual-cli-surface-mirror` in `mnemonic-toolkit/design/FOLLOWUPS.md`; sibling companions in `descriptor-mnemonic/design/FOLLOWUPS.md` and `mnemonic-key/design/FOLLOWUPS.md`.
+- **Why filed:** the manual is a separate artifact (its own `manual-v*` versioning); without an explicit mirror invariant, sibling-side flag changes would silently drift the manual.
+- **Status:** `open` (mirror invariant active for the lifetime of `mnemonic-toolkit/docs/manual/`)
+- **Tier:** `cross-repo`
+
 ### `phase-2-3-low-1` — envelope.rs defensive empty-payload arm yields misleading error variant
 
 - **Surfaced:** Phase 2+3 review r1 (`design/agent-reports/phase-2-3-envelope-encode-decode-review-r1.md` low-1).
