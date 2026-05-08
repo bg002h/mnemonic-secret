@@ -41,4 +41,4 @@ All commands support stdin input (`-` or omitted positional) and `--json` for to
 
 ## License
 
-CC0 1.0 Universal.
+MIT License.
