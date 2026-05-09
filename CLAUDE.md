@@ -33,7 +33,7 @@ The user established this workflow on md1 v0.6 / v0.7 and applied it consistentl
 
 ## Manual coverage
 
-The end-user manual for the m-format star lives in the sibling `bg002h/mnemonic-toolkit` repo at `docs/manual/`. v0.1 of the manual mirrors `ms-cli` verbatim under `docs/manual/src/40-cli-reference/43-ms.md`. **Any flag/API change to `ms-cli` in this repo must update that chapter in lockstep with the implementing PR.** The manual's `tests/lint.sh flag-coverage` step gates on missing flags. See `design/FOLLOWUPS.md` entry `manual-cli-surface-mirror` for the canonical record; primary entry lives in the toolkit repo.
+The end-user manual for the m-format constellation lives in the sibling `bg002h/mnemonic-toolkit` repo at `docs/manual/`. The manual mirrors all four CLIs (`mnemonic`, `md-cli`, `ms-cli`, `mk-cli`) verbatim — `ms-cli`'s mirror chapter is `docs/manual/src/40-cli-reference/43-ms.md`. **Any flag/API change to `ms-cli` in this repo must update that chapter in lockstep with the implementing PR.** The manual's `tests/lint.sh flag-coverage` step gates on missing flags. See `design/FOLLOWUPS.md` entry `manual-cli-surface-mirror` for the canonical record; primary entry lives in the toolkit repo.
 
 ## Cross-repo coordination
 
