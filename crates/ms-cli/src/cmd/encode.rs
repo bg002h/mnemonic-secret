@@ -47,17 +47,32 @@ pub struct EncodeArgs {
 }
 
 /// Run `ms encode` with the parsed args. Writes to stdout/stderr per SPEC §2.1.
-pub fn run(args: EncodeArgs) -> Result<()> {
+pub fn run(mut args: EncodeArgs) -> Result<()> {
+    use zeroize::Zeroizing;
+    // SPEC v0.9.0 §1 item 2 — consume + immediately wrap the clap-owned
+    // secret fields (phrase / hex) at `run()` entry. clap-derive does not
+    // natively emit `Zeroizing<String>`, so we `mem::take` the Option
+    // contents, wrapping the captured String. The clap-owned `Option<String>`
+    // slots are left as `None` (its allocation freed; the actual bytes are
+    // now in the Zeroizing wrapper and will be scrubbed on drop).
+    let phrase_arg: Option<Zeroizing<String>> =
+        std::mem::take(&mut args.phrase).map(Zeroizing::new);
+    let hex_arg: Option<Zeroizing<String>> =
+        std::mem::take(&mut args.hex).map(Zeroizing::new);
+
     // clap's mutually-exclusive group enforces exactly-one-of-{phrase,hex}.
-    let (entropy, language_for_card): (Vec<u8>, Option<&str>) =
-        if let Some(phrase_arg) = &args.phrase {
-            let phrase = read_phrase_input(Some(phrase_arg))?;
+    let (entropy, language_for_card): (Zeroizing<Vec<u8>>, Option<&str>) =
+        if let Some(phrase_arg) = &phrase_arg {
+            let phrase: Zeroizing<String> = read_phrase_input(Some(phrase_arg.as_str()))?;
             let lang: Language = args.language.into();
-            let mnemonic = Mnemonic::parse_in(lang, &phrase)?;
-            (mnemonic.to_entropy(), Some(args.language.as_str()))
-        } else if let Some(hex_arg) = &args.hex {
-            let hex_str = read_input(Some(hex_arg))?;
-            let bytes = parse_hex_entropy(&hex_str)?;
+            // SAFETY: third-party-blocked — `bip39::Mnemonic` has no Drop+
+            // Zeroize; tracked at FOLLOWUP `rust-bip39-mnemonic-zeroize-upstream`
+            // (companion of the mnemonic-toolkit cycle entry).
+            let mnemonic = Mnemonic::parse_in(lang, phrase.as_str())?;
+            (Zeroizing::new(mnemonic.to_entropy()), Some(args.language.as_str()))
+        } else if let Some(hex_arg) = &hex_arg {
+            let hex_str = Zeroizing::new(read_input(Some(hex_arg.as_str()))?);
+            let bytes = Zeroizing::new(parse_hex_entropy(&hex_str)?);
             (bytes, None)
         } else {
             // clap's required-group should have caught this; defensive.
@@ -66,11 +81,16 @@ pub fn run(args: EncodeArgs) -> Result<()> {
             ));
         };
 
-    let ms1 = ms_codec::encode(Tag::ENTR, &Payload::Entr(entropy.clone()))?;
+    // ms_codec::Payload::Entr(Vec<u8>) is the public-API caller-wrap-contract
+    // shape; clone the wrapped buffer's contents into the public Vec at the
+    // call boundary. The original `entropy` Zeroizing<Vec<u8>> scrubs on drop
+    // at function exit. (R1 N-1 fold — removed intermediate
+    // `entropy_for_codec` indirection.)
+    let ms1 = ms_codec::encode(Tag::ENTR, &Payload::Entr((*entropy).clone()))?;
     let word_count = entropy.len() * 3 / 4; // 16->12, 20->15, 24->18, 28->21, 32->24
 
     if args.json {
-        emit_json(&ms1, language_for_card, word_count, &entropy)?;
+        emit_json(&ms1, language_for_card, word_count, &entropy[..])?;
     } else {
         emit_text(&ms1, language_for_card, word_count, args.no_engraving_card)?;
     }

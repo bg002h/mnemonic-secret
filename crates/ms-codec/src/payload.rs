@@ -14,6 +14,16 @@ pub enum PayloadKind {
 }
 
 /// v0.1 payload.
+///
+/// **Caller-wrap contract (SPEC v0.9.0 §1 item 2):** the `Vec<u8>` inside
+/// `Payload::Entr` is NOT zeroize-wrapped — widening the public type to
+/// `Zeroizing<Vec<u8>>` is a breaking change deferred indefinitely per
+/// SPEC §3 OOS-2. Callers MUST wrap the byte buffer at the use site
+/// (e.g., `let bytes = Zeroizing::new((*p.as_bytes()).to_vec());`)
+/// so that the secret-material lifetime ends with a scrubbed drop.
+/// ms-codec internally minimizes the un-scrubbed lifetime: encode + decode
+/// path locals are `Zeroizing<Vec<u8>>`; only the public `Payload::Entr`
+/// boundary is unwrapped.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Payload {
@@ -26,6 +36,10 @@ pub enum Payload {
     /// FIPS-style entropy-quality checks would slow encoding and provide false
     /// assurance — they cannot detect attacker-supplied "pseudo-random" seeds
     /// crafted to pass standard randomness tests. See SPEC §3.6.
+    ///
+    /// **Caller-wrap reminder:** wrap this `Vec<u8>` in `Zeroizing` at the
+    /// use site so it scrubs on drop. ms-codec cannot wrap this for you
+    /// without a breaking public-API change.
     Entr(Vec<u8>),
 }
 

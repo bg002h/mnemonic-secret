@@ -36,21 +36,29 @@ pub struct VerifyArgs {
 }
 
 /// Run `ms verify` per SPEC §2.4.1 validation order.
-pub fn run(args: VerifyArgs) -> Result<()> {
+pub fn run(mut args: VerifyArgs) -> Result<()> {
+    use zeroize::Zeroizing;
+    // SPEC v0.9.0 §1 item 2 — consume + immediately wrap the clap-owned
+    // secret-bearing `phrase` field at `run()` entry. clap-derive does not
+    // natively emit `Zeroizing<String>`; `mem::take` empties the slot and
+    // moves the captured String into a scrub-on-drop wrapper.
+    let phrase_arg: Option<Zeroizing<String>> =
+        std::mem::take(&mut args.phrase).map(Zeroizing::new);
+
     // Step 1: read ms1 input. Concurrent-stdin guard: if both ms1 and --phrase
     // resolve to stdin, exit immediately (clap can't catch this).
-    if is_stdin_arg(args.ms1.as_deref()) && args.phrase.as_deref() == Some("-") {
+    if is_stdin_arg(args.ms1.as_deref()) && phrase_arg.as_deref().map(|s| s.as_str()) == Some("-") {
         return Err(CliError::BadInput(
             "cannot read both ms1 and --phrase from stdin".into(),
         ));
     }
-    let ms1 = read_input(args.ms1.as_deref())?;
+    let ms1: Zeroizing<String> = Zeroizing::new(read_input(args.ms1.as_deref())?);
 
     // Step 2: decode the ms1 string. On failure, dispatch per §6.1.1 — phrase
     // is NEVER parsed in this branch.
     let decoded = ms_codec::decode(&ms1);
-    let entropy = match decoded {
-        Ok((_tag, Payload::Entr(b))) => b,
+    let entropy: Zeroizing<Vec<u8>> = match decoded {
+        Ok((_tag, Payload::Entr(b))) => Zeroizing::new(b),
         // ms_codec::Payload is #[non_exhaustive]; v0.2+ may add variants.
         // v0.1 ms-codec only decodes to Payload::Entr; defensive arm only.
         Ok((_, _)) => unreachable!("ms-codec v0.1 only decodes to Payload::Entr"),
@@ -62,18 +70,25 @@ pub fn run(args: VerifyArgs) -> Result<()> {
     };
 
     // Step 3: parse --phrase if present.
-    let phrase_supplied = match &args.phrase {
-        Some(p) => Some(read_phrase_input(Some(p))?),
+    let phrase_supplied: Option<Zeroizing<String>> = match phrase_arg.as_ref() {
+        Some(p) => Some(read_phrase_input(Some(p.as_str()))?),
         None => None,
     };
 
     // Step 4: compare or exit-0 quick.
+    // SAFETY: third-party-blocked — `bip39::Mnemonic` has no Drop+Zeroize;
+    // FOLLOWUP `rust-bip39-mnemonic-zeroize-upstream`. Lifetimes are bounded
+    // here: supplied_mnemonic + derived_mnemonic both drop at end of arm.
     if let Some(supplied) = phrase_supplied {
         let lang: Language = args.language.into();
-        let supplied_mnemonic = Mnemonic::parse_in(lang, &supplied)?;
-        let derived_mnemonic =
-            Mnemonic::from_entropy_in(lang, &entropy).expect("ms-codec validates entropy length");
-        if supplied_mnemonic.to_string() == derived_mnemonic.to_string() {
+        let supplied_mnemonic = Mnemonic::parse_in(lang, supplied.as_str())?;
+        let derived_mnemonic = Mnemonic::from_entropy_in(lang, &entropy[..])
+            .expect("ms-codec validates entropy length");
+        // The success-log path wraps the derived phrase before passing to
+        // emit_round_trip_ok; the comparison itself uses String temporaries.
+        let supplied_str: Zeroizing<String> = Zeroizing::new(supplied_mnemonic.to_string());
+        let derived_str: Zeroizing<String> = Zeroizing::new(derived_mnemonic.to_string());
+        if *supplied_str == *derived_str {
             return emit_round_trip_ok(&derived_mnemonic, args.language.as_str(), args.json);
         } else {
             return Err(CliError::VerifyPhraseMismatch);

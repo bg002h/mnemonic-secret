@@ -34,7 +34,11 @@ pub struct DecodeArgs {
 
 /// Run `ms decode`.
 pub fn run(args: DecodeArgs) -> Result<()> {
-    let ms1 = read_input(args.ms1.as_deref())?;
+    use zeroize::Zeroizing;
+    // Note: `ms1` is the codex32 string, not directly secret-bearing,
+    // but it's encrypted-form-equivalent (an attacker with this string
+    // can recover the entropy). Wrap defensively.
+    let ms1: Zeroizing<String> = Zeroizing::new(read_input(args.ms1.as_deref())?);
 
     let (cli_lang, defaulted) = match args.language {
         Some(l) => (l, false),
@@ -43,22 +47,26 @@ pub fn run(args: DecodeArgs) -> Result<()> {
     let lang: Language = cli_lang.into();
 
     let (_tag, payload) = ms_codec::decode(&ms1)?;
-    let entropy = match payload {
-        Payload::Entr(b) => b,
+    // SPEC v0.9.0 §1 item 2 — wrap the entropy Vec at the consumer
+    // boundary per `payload.rs` caller-wrap contract.
+    let entropy: Zeroizing<Vec<u8>> = match payload {
+        Payload::Entr(b) => Zeroizing::new(b),
         // ms_codec::Payload is #[non_exhaustive]; v0.2+ may add variants.
         // v0.1 ms-codec emits Entr only — unreachable in practice.
         _ => unreachable!("ms-codec v0.1 only decodes to Payload::Entr"),
     };
 
-    let mnemonic = Mnemonic::from_entropy_in(lang, &entropy)
+    // SAFETY: third-party-blocked — `bip39::Mnemonic` has no Drop+Zeroize;
+    // FOLLOWUP `rust-bip39-mnemonic-zeroize-upstream`.
+    let mnemonic = Mnemonic::from_entropy_in(lang, &entropy[..])
         .expect("ms-codec validates entropy length; from_entropy_in cannot fail");
-    let phrase = mnemonic.to_string();
+    let phrase: Zeroizing<String> = Zeroizing::new(mnemonic.to_string());
     let word_count = phrase.split_whitespace().count();
 
     if args.json {
-        emit_json(&entropy, &phrase, cli_lang.as_str(), word_count, defaulted)?;
+        emit_json(&entropy[..], &phrase, cli_lang.as_str(), word_count, defaulted)?;
     } else {
-        emit_text(&entropy, &phrase, cli_lang.as_str(), word_count, defaulted)?;
+        emit_text(&entropy[..], &phrase, cli_lang.as_str(), word_count, defaulted)?;
     }
     Ok(())
 }
