@@ -17,7 +17,7 @@ name = "ms"
 path = "src/main.rs"
 
 [dependencies]
-ms-codec = { path = "../ms-codec", version = "=0.1.1" }
+ms-codec = { path = "../ms-codec", version = "=0.1.2" }
 bip39 = { version = "2", features = ["all-languages"] }
 clap = { version = "4", features = ["derive"] }
 codex32 = { workspace = true }

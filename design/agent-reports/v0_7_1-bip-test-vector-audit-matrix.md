@@ -1,5 +1,11 @@
 # v0.1.1 BIP test vector audit matrix — mnemonic-secret (ms-codec)
 
+**SUPERSEDED at v0.8.0** — see
+[`v0_8_0-bip-test-vector-audit-matrix.md`](v0_8_0-bip-test-vector-audit-matrix.md)
+for the BIP-93 full inline corpus added at v0.8.0 plus the
+"42 invalid → 64 invalid" count correction. Coverage in this file
+is still authoritative for everything v0.8.0 did not change.
+
 Built 2026-05-07 per the v0.7.1 audit cycle plan
 (`/home/bcg/.claude/plans/let-s-work-on-the-soft-waterfall.md`).
 

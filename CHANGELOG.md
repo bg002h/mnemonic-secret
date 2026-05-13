@@ -61,6 +61,42 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 77 tests across the surface: 29 unit (Phase 1 modules) + 48 integration (`assert_cmd`). cargo build / clippy --all-targets -D warnings / fmt --check all clean.
 
+## ms-codec [0.1.2] — 2026-05-13
+
+v0.8.0 cross-repo BIP-vector adoption cycle, Phase 2. Cycle SPEC at
+`mnemonic-toolkit/design/SPEC_test_vector_audit_v0_8_0.md`; per-phase
+review at `design/agent-reports/v0_8_0-phase-2-bip93-corpus-r1.md`.
+
+### Added (tests-only; no library API change)
+
+- `tests/bip93_inline_vectors.rs` — full BIP-93 §Test Vectors inline
+  corpus pin. 5 valid cells (§93.1–.5: 16-byte / 16-byte / 16-byte /
+  32-byte / 64-byte master seeds across k=0 / k=2 / k=3 + long-codex32
+  shapes); 1 parametric cell asserting all 64 BIP-93 §Invalid entries
+  are rejected by `rust-codex32 =0.1.0`; 1 invariant cell guarding the
+  invalid-corpus count.
+- `design/agent-reports/v0_8_0-bip-test-vector-audit-matrix.md` — v0.8.0
+  successor to the v0.7.1 matrix. Cross-cites the toolkit hub matrix +
+  sibling-repo matrices.
+- `design/FOLLOWUPS.md` — `bip-vector-adoption-v0_8` (cycle companion)
+  and `bip93-invalid-corpus-granular-error-pin` (deferred future
+  tightening).
+
+### Corrected
+
+- v0.7.1 audit matrix footnote claimed BIP-93 §Invalid has "42
+  strings"; live count via `gh api repos/bitcoin/bips/contents/bip-0093.mediawiki`
+  is 64. Source-of-truth corrected at v0.8.0; v0.7.1 matrix carries a
+  SUPERSEDED header with forward-pointer.
+
+### What didn't change
+
+- ms1 wire format unchanged.
+- Public API surface unchanged.
+- v0.1 → v0.2 migration contract unchanged.
+- All pre-existing ms-codec tests still pass; +7 cells from this
+  cycle → 59 ms-codec total at v0.1.2.
+
 ## ms-codec [0.1.0] — 2026-05-03
 
 ### What's new

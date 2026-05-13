@@ -30,6 +30,24 @@ Single source of truth for items that surfaced during a review or implementation
 
 ## Open items
 
+### `bip-vector-adoption-v0_8` — cross-repo cycle: BIP-vector adoption v0.8.0
+
+- **Surfaced:** 2026-05-13. Cycle SPEC at `mnemonic-toolkit/design/SPEC_test_vector_audit_v0_8_0.md`. Plan at `/home/bcg/.claude/plans/v0_8_0-bip-vector-adoption.md`. R1 review at `mnemonic-toolkit/design/agent-reports/v0_8_0-phase-0-spec-plan-r1.md`.
+- **Where:** mnemonic-secret Phase 2 = BIP-93 inline corpus adoption in `crates/ms-codec/tests/bip93_inline_vectors.rs` (+5 valid cells + 1 parametric cell asserting all 64 BIP-93 §Invalid entries are rejected by `rust-codex32 =0.1.0`).
+- **What:** This repo's contribution to the v0.8.0 cross-repo vectors-only patch cycle. Closes when the cycle's audit-matrix successor doc lands at `design/agent-reports/v0_8_0-bip-test-vector-audit-matrix.md` (Phase 4) and the patch tag is cut at Phase E. The v0.7.1 matrix's footnote of "42 invalid strings" was corrected to 64 at Phase 0 via `gh api` count of the live BIP-93 §Invalid `<code>`-bullet list.
+- **Status:** `open` (Phase 2 committed; Phase 4 + E pending).
+- **Tier:** `cross-repo`
+- **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md`, `descriptor-mnemonic/design/FOLLOWUPS.md`, `mnemonic-key/design/FOLLOWUPS.md` — same `bip-vector-adoption-v0_8` short-id in each.
+
+### `bip93-invalid-corpus-granular-error-pin` — BIP-93 §Invalid per-vector error-variant classification deferred
+
+- **Surfaced:** 2026-05-13, v0.8.0 Phase 2 design. File-level doc-comment in `tests/bip93_inline_vectors.rs` records the deferral inline.
+- **Where:** `crates/ms-codec/tests/bip93_inline_vectors.rs` — the parametric `all_invalid_vectors_rejected_by_codex32` test asserts only `is_err()`, not which `codex32::Error` variant.
+- **What:** `rust-codex32 =0.1.0`'s `Error` enum is granular enough to distinguish bad-checksum vs invalid-char vs length-violation vs mixed-case. The BIP-93 §Invalid section, however, only says "These examples have incorrect checksums" and does not categorize each of the 64 entries. Pinning the variant per entry would amount to pinning `rust-codex32`'s internal classification rather than a BIP-published claim. Resolution path: classify each invalid vector by inspection (truncated HRP / mixed case / bad checksum / etc.) and assert the matching variant; tightens the test against a `rust-codex32` re-classification on a future bump.
+- **Status:** `open` (coarse `is_err()` shipped at v0.8.0; granular pin is a future tightening).
+- **Tier:** `v1+`
+- **Companion:** None (single-repo concern).
+
 ### `manual-cli-surface-mirror` — ms-cli flag/API changes must mirror to the toolkit-side user manual
 
 - **Surfaced:** 2026-05-07, m-format-star user manual v0.1 release in `bg002h/mnemonic-toolkit` (`manual-v0.1.0` tag; toolkit PR #1).
