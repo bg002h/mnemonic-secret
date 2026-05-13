@@ -27,7 +27,7 @@ use format::{ErrorBodyJson, ErrorEnvelopeJson};
     version,
     about = "ms — engrave-friendly BIP-39 entropy backups (the ms1 format)"
 )]
-struct Cli {
+pub(crate) struct Cli {
     #[command(subcommand)]
     command: Command,
 }
@@ -63,6 +63,19 @@ enum Command {
         after_long_help = "EXAMPLES:\n  ms vectors                # compact JSON\n  ms vectors --pretty       # indented JSON\n  ms vectors | jq '.[0]'    # filter via jq"
     )]
     Vectors(cmd::vectors::VectorsArgs),
+
+    /// Emit a SPEC §7 JSON description of this CLI's flag surface (for `mnemonic-gui`).
+    ///
+    /// Consumed by the `mnemonic-gui` schema-mirror CI gate (v0.2+).
+    /// Intentionally lossy: complex GUI `FlagKind` variants map to
+    /// `"text"` upstream and are hand-overridden in the GUI schema
+    /// file after JSON-bootstrap import. See `bg002h/mnemonic-gui`
+    /// `FOLLOWUPS.md` entry `mnemonic-gui-schema-mirror`.
+    #[command(
+        name = "gui-schema",
+        after_long_help = "EXAMPLES:\n  ms gui-schema | jq .version             # always 1\n  ms gui-schema | jq '.subcommands[].name' # list subcommands\n  ms gui-schema | jq '.subcommands[] | select(.name == \"encode\").flags'"
+    )]
+    GuiSchema,
 }
 
 fn main() -> ExitCode {
@@ -85,6 +98,7 @@ fn main() -> ExitCode {
         Command::Inspect(args) => cmd::inspect::run(args),
         Command::Verify(args) => cmd::verify::run(args),
         Command::Vectors(args) => cmd::vectors::run(args),
+        Command::GuiSchema => cmd::gui_schema::run(),
     };
 
     match result {
@@ -103,6 +117,7 @@ fn is_json_mode(cmd: &Command) -> bool {
         Command::Inspect(a) => a.json,
         Command::Verify(a) => a.json,
         Command::Vectors(_) => false, // vectors output is always JSON-shaped
+        Command::GuiSchema => false,  // gui-schema output is always JSON-shaped
     }
 }
 

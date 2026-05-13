@@ -4,6 +4,23 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.2.0] — 2026-05-12
+
+### What's new
+
+- New `ms gui-schema` subcommand emits SPEC §7 JSON describing the CLI's flag surface (subcommand list, flag names, `required`, `kind`, dropdown `choices`, positionals). Consumed by the [`bg002h/mnemonic-gui`](https://github.com/bg002h/mnemonic-gui) schema-mirror CI gate (v0.2 Phase C). Companion: `bg002h/mnemonic-gui` `FOLLOWUPS.md` entry `mnemonic-gui-schema-mirror`.
+- Implementation walks `clap::CommandFactory::command()` reflection — JSON stays in lockstep with `Cli` automatically; the GUI's mirror gate catches drift.
+- Intentionally lossy: complex GUI `FlagKind` variants map to `"text"` upstream and are hand-overridden in the GUI schema file after JSON-bootstrap import. `"boolean"` is produced for `SetTrue` / `SetFalse` / `Count` actions; `"dropdown"` is produced when `Arg::get_possible_values()` is non-empty.
+
+### What didn't change
+
+- All 5 v0.1 subcommands (`encode`, `decode`, `inspect`, `verify`, `vectors`) keep their flag surface, exit codes (0/1/2/3/4/64), and `--json` schemas verbatim.
+- Wire format (ms1) is unchanged — `ms-codec` is unaffected at `=0.1.1`.
+
+### Tests
+
+11 new integration tests in `tests/gui_schema_emits_spec_v7_json.rs` covering: exit-0, JSON-parseable, `version == 1`, `cli == "ms"`, `encode`/`decode`/`verify` subcommands present, `encode --phrase` / `--hex` flags, `--language` dropdown with hyphenated `chinese-simplified` / `chinese-traditional` (not `simplifiedchinese`), `--json` boolean kind across subcommands, `vectors --pretty` boolean, `inspect` surface. The v0.1 test surface (77 tests) is preserved.
+
 ## ms-cli [0.1.0] — 2026-05-04
 
 ### What's new
