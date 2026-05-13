@@ -6,6 +6,8 @@
 
 use std::io::{self, Read};
 
+use zeroize::Zeroizing;
+
 use crate::error::{CliError, Result};
 
 /// Read input from either the supplied arg (if `Some` and not `"-"`) or stdin.
@@ -17,9 +19,9 @@ use crate::error::{CliError, Result};
 /// The `arg` is `None` when the positional was omitted, `Some("-")` when the
 /// user explicitly requested stdin, or `Some(s)` when the user provided a value.
 pub fn read_input(arg: Option<&str>) -> Result<String> {
-    let raw = match arg {
+    let raw: String = match arg {
         Some(s) if s != "-" => s.to_string(),
-        _ => read_stdin()?,
+        _ => (*read_stdin()?).clone(),
     };
     Ok(strip_whitespace(&raw))
 }
@@ -28,12 +30,15 @@ pub fn read_input(arg: Option<&str>) -> Result<String> {
 /// The returned String is edge-trimmed and internal whitespace runs are
 /// collapsed to single spaces — preserving the space-separated word structure
 /// that `bip39::Mnemonic::parse_in` requires.
-pub fn read_phrase_input(arg: Option<&str>) -> Result<String> {
-    let raw = match arg {
-        Some(s) if s != "-" => s.to_string(),
+///
+/// SPEC v0.9.0 §1 item 2 — returns `Zeroizing<String>` so callers can
+/// move the secret-bearing buffer to a scrub-on-drop binding.
+pub fn read_phrase_input(arg: Option<&str>) -> Result<Zeroizing<String>> {
+    let raw: Zeroizing<String> = match arg {
+        Some(s) if s != "-" => Zeroizing::new(s.to_string()),
         _ => read_stdin()?,
     };
-    Ok(normalize_phrase(&raw))
+    Ok(Zeroizing::new(normalize_phrase(&raw)))
 }
 
 /// Normalize a BIP-39 phrase: trim edges and collapse whitespace runs.
@@ -41,8 +46,11 @@ fn normalize_phrase(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn read_stdin() -> Result<String> {
-    let mut buf = String::new();
+fn read_stdin() -> Result<Zeroizing<String>> {
+    // SPEC v0.9.0 §1 item 2 — wrap the raw stdin buffer so the byte
+    // sequence scrubs on drop. The trimmed copy emitted by callers is
+    // their responsibility to wrap.
+    let mut buf: Zeroizing<String> = Zeroizing::new(String::new());
     io::stdin()
         .read_to_string(&mut buf)
         .map_err(|e| CliError::BadInput(format!("failed to read stdin: {}", e)))?;
@@ -149,6 +157,6 @@ mod tests {
     #[test]
     fn read_phrase_input_with_explicit_arg_preserves_spaces() {
         let out = read_phrase_input(Some("abandon abandon about")).unwrap();
-        assert_eq!(out, "abandon abandon about");
+        assert_eq!(out.as_str(), "abandon abandon about");
     }
 }

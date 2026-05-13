@@ -32,6 +32,7 @@ use crate::consts::{
 use crate::error::{Error, Result};
 use crate::tag::Tag;
 use codex32::{Codex32String, Fe};
+use zeroize::Zeroizing;
 
 /// Wire-position offsets relative to the separator index.
 const THRESHOLD_OFFSET: usize = 1;
@@ -119,7 +120,12 @@ pub(crate) fn discriminate(c: &Codex32String) -> Result<(Tag, Vec<u8>)> {
     // and `Codex32String::from_string` (s.len >= 48 for short codex32), the
     // payload is at least 26 codex32 symbols ≈ 16 raw bytes, so it cannot be
     // empty. No defensive `is_empty` arm needed.
-    let payload_with_prefix = c.parts().data();
+    //
+    // SPEC v0.9.0 §1 item 2 — wrap the OWNED payload buffer in `Zeroizing`
+    // so it scrubs on function exit (after the public return clones a
+    // fresh Vec). Caller is responsible for wrapping the returned Vec —
+    // see `payload.rs` doc-comment.
+    let payload_with_prefix: Zeroizing<Vec<u8>> = Zeroizing::new(c.parts().data());
 
     // Reserved-prefix-byte check (SPEC §4 rule 8).
     if payload_with_prefix[0] != RESERVED_PREFIX {
@@ -140,7 +146,13 @@ pub(crate) fn discriminate(c: &Codex32String) -> Result<(Tag, Vec<u8>)> {
 /// and the prefix byte becomes the type discriminator.
 pub(crate) fn package(tag: Tag, payload_bytes: &[u8]) -> Result<Codex32String> {
     // [0x00 reserved-prefix] || payload
-    let mut data = Vec::with_capacity(1 + payload_bytes.len());
+    // SPEC v0.9.0 §1 item 2 — wrap the OWNED encode buffer in `Zeroizing`
+    // so the prefix+payload bytes scrub on function exit. The codex32
+    // crate's `Codex32String` is internally OWNED and not zeroized
+    // (tracked at FOLLOWUPS `rust-codex32-zeroize-upstream`); minimizing
+    // this local's lifetime is the best we can do at the seam.
+    let mut data: Zeroizing<Vec<u8>> =
+        Zeroizing::new(Vec::with_capacity(1 + payload_bytes.len()));
     data.push(RESERVED_PREFIX);
     data.extend_from_slice(payload_bytes);
 
@@ -151,7 +163,7 @@ pub(crate) fn package(tag: Tag, payload_bytes: &[u8]) -> Result<Codex32String> {
         0,
         tag.as_str(),
         Fe::S,
-        &data,
+        &data[..],
     )?)
 }
 

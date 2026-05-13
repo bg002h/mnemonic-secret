@@ -40,9 +40,15 @@ pub fn decode(s: &str) -> Result<(Tag, Payload)> {
     }
 
     // §4 rule 6: tag must be in the v0.1 accept set (currently {entr}).
+    // SPEC v0.9.0 §1 item 2 — wrap the OWNED entropy buffer in `Zeroizing`
+    // so the intermediate scrub runs on function exit. `Payload::Entr(Vec<u8>)`
+    // is the public return shape (unwrapped per SPEC §3 OOS-2); the
+    // caller wraps before storing — see `payload.rs` doc-comment.
+    use zeroize::Zeroizing;
     let payload = match *tag.as_bytes() {
         x if x == TAG_ENTR => {
-            let p = Payload::Entr(payload_bytes);
+            let scrubbed: Zeroizing<Vec<u8>> = Zeroizing::new(payload_bytes);
+            let p = Payload::Entr((*scrubbed).clone());
             // §4 rule 10: validate payload length against the tag's expected set.
             p.validate()?;
             p
