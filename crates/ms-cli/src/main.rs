@@ -82,11 +82,19 @@ fn main() -> ExitCode {
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(e) => {
-            // Clap usage error: print to stderr (clap's default), exit 64
-            // (SPEC §6 — overrides clap's default of 2 to keep 2 reserved for
-            // ms1 format violations).
+            // Clap returns Err for two non-error terminations: --version
+            // (ErrorKind::DisplayVersion) and --help (ErrorKind::DisplayHelp).
+            // Output is on stdout and the canonical Unix exit is 0. The
+            // catch-all 64 below preserves SPEC §6's carve-out for *real*
+            // parse errors (overrides clap's default of 2 to keep 2
+            // reserved for ms1 format violations).
             e.print().ok();
-            return ExitCode::from(64);
+            return match e.kind() {
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
+                    ExitCode::SUCCESS
+                }
+                _ => ExitCode::from(64),
+            };
         }
     };
 
