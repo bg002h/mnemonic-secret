@@ -39,6 +39,16 @@ Single source of truth for items that surfaced during a review or implementation
 - **Tier:** `cross-repo`
 - **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md` — same `secret-memory-hygiene-v0_9-cycle-a` short-id (primary entry). md / mk repos do NOT receive a companion entry this cycle (xpub-only material).
 
+### `secret-memory-hygiene-cycle-b` — cross-repo cycle: mlock infrastructure (Cycle B continuation)
+
+- **Surfaced:** 2026-05-13. Cycle SPEC at `mnemonic-toolkit/design/SPEC_secret_memory_hygiene_v0_9_B.md`. Reviewer-loop CLEAR 0C/0I across R1+R2 (`mnemonic-toolkit/design/agent-reports/v0_9_B-phase-0-spec-r1.md` + `...-r2.md`). Companion FOLLOWUP `cycle-b-pre-spec-questions` in `mnemonic-toolkit/design/FOLLOWUPS.md` captures the 4 pre-SPEC questions + 5 brainstorming-session questions resolved at SPEC drafting. Plan TBD post-P0 (at `~/.claude/plans/v0_9_B-secret-memory-hygiene-cycle-b.md`).
+- **Where:** mnemonic-secret Phase 3b (cross-repo phase, ~40 LOC). New module `crates/ms-cli/src/mlock.rs` carrying an inline copy of the slice fn `pin_pages_for(&[u8]) -> PinnedPageRange` + `PinnedPageRange + Drop` + `MlockState` (process-local) + `report_at_exit()`. Apply-site: `crates/ms-cli/src/parse.rs:45` — `pin_pages_for(s.as_bytes())` after `read_stdin()` returns its `String` (site #5 per Cycle B SPEC §3). `MlockedZeroizing<T>` wrapper is toolkit-only and NOT duplicated in this repo (no OWNED entropy buffer in ms-cli's surface).
+- **What:** Cycle B continues v0.9.0 Cycle A's secret-memory hygiene work. Cycle A added Zeroizing-on-Drop discipline to OWNED secret buffers; Cycle B layers `mlock(2)` page-pinning on top (POSIX-only — Linux + macOS; Windows VirtualLock deferred). Cycle B is cross-repo: toolkit handles sites 1-4 (clap args + ResolvedSlot.entropy + DerivedAccount.entropy + bip85 [u8;64] heap-promoted), ms-cli handles site #5. Inline-copy invariant (Cycle B SPEC §6 G6) is CI-enforced via a normalized diff-manifest against `mnemonic-toolkit/crates/mnemonic-toolkit/src/mlock.rs` covering `{pin_pages_for, PinnedPageRange + Drop, MlockState + accessor + record_failure, report_at_exit, private errno helpers}`. Closes when the PE rollup ships `mnemonic-toolkit-v0.10.0` + `ms-cli-v0.3.0` in lockstep (Cycle B SPEC §4 PE).
+- **Why deferred from Cycle A:** R3 SPLIT-CYCLE finding from Cycle A Phase 0 — combining mlock with Zeroizing would have doubled Cycle A's review surface; splitting keeps each cycle's blast radius reviewable.
+- **Status:** `open` (P0 SPEC shipped 2026-05-13; P1-P3 implementation pending).
+- **Tier:** `cross-repo`
+- **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md` — same `secret-memory-hygiene-cycle-b` short-id (primary tracker entry). md / mk repos do NOT receive a companion entry this cycle (xpub-only material per Cycle A `OOS-md-mk` class).
+
 ### `ms-codec-payload-zeroize-public-api` — widen `Payload::Entr(Vec<u8>)` to `Payload::Entr(Zeroizing<Vec<u8>>)` (breaking)
 
 - **Surfaced:** 2026-05-13, v0.9.0 Cycle A Phase 3 hygiene-matrix R1 (Opus, finding C-1). SPEC §3 `OOS-public-payload` class.
