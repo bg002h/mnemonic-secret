@@ -4,6 +4,26 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.2.1] — 2026-05-12
+
+### Fixed
+
+- `ms --version` and `ms --help` now exit `0` instead of `64`. The
+  v0.2.0 `fn main()` mapped every `Cli::try_parse()` `Err` to
+  `ExitCode::from(64)`, but clap returns `Err` for two non-error
+  terminations as well — `ErrorKind::DisplayVersion` (`--version`)
+  and `ErrorKind::DisplayHelp` (`--help`). The output already
+  prints to stdout in those cases; the canonical Unix convention
+  is exit 0. The fix branches on `e.kind()` and returns
+  `ExitCode::SUCCESS` for the two display variants, preserving the
+  SPEC §6 carve-out (exit 64 instead of clap's default 2, so 2
+  stays reserved for ms1 format violations) for real parse errors.
+  Discovered during `bg002h/mnemonic-gui` v0.2.0 release prep
+  (companion: `bg002h/mnemonic-gui`).
+- Two new regression cells in `tests/exit_codes_table.rs`:
+  `version_flag_exits_zero_and_prints_version` and
+  `help_flag_exits_zero_and_prints_help`.
+
 ## ms-cli [0.2.0] — 2026-05-12
 
 ### What's new
