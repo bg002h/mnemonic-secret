@@ -30,6 +30,15 @@ Single source of truth for items that surfaced during a review or implementation
 
 ## Open items
 
+### `secret-memory-hygiene-v0_9-cycle-a` — cross-repo cycle: OWNED-buffer secret-memory hygiene v0.9.0 Cycle A
+
+- **Surfaced:** 2026-05-13. Cycle SPEC at `mnemonic-toolkit/design/SPEC_secret_memory_hygiene_v0_9_0.md`. Plan at `/home/bcg/.claude/plans/v0_9_0-secret-memory-hygiene.md`. Survey precursor at `mnemonic-toolkit/design/agent-reports/v0_9_0-secret-memory-survey.md`. R1+R2+R3+R4+R5 architect-review disposition at `mnemonic-toolkit/design/agent-reports/v0_9_0-phase-0-spec-plan-r1.md` (5 rounds: Sonnet/Sonnet/Opus/Opus/Sonnet, cleared CLEAR 0C/0I after R3 SPLIT-CYCLE pushback + user decisions).
+- **Where:** mnemonic-secret Phase 2 = zeroize discipline in ms-codec + ms-cli. ms-codec scope (4 production OWNED rows): `crates/ms-codec/src/{payload,decode,envelope}.rs` — internal Zeroizing wraps in encode/decode helpers; public `Payload::Entr(Vec<u8>)` shape unchanged (SPEC §3 OOS-public-payload). ms-cli scope (10 OWNED rows incl. 3 clap-field rows): `crates/ms-cli/src/{parse,cmd/encode,cmd/decode,cmd/verify}.rs` + `EncodeArgs.phrase` / `EncodeArgs.hex` / `VerifyArgs.phrase` clap-derived fields via `Zeroizing::new(std::mem::take(...))` pattern. Phase 3 = hygiene matrix file at `design/agent-reports/v0_9_0-secret-memory-hygiene-matrix.md`.
+- **What:** This repo's contribution to the v0.9.0 cross-repo OWNED-buffer hygiene cycle. ms-cli has NO Phase 1 argv work (survey §5 marks all 5 ms-cli flag-rows YES — already have stdin route). Closes when the cycle's hygiene-matrix doc lands in this repo (Phase 3) and the patch tags are cut at Phase E (`ms-codec-v0.1.3` + `ms-cli-v0.1.X+1`).
+- **Status:** `open` — Phase 0 deliverables committed in toolkit repo; ms-secret participation starts at Phase 2.
+- **Tier:** `cross-repo`
+- **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md` — same `secret-memory-hygiene-v0_9-cycle-a` short-id (primary entry). md / mk repos do NOT receive a companion entry this cycle (xpub-only material).
+
 ### `bip-vector-adoption-v0_8` — cross-repo cycle: BIP-vector adoption v0.8.0
 
 - **Surfaced:** 2026-05-13. Cycle SPEC at `mnemonic-toolkit/design/SPEC_test_vector_audit_v0_8_0.md`. Plan at `/home/bcg/.claude/plans/v0_8_0-bip-vector-adoption.md`. R1 review at `mnemonic-toolkit/design/agent-reports/v0_8_0-phase-0-spec-plan-r1.md`.
