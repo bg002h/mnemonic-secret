@@ -90,8 +90,9 @@ fn main() -> ExitCode {
             // reserved for ms1 format violations).
             e.print().ok();
             return match e.kind() {
-                clap::error::ErrorKind::DisplayHelp
-                | clap::error::ErrorKind::DisplayVersion => ExitCode::SUCCESS,
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
+                    ExitCode::SUCCESS
+                }
                 _ => ExitCode::from(64),
             };
         }

@@ -23,6 +23,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Two new regression cells in `tests/exit_codes_table.rs`:
   `version_flag_exits_zero_and_prints_version` and
   `help_flag_exits_zero_and_prints_help`.
+- `cargo fmt` applied to `src/main.rs` — the rustfmt-preferred
+  shape for the new `match e.kind()` arm uses a block body when
+  the `|` pattern needs to wrap.
 
 ## ms-cli [0.2.0] — 2026-05-12
 
