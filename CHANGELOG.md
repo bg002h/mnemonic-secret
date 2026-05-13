@@ -4,6 +4,48 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-codec [0.1.3] — 2026-05-13
+
+v0.9.0 cross-repo Cycle A (OWNED-buffer secret-memory hygiene), Phase E
+patch bump for ms-codec. Cycle SPEC at
+`mnemonic-toolkit/design/SPEC_secret_memory_hygiene_v0_9_0.md`; cross-repo
+audit matrix at `design/agent-reports/v0_9_0-secret-memory-hygiene-matrix.md`
+(sibling) and the toolkit canonical matrix.
+
+### Added (zeroize discipline; no library API change)
+
+- New `zeroize = "1.8"` dev-equivalent dep (in workspace toolchain via
+  `ms-cli`).
+- Internal `Zeroizing<Vec<u8>>` local-wrap discipline in `envelope::package`,
+  `envelope::discriminate`, and `decode::decode`. Drop-time scrub on
+  every intermediate `Vec<u8>` that carries `Payload::Entr` bytes.
+- `payload.rs` doc-comment block locks the public-API caller-wrap
+  contract: callers of `decode()` MUST wrap the returned
+  `Payload::Entr(Vec<u8>)` in `Zeroizing::new(...)` to inherit
+  drop-time scrub.
+- New lint `tests/lint_zeroize_discipline.rs` enumerates 4 ms-codec
+  OWNED-buffer rows + their per-row evidence anchors.
+
+### What didn't change
+
+- ms1 wire format unchanged.
+- Public API surface unchanged (`Payload::Entr(Vec<u8>)` shape preserved;
+  widening to `Zeroizing<Vec<u8>>` is a breaking change deferred per
+  SPEC §3 OOS-public-payload — FOLLOWUP `ms-codec-payload-zeroize-public-api`).
+- v0.1 → v0.2 migration contract unchanged.
+
+### Known third-party residue
+
+- `codex32::Codex32String` internal buffer is not zeroize-aware
+  (FOLLOWUP `rust-codex32-zeroize-upstream`, tier `external`).
+
+### Tests
+
+- 4 OWNED-buffer rows + parametric evidence cells in
+  `lint_zeroize_discipline.rs`.
+- Existing 59 cells (52 pre-Cycle-A + 7 from v0.8.0 cycle) all green
+  on the rebased Phase 2 work.
+
 ## ms-cli [0.2.1] — 2026-05-12
 
 ### Fixed
