@@ -4,6 +4,44 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.2.2] — 2026-05-13
+
+v0.9.0 cross-repo Cycle A (OWNED-buffer secret-memory hygiene), Phase E
+patch bump for ms-cli. No user-facing API change (no flag additions /
+removals; exit codes unchanged; JSON schemas unchanged).
+
+### Added (zeroize discipline; internal-only)
+
+- New `zeroize = "1.8"` dep.
+- `EncodeArgs::phrase`, `EncodeArgs::hex`, `VerifyArgs::phrase` clap-field
+  rows now consume + immediately wrap: `Zeroizing::new(std::mem::take(...))`
+  at `run()` entry, so the clap-resident `String` buffer is scrubbed on
+  drop.
+- `parse::read_phrase_input` returns `Result<Zeroizing<String>>`;
+  `parse::read_stdin` uses `Zeroizing<String>` for its raw read buffer.
+- `cmd/encode::run`, `cmd/decode::run`, `cmd/verify::run` use
+  `Zeroizing<Vec<u8>>` / `Zeroizing<String>` typed locals for entropy
+  and phrase transits. `Payload::Entr` consumer side wraps per the
+  ms-codec caller-wrap contract.
+- New lint `tests/lint_zeroize_discipline.rs` enumerates 10 ms-cli
+  OWNED-buffer rows + per-row evidence anchors.
+
+### Internal (workspace-internal dep bump)
+
+- `ms-codec` exact-pin: `=0.1.2` → `=0.1.3` (companion lockstep release).
+
+### Known third-party residue
+
+- `bip39::Mnemonic` interior buffer is not zeroize-aware
+  (FOLLOWUP `rust-bip39-mnemonic-zeroize-upstream`, tier `external`).
+  SAFETY-anchor doc-comments at every Mnemonic call site in
+  `cmd/encode.rs`, `cmd/decode.rs`, `cmd/verify.rs`.
+
+### Tests
+
+- 10 ms-cli OWNED-buffer rows enumerated in `lint_zeroize_discipline.rs`.
+- All pre-existing ms-cli tests green on the rebased Phase 2 work.
+
 ## ms-codec [0.1.3] — 2026-05-13
 
 v0.9.0 cross-repo Cycle A (OWNED-buffer secret-memory hygiene), Phase E
