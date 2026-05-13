@@ -35,7 +35,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **Surfaced:** 2026-05-13. Cycle SPEC at `mnemonic-toolkit/design/SPEC_test_vector_audit_v0_8_0.md`. Plan at `/home/bcg/.claude/plans/v0_8_0-bip-vector-adoption.md`. R1 review at `mnemonic-toolkit/design/agent-reports/v0_8_0-phase-0-spec-plan-r1.md`.
 - **Where:** mnemonic-secret Phase 2 = BIP-93 inline corpus adoption in `crates/ms-codec/tests/bip93_inline_vectors.rs` (+5 valid cells + 1 parametric cell asserting all 64 BIP-93 §Invalid entries are rejected by `rust-codex32 =0.1.0`).
 - **What:** This repo's contribution to the v0.8.0 cross-repo vectors-only patch cycle. Closes when the cycle's audit-matrix successor doc lands at `design/agent-reports/v0_8_0-bip-test-vector-audit-matrix.md` (Phase 4) and the patch tag is cut at Phase E. The v0.7.1 matrix's footnote of "42 invalid strings" was corrected to 64 at Phase 0 via `gh api` count of the live BIP-93 §Invalid `<code>`-bullet list.
-- **Status:** `open` (Phase 2 committed; Phase 4 + E pending).
+- **Status:** `resolved 527c9c7` — ms-codec-v0.1.2 tag pushed; cycle close PR #7 merged. Companion sibling-repo tags: md-codec-v0.32.1 (descriptor-mnemonic ef00e07), mnemonic-toolkit-v0.9.1 (f036737).
 - **Tier:** `cross-repo`
 - **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md`, `descriptor-mnemonic/design/FOLLOWUPS.md`, `mnemonic-key/design/FOLLOWUPS.md` — same `bip-vector-adoption-v0_8` short-id in each.
 
