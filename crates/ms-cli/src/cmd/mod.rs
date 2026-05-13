@@ -3,6 +3,7 @@
 
 pub mod decode;
 pub mod encode;
+pub mod gui_schema;
 pub mod inspect;
 pub mod vectors;
 pub mod verify;

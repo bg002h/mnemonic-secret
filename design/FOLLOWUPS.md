@@ -211,7 +211,8 @@ Single source of truth for items that surfaced during a review or implementation
 ### `mnemonic-gui-schema-mirror` — companion to `bg002h/mnemonic-gui` schema gate
 
 - **Companion:** `bg002h/mnemonic-gui` `FOLLOWUPS.md` entry `mnemonic-gui-schema-mirror`; CI gate at `.github/workflows/schema-mirror.yml`.
-- **Where:** This CLI's clap-derive `Args` blocks for every subcommand the GUI surfaces (v0.1: `ms inspect`; v0.2+: encode/decode/verify/vectors).
-- **What:** The `mnemonic-gui` GUI mirrors this CLI's clap-derive flag surface at pinned tag `ms-cli-v0.1.0`. Any flag add / remove / rename / `conflicts_with` / `required_unless_present_any` change in this repo's CLI surface must land in lockstep with a companion `mnemonic-gui` PR that bumps the schema + the `pinned-upstream.toml` tag for this CLI. The `mnemonic-gui` CI gate runs `cargo install --locked --git <this-repo> --tag <pin>` + `cargo test --test schema_mirror`, so drift surfaces as a CI failure.
+- **Where:** This CLI's clap-derive `Args` blocks for every subcommand the GUI surfaces (v0.1: `ms inspect`; v0.2+: encode/decode/verify/vectors). Also `crates/ms-cli/src/cmd/gui_schema.rs` (the SPEC §7 reflection emitter shipped in `ms-cli-v0.2.0`).
+- **What:** The `mnemonic-gui` GUI mirrors this CLI's clap-derive flag surface at pinned tag `ms-cli-v0.1.0` (regex path) / `ms-cli-v0.2.0`+ (JSON path via `ms gui-schema`). Any flag add / remove / rename / `conflicts_with` / `required_unless_present_any` change in this repo's CLI surface must land in lockstep with a companion `mnemonic-gui` PR that bumps the schema + the `pinned-upstream.toml` tag for this CLI. The `mnemonic-gui` CI gate runs `cargo install --locked --git <this-repo> --tag <pin>` + `cargo test --test schema_mirror`, so drift surfaces as a CI failure.
+- **Phase C.2 (v0.2):** `ms gui-schema` subcommand added — emits SPEC §7 JSON via `clap::CommandFactory` reflection. Stays in lockstep with `Cli` automatically (no parallel hand-written table to maintain).
 - **Status:** `open` (mirror-invariant; tracking only — every flag-surface PR carries this lockstep work).
 - **Tier:** `v1 / mirror-invariant`
