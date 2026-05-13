@@ -39,6 +39,51 @@ Single source of truth for items that surfaced during a review or implementation
 - **Tier:** `cross-repo`
 - **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md` — same `secret-memory-hygiene-v0_9-cycle-a` short-id (primary entry). md / mk repos do NOT receive a companion entry this cycle (xpub-only material).
 
+### `ms-codec-payload-zeroize-public-api` — widen `Payload::Entr(Vec<u8>)` to `Payload::Entr(Zeroizing<Vec<u8>>)` (breaking)
+
+- **Surfaced:** 2026-05-13, v0.9.0 Cycle A Phase 3 hygiene-matrix R1 (Opus, finding C-1). SPEC §3 `OOS-public-payload` class.
+- **Where:** `crates/ms-codec/src/payload.rs:16-30` — `pub enum Payload { Entr(Vec<u8>), ... }`. The public-API shape is `Vec<u8>`; Cycle A added a caller-wrap-contract doc-comment but did not change the type.
+- **What:** Wrapping the public variant in `Zeroizing<Vec<u8>>` (or adding `impl Drop for Payload` to scrub on drop) would give scrub-on-drop semantics to the public-API surface but is a breaking change for external library consumers. Adding `impl Drop` blocks move-out destructuring patterns (`let Payload::Entr(v) = payload` move) per Rust E0509. Cycle A keeps `Payload::Entr(Vec<u8>)` shape AND no Drop impl on Payload; internal callers in `ms-codec` are tightened to use Zeroizing *behind* the public surface (encode/decode helpers' intermediate buffers); the public variant continues to be caller-managed (callers responsible for Zeroizing-wrapping the returned Vec).
+- **Why deferred:** Breaking change for external library consumers. A future cycle can decide to break the API for a hardened `Payload`.
+- **Status:** `open`
+- **Tier:** `v1+`
+
+### `ms-codec-doc-example-zeroize-consistency` — apply Zeroizing in `ms-codec` `lib.rs` doc-example for pattern consistency
+
+- **Surfaced:** 2026-05-13, v0.9.0 Cycle A Phase 3 hygiene-matrix R1 (Opus, finding C-1). SPEC §3 `OOS-7` class (Phase 0 R1 I-1 fold).
+- **Where:** `crates/ms-codec/src/lib.rs:18-19,29-30` — the public doc-test example carrying a literal entropy value.
+- **What:** The doc-test example uses a synthetic vector chosen for documentation, not real secret material. Wrapping it in Zeroizing would add visual noise to the public API's documentation example without any security benefit (the literal is plaintext in the source anyway). Optional future cycle could apply Zeroizing for pattern-consistency reasons.
+- **Why deferred:** No security benefit; consistency-only. Doc-tests are not production secret material.
+- **Status:** `open`
+- **Tier:** `v1+`
+
+### `ms-cli-decode-emit-zeroize-intermediate` — Zeroize the `emit_json`/`emit_text` intermediate String in ms-cli decode
+
+- **Surfaced:** 2026-05-13, v0.9.0 Cycle A Phase 3 hygiene-matrix R1 (Opus, finding C-1). SPEC §3 `OOS-decode-stdout` class (Phase 0 R1 C-2 fold — OWNED-row counting).
+- **Where:** `crates/ms-cli/src/cmd/decode.rs:67-94` — the `emit_json` / `emit_text` paths.
+- **What:** These paths are primarily STDOUT-LEAK: the values go to stdout by design (that is the command's purpose). Wrapping the intermediate `String` before flush is theoretically possible but adds machinery for zero practical benefit — the entropy and phrase land on stdout one syscall later. Optional future cycle could apply Zeroizing for pattern-consistency reasons.
+- **Why deferred:** No practical benefit; values are emitted to stdout by design.
+- **Status:** `open`
+- **Tier:** `v1+`
+
+### `rust-codex32-zeroize-upstream` — `codex32::Codex32String` internal payload buffer has no `Zeroize`
+
+- **Surfaced:** 2026-05-13, v0.9.0 Cycle A Phase 2 ms-codec envelope work — surfaced while landing the Zeroizing<Vec<u8>> local in `envelope::package`.
+- **Where:** Upstream crate `codex32 = "0.1"` (the `rust-codex32` repo). Affects `crates/ms-codec/src/envelope.rs::package` — `Codex32String::from_seed` copies payload bytes into its private buffer during construction; those bytes live for the `Codex32String`'s lifetime (extends until the caller's binding drops).
+- **What:** `envelope::package`'s `Zeroizing<Vec<u8>>` local scrubs the `data` buffer when the function exits, but the bytes that `Codex32String::from_seed` copied into its private buffer during construction are NOT scrubbed. Mitigation is lifetime minimization at the ms-codec layer + caller-wrap discipline. Closes when upstream `rust-codex32` adds `impl Drop` + Zeroize on `Codex32String` (or when ms-codec migrates to an internally-controlled codex32 implementation).
+- **Status:** `open` (upstream-blocked)
+- **Tier:** `external`
+
+### `md-mk-private-key-surface-watch` — reopen md/mk Cycle A participation if either repo grows a private-key surface
+
+- **Surfaced:** 2026-05-13, v0.9.0 Cycle A Phase 3 hygiene-matrix R1 (Opus, finding C-1). SPEC §3 `OOS-md-mk` class.
+- **Where:** `descriptor-mnemonic` repo (md-codec + md-cli) and `mnemonic-key` repo (mk-codec + mk-cli). Currently both hold xpub-only / descriptor-only material with no private-key buffer.
+- **What:** Cycle A drops the no-scope-symmetry matrix stubs originally planned for md/mk repos because they have no secret material to audit. If either repo later gains a private-key surface (e.g., a future md-codec descriptor-binding with embedded xprv, or an mk-codec xprv passthrough), this FOLLOWUP fires and Cycle A's hygiene discipline (Zeroizing + SAFETY anchors + matrix delta) reopens for the affected sibling.
+- **Why deferred:** No secret material to audit today.
+- **Status:** `open` (monitoring)
+- **Tier:** `cross-repo`
+- **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md` (primary tracker), `descriptor-mnemonic/design/FOLLOWUPS.md`, `mnemonic-key/design/FOLLOWUPS.md` — same `md-mk-private-key-surface-watch` short-id.
+
 ### `bip-vector-adoption-v0_8` — cross-repo cycle: BIP-vector adoption v0.8.0
 
 - **Surfaced:** 2026-05-13. Cycle SPEC at `mnemonic-toolkit/design/SPEC_test_vector_audit_v0_8_0.md`. Plan at `/home/bcg/.claude/plans/v0_8_0-bip-vector-adoption.md`. R1 review at `mnemonic-toolkit/design/agent-reports/v0_8_0-phase-0-spec-plan-r1.md`.
