@@ -82,10 +82,11 @@ pub fn run(mut args: EncodeArgs) -> Result<()> {
         };
 
     // ms_codec::Payload::Entr(Vec<u8>) is the public-API caller-wrap-contract
-    // shape; we materialize a fresh Vec<u8> for the codec call, then let the
-    // original Zeroizing<Vec<u8>> scrub on drop at function exit.
-    let entropy_for_codec: Zeroizing<Vec<u8>> = Zeroizing::new((*entropy).clone());
-    let ms1 = ms_codec::encode(Tag::ENTR, &Payload::Entr((*entropy_for_codec).clone()))?;
+    // shape; clone the wrapped buffer's contents into the public Vec at the
+    // call boundary. The original `entropy` Zeroizing<Vec<u8>> scrubs on drop
+    // at function exit. (R1 N-1 fold — removed intermediate
+    // `entropy_for_codec` indirection.)
+    let ms1 = ms_codec::encode(Tag::ENTR, &Payload::Entr((*entropy).clone()))?;
     let word_count = entropy.len() * 3 / 4; // 16->12, 20->15, 24->18, 28->21, 32->24
 
     if args.json {

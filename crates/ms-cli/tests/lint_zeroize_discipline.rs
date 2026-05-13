@@ -30,61 +30,63 @@ struct ZeroizeRow {
 }
 
 /// Canonical 10-row list per survey §1 ms-cli table.
+/// Per-row evidence anchors tightened post R1 I-4 fold so each row enforces
+/// its specific call-site discipline.
 const ZEROIZE_ROWS: &[ZeroizeRow] = &[
     // ---- 3 clap-field rows (post-R1 C-2 fold) ----
     ZeroizeRow {
         label: "EncodeArgs::phrase consume + Zeroizing wrap at run() entry",
         source_file: "src/cmd/encode.rs",
-        evidence: &["Zeroizing", "mem::take"],
+        evidence: &["std::mem::take(&mut args.phrase).map(Zeroizing::new)"],
     },
     ZeroizeRow {
         label: "EncodeArgs::hex consume + Zeroizing wrap at run() entry",
         source_file: "src/cmd/encode.rs",
-        evidence: &["Zeroizing"],
+        evidence: &["std::mem::take(&mut args.hex).map(Zeroizing::new)"],
     },
     ZeroizeRow {
         label: "VerifyArgs::phrase consume + Zeroizing wrap at run() entry",
         source_file: "src/cmd/verify.rs",
-        evidence: &["Zeroizing", "mem::take"],
+        evidence: &["std::mem::take(&mut args.phrase).map(Zeroizing::new)"],
     },
     // ---- parse.rs ----
     ZeroizeRow {
         label: "parse::read_phrase_input returns Zeroizing<String>",
         source_file: "src/parse.rs",
-        evidence: &["Zeroizing<String>", "-> Zeroizing"],
+        evidence: &["pub fn read_phrase_input(arg: Option<&str>) -> Result<Zeroizing<String>>"],
     },
     ZeroizeRow {
         label: "parse::read_stdin raw buffer wrapped",
         source_file: "src/parse.rs",
-        evidence: &["Zeroizing"],
+        evidence: &["let mut buf: Zeroizing<String> = Zeroizing::new(String::new())"],
     },
     // ---- cmd/encode.rs run() locals ----
     ZeroizeRow {
         label: "cmd/encode::run locals (phrase / entropy) wrapped",
         source_file: "src/cmd/encode.rs",
-        evidence: &["Zeroizing"],
+        evidence: &["let (entropy, language_for_card): (Zeroizing<Vec<u8>>"],
     },
     ZeroizeRow {
-        label: "cmd/encode entropy.clone() into Payload wraps",
+        label: "cmd/encode entropy buffer fed to Payload via wrapped clone",
         source_file: "src/cmd/encode.rs",
-        evidence: &["Zeroizing"],
+        evidence: &["Payload::Entr((*entropy_for_codec).clone())", "Payload::Entr((*entropy).clone())"],
     },
     // ---- cmd/decode.rs run() locals ----
     ZeroizeRow {
         label: "cmd/decode::run locals (entropy / phrase) wrapped",
         source_file: "src/cmd/decode.rs",
-        evidence: &["Zeroizing"],
+        evidence: &["let entropy: Zeroizing<Vec<u8>>"],
     },
     // ---- cmd/verify.rs run() locals ----
     ZeroizeRow {
         label: "cmd/verify::run locals (entropy / supplied / derived) wrapped",
         source_file: "src/cmd/verify.rs",
-        evidence: &["Zeroizing"],
+        evidence: &["let entropy: Zeroizing<Vec<u8>>"],
     },
     ZeroizeRow {
         label: "cmd/verify success-log derived_mnemonic.to_string() wrapped",
         source_file: "src/cmd/verify.rs",
-        evidence: &["Zeroizing"],
+        evidence: &["let derived_str: Zeroizing<String>"],
     },
 ];
 

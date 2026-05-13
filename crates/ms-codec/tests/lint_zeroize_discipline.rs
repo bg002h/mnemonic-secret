@@ -30,26 +30,29 @@ struct ZeroizeRow {
 }
 
 /// Canonical 4-row list per survey §1 ms-codec table.
+/// Per-row evidence anchors tightened post R1 I-4 fold so each row enforces
+/// its specific call-site discipline (not just any Zeroizing reference in
+/// the file).
 const ZEROIZE_ROWS: &[ZeroizeRow] = &[
     ZeroizeRow {
         label: "envelope::discriminate() wraps OWNED payload Vec",
         source_file: "src/envelope.rs",
-        evidence: &["Zeroizing"],
+        evidence: &["payload_with_prefix: Zeroizing<Vec<u8>>"],
     },
     ZeroizeRow {
         label: "envelope::package() wraps OWNED data Vec",
         source_file: "src/envelope.rs",
-        evidence: &["Zeroizing"],
+        evidence: &["let mut data: Zeroizing<Vec<u8>>"],
     },
     ZeroizeRow {
         label: "decode() Payload::Entr allocation wraps before public emit",
         source_file: "src/decode.rs",
-        evidence: &["Zeroizing"],
+        evidence: &["let scrubbed: Zeroizing<Vec<u8>>"],
     },
     ZeroizeRow {
         label: "payload.rs documents caller-wrap contract",
         source_file: "src/payload.rs",
-        evidence: &["Zeroizing", "caller-wrap", "must wrap"],
+        evidence: &["Caller-wrap contract", "must wrap"],
     },
 ];
 
