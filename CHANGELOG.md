@@ -4,6 +4,78 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.3.0] — 2026-05-13
+
+v0.9.0 cross-repo Cycle B (`mlock(2)` page-pinning infrastructure), Phase
+3b + Phase E rollup for ms-cli. Companion to `mnemonic-toolkit-v0.10.0`.
+Cycle SPEC at `mnemonic-toolkit/design/SPEC_secret_memory_hygiene_v0_9_B.md`;
+cross-repo audit matrix at
+`mnemonic-toolkit/design/agent-reports/v0_9_B-secret-memory-hygiene-matrix.md`.
+
+No user-facing CLI surface change: no flag additions or removals; exit
+codes unchanged; JSON schemas unchanged. mlock soft-failures (if any)
+emit a 2-line stderr summary at end-of-process per Cycle B SPEC §6 G2.5.
+
+### Added (Phase 3b — mlock inline-copy + Site 5 + main wire)
+
+- New `src/mlock.rs` (538 LOC): inline copy of toolkit's `mlock` module
+  surface per SPEC §5 + §6 G6 ("fork-and-document-pattern over
+  shared-crate-extraction"; constellation stays at 4 crates). Surface:
+  `pin_pages_for(buf: &[u8]) -> PinnedPageRange` slice-fn primitive
+  (Fix-B-only; no wrapper type), `PinnedPageRange { start, page_count }`
+  + munlock-on-Drop, `MlockState` process-static singleton with
+  `failure_count` + `total_bytes_unlocked` + `first_errno` aggregation,
+  `report_at_exit()` end-of-process 2-line stderr emitter, `#[cfg(test)]`
+  `FailMode` injection harness (`MNEMONIC_TEST_MLOCK_FAIL_MODE` env var
+  with `eperm` / `enomem` / `einval` / `off` modes).
+- Site 5 pin: `parse::read_stdin()` adds
+  `let _entropy_pin = crate::mlock::pin_pages_for(buf.as_bytes());`
+  immediately after the read returns (`parse.rs:65`); pin scope-bound to
+  the buffer's lifetime.
+- `main.rs`: `mlock::report_at_exit()` call before exit (mirrors
+  toolkit's main-wire).
+- New `libc = "0.2"` dep.
+
+### Added (PE — release rollup)
+
+- `.github/workflows/rust.yml` (NEW): first Rust CI workflow for ms-cli
+  (ms-codec has its own separate workflow). Jobs: `test` (Ubuntu + macOS
+  matrix with `ulimit -l 65536` on Linux; cargo test + 3 fault-injection
+  steps for G2.1 eperm + G2.3-debug einval + G2.4 off control),
+  `test-release-mlock-einval` (Linux release build; SPEC §6 G2.3 release
+  branch), `miri` (Ubuntu nightly; SPEC §6 G4.b),
+  `clippy --all-targets -- -D warnings`, `g6-invariant` (SPEC §6 G6
+  cross-repo inline-copy invariant; checks out toolkit at master and
+  asserts normalized `mlock.rs` byte-equal).
+- `tests/mlock_g6_invariant.rs` (NEW): SPEC §6 G6 enforcement. Reads
+  ms-cli's `mlock.rs` and toolkit's `mlock.rs`, normalizes both
+  (strip `//`, `///`, `//!` comment lines at start-of-trimmed-line;
+  preserve `use` statements + `#[cfg]` attributes), and asserts
+  byte-equal + name-export parity against a static MANIFEST (14
+  top-level items). Sibling-repo path discovery via `SIBLING_REPO_PATH`
+  env var with adjacent-dir relative fallback for local-dev.
+
+### Cycle review history (ms-cli participation)
+
+- Phase 3b: R1 Opus 0C/0I cross-repo CLEAR
+  (`mnemonic-toolkit/design/agent-reports/v0_9_B-phase-3b-r1.md`).
+
+### Tests
+
+- 2 new G6 invariant tests in `tests/mlock_g6_invariant.rs`.
+- mlock module's `g2_*` `#[ignore]`-gated subprocess tests reachable via
+  `--include-ignored` per workflow steps.
+- All pre-existing ms-cli tests green.
+
+### What didn't change
+
+- ms1 wire format unchanged (Cycle B is functionally transparent —
+  SPEC §6 G7).
+- ms-codec dep exact-pin: `=0.1.3` (no Cycle B work in ms-codec).
+- v0.2.x → v0.3.x bump tracks the cycle-major axis (per Cycle B SPEC
+  §4 PE), not a breaking change in the SemVer sense — there is no
+  public-API surface in a binary-only crate.
+
 ## ms-cli [0.2.2] — 2026-05-13
 
 v0.9.0 cross-repo Cycle A (OWNED-buffer secret-memory hygiene), Phase E
