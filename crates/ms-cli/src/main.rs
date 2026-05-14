@@ -11,6 +11,13 @@ mod codex32_friendly;
 mod error;
 mod format;
 mod language;
+// Inline copy of mnemonic-toolkit's mlock module per SPEC §5 + §6 G6.
+// Test helpers (failure_count_for_test, first_errno_for_test, etc.) are
+// part of the verbatim diff manifest; they're unused in ms-cli's binary
+// context (no integration tests reach them yet) but kept to preserve
+// byte-equality with the toolkit's source under G6 normalization.
+#[allow(dead_code)]
+mod mlock;
 mod parse;
 
 use std::io::Write;
@@ -109,13 +116,20 @@ fn main() -> ExitCode {
         Command::GuiSchema => cmd::gui_schema::run(),
     };
 
-    match result {
+    let exit = match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             emit_error(&e, json_mode);
             ExitCode::from(e.exit_code())
         }
-    }
+    };
+
+    // Cycle B SPEC §2 row 3 + §6 G2.5 — emit a 2-line stderr summary iff
+    // any pin_pages_for call soft-failed during this invocation. No-op
+    // when failure_count == 0. Runs on both Ok and Err paths.
+    mlock::report_at_exit();
+
+    exit
 }
 
 fn is_json_mode(cmd: &Command) -> bool {

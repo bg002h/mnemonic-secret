@@ -54,6 +54,15 @@ fn read_stdin() -> Result<Zeroizing<String>> {
     io::stdin()
         .read_to_string(&mut buf)
         .map_err(|e| CliError::BadInput(format!("failed to read stdin: {}", e)))?;
+    // Cycle B Phase 3b Site 5 — pin the heap pages of the freshly-read
+    // stdin buffer for the function-local scope. Per SPEC §2 row 5: scope-
+    // bound to the buffer's lifetime within read_stdin. The buffer's heap
+    // data pointer is stable across the move into the caller via Ok(buf);
+    // however the pin is bound to this function's scope and drops at
+    // return — that is the SPEC-locked tradeoff (post-substitution
+    // normalize_phrase produces a fresh allocation; future hardening
+    // could pin the normalized buffer at the caller site if desired).
+    let _entropy_pin = crate::mlock::pin_pages_for(buf.as_bytes());
     Ok(buf)
 }
 

@@ -383,6 +383,7 @@ dependencies = [
  "clap",
  "codex32",
  "hex",
+ "libc",
  "ms-codec",
  "predicates",
  "serde",
