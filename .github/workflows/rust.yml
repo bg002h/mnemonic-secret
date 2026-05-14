@@ -1,0 +1,177 @@
+name: rust (ms-cli)
+
+# Cycle B PE — first Rust CI workflow for ms-cli. Mirrors the toolkit's
+# `.github/workflows/rust.yml` (Phase 2 + 3a) per Cycle B SPEC §6 G3
+# (Ubuntu + macOS platform coverage) and §6 G4.b (Miri on mlock's unsafe
+# blocks). ms-codec has its own separate workflow; path filters here scope
+# strictly to ms-cli so the two workflows stay independent.
+#
+# ms-cli is a binary-only crate (`[[bin]] name = "ms"`) — the `mlock`
+# module is binary-private (declared via `mod mlock;` in `main.rs`).
+# Test invocations target the binary's test build, NOT a `--lib` target.
+#
+# Security note: this workflow uses only GitHub-provided trusted context
+# (matrix.os, runner.os). No interpolation of untrusted user input
+# (issue/PR titles, commit messages, etc.).
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'crates/ms-cli/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/rust.yml'
+  pull_request:
+    paths:
+      - 'crates/ms-cli/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/rust.yml'
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show ulimit -l (diagnostic)
+        run: ulimit -l || true
+
+      - name: cargo build --tests
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            ulimit -l 65536 || true
+          fi
+          cargo build --tests -p ms-cli
+
+      - name: cargo test (default tests; G2.1 #[ignore]-gated)
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            ulimit -l 65536 || true
+          fi
+          cargo test -p ms-cli
+
+      - name: G2.1 eperm fault injection (fresh subprocess; env set before cargo)
+        # Per Cycle B SPEC §4 P2 + toolkit Phase 2 plan: cfg(test) FAIL_MODE
+        # injection is only reachable from the bin's test build (cfg(test) is
+        # per-crate-not-per-build, RFC 1604). G2.1 is #[ignore]-gated and
+        # filtered to the specific test name so the OnceLock<FailMode>
+        # initializes fresh from MNEMONIC_TEST_MLOCK_FAIL_MODE in this step's
+        # env. ms-cli has no [[lib]] target — invoke via --bin ms.
+        env:
+          MNEMONIC_TEST_MLOCK_FAIL_MODE: "eperm"
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            ulimit -l 65536 || true
+          fi
+          cargo test -p ms-cli --bin ms mlock::tests::g2_1 -- --include-ignored
+
+      - name: G2.3-debug einval debug_assert (fresh subprocess)
+        # Per Cycle B SPEC §6 G2.3: debug builds trip debug_assert when
+        # mlock returns EINVAL under fault injection.
+        # #[should_panic(expected = "EINVAL")] asserts the panic message
+        # contains the substring.
+        env:
+          MNEMONIC_TEST_MLOCK_FAIL_MODE: "einval"
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            ulimit -l 65536 || true
+          fi
+          cargo test -p ms-cli --bin ms mlock::tests::g2_3 -- --include-ignored
+
+      - name: G2.4 off control (fresh subprocess)
+        # Per Cycle B SPEC §6 G2.4: control case — FAIL_MODE=off must not
+        # synthesize failures. Verifies the wrapper does not increment
+        # failure_count spuriously in a healthy ulimit environment.
+        # NOTE: bare 'off' in YAML 1.1 is a boolean false; quote to force
+        # string interpretation (toolkit workflow first observed this at
+        # run 25834458333 on 2026-05-14; mirror the defense here).
+        env:
+          MNEMONIC_TEST_MLOCK_FAIL_MODE: "off"
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            ulimit -l 65536 || true
+          fi
+          cargo test -p ms-cli --bin ms mlock::tests::g2_4 -- --include-ignored
+
+  test-release-mlock-einval:
+    # Cycle B Phase 3a (mirror in ms-cli at PE) — release-build coverage
+    # for G2.3 EINVAL soft-fail. Per SPEC §6 G2.3 release branch: in
+    # release builds the debug_assert is compiled out, so EINVAL injection
+    # must soft-fail (record_failure) rather than panic. The
+    # g2_3_einval_release_soft_fails test (inline-copied from toolkit
+    # mlock.rs) asserts failure_count > 0 and first_errno == EINVAL.
+    # Linux-only because the release-build-coverage gate is sufficient on
+    # one platform; the cfg(test) FAIL_MODE branch is platform-uniform.
+    name: "test (release, ubuntu-latest, mlock einval)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show ulimit -l (diagnostic)
+        run: ulimit -l || true
+      - name: G2.3-release einval soft-fail
+        env:
+          MNEMONIC_TEST_MLOCK_FAIL_MODE: "einval"
+        run: |
+          ulimit -l 65536 || true
+          cargo test --release -p ms-cli --bin ms mlock::tests::g2_3 -- --include-ignored
+
+  miri:
+    name: miri (mlock unsafe)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nightly + miri component
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+
+      - name: "cargo +nightly miri test mlock::"
+        # Per Cycle B SPEC §6 G4.b: Miri verifies the Rust-side safety of
+        # mlock's 2 unsafe blocks (libc::mlock in pin_pages_for;
+        # libc::munlock in PinnedPageRange::drop). cfg(miri) shims stub the
+        # syscalls. ms-cli is binary-only; invoke via --bin ms.
+        run: "cargo +nightly miri test -p ms-cli --bin ms mlock::"
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets -p ms-cli -- -D warnings
+
+  g6-invariant:
+    # Cycle B SPEC §6 G6 — cross-repo mlock.rs inline-copy invariant.
+    # Checks out the sibling repo (mnemonic-toolkit) to a known runner
+    # path, then runs `tests/mlock_g6_invariant.rs` which asserts the
+    # normalized source of ms-cli's `crates/ms-cli/src/mlock.rs` and
+    # toolkit's `crates/mnemonic-toolkit/src/mlock.rs` are byte-equal
+    # across the diff manifest plus name-export parity. Test pulls the
+    # sibling path from $SIBLING_REPO_PATH.
+    name: "g6 invariant (cross-repo mlock.rs)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout own (mnemonic-secret)
+        uses: actions/checkout@v4
+        with:
+          path: mnemonic-secret
+      - name: Checkout sibling (mnemonic-toolkit)
+        uses: actions/checkout@v4
+        with:
+          repository: bg002h/mnemonic-toolkit
+          ref: master
+          path: mnemonic-toolkit
+      - name: cargo test --test mlock_g6_invariant
+        env:
+          SIBLING_REPO_PATH: ${{ github.workspace }}/mnemonic-toolkit
+        working-directory: mnemonic-secret
+        run: cargo test -p ms-cli --test mlock_g6_invariant
