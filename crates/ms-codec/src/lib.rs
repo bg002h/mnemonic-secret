@@ -37,6 +37,7 @@
 
 #![cfg_attr(not(test), deny(missing_docs))]
 
+pub mod bch;
 pub mod consts;
 pub mod decode;
 pub mod encode;
