@@ -30,6 +30,34 @@ Single source of truth for items that surfaced during a review or implementation
 
 ## Open items
 
+### `ms-codec-decode-with-correction-public-api` — promote `decode_with_correction` for downstream BCH consumers
+
+- **Surfaced:** 2026-05-17, mnemonic-toolkit v0.22.0 cycle (BCH error-correction launch).
+- **Where:** `crates/ms-codec/src/decode.rs` (new public surface).
+- **What:** Add `pub fn decode_with_correction(s: &str) -> Result<(Tag, Payload, Vec<RepairDetail>)>` that internally runs BCH correction within t=4 capacity before the existing decode pipeline. Lets toolkit `repair.rs` consume the sibling-codec native API instead of replicating BCH primitives (codex32-vs-mk-codec polymod-frame translation currently lives in toolkit per the empirical `MS_NUMS_TARGET = 0x962958058f2c192a` derivation).
+- **Why deferred:** toolkit v0.22.0 shipped its own primitive consuming mk-codec's promoted BCH internals; adopting a native ms-codec API is a v0.23+ cleanup.
+- **Status:** open
+- **Tier:** `cross-repo`
+- **Companion:** `bg002h/mnemonic-toolkit` FOLLOWUPS.md `ms-codec-decode-with-correction-public-api`
+
+### `ms-cli-repair-flag` — `ms repair` subcommand mirroring toolkit's `mnemonic repair`
+
+- **Surfaced:** 2026-05-17, mnemonic-toolkit v0.22.0 brainstorm.
+- **Where:** `crates/ms-cli/src/cmd/` (NEW subcommand).
+- **What:** Add `ms repair <ms1>` for ms1 BCH error-correction (up to 4 substitutions per chunk). Mirrors the toolkit's `mnemonic repair --ms1` subcommand at the per-codec CLI level. Blocked on `ms-codec-decode-with-correction-public-api` (or could vendor toolkit's per-HRP correction primitive).
+- **Status:** open (blocked)
+- **Tier:** `cross-repo`
+- **Companion:** `bg002h/mnemonic-toolkit` FOLLOWUPS.md `ms-cli-repair-flag`
+
+### `toolkit-repair-consume-native-codec-api` — toolkit-side consumer of native ms-codec correction API
+
+- **Surfaced:** 2026-05-17, mnemonic-toolkit v0.22.0 R1.
+- **Where:** cross-repo coordination point; informational mirror in this sibling so the dependency is visible from both sides.
+- **What:** Once `ms-codec-decode-with-correction-public-api` lands, toolkit `repair.rs` will switch its ms1 path from the empirical mk-codec-frame primitive call to the native ms-codec API (cleaner layering; one BCH implementation per codec).
+- **Status:** open (blocked on `ms-codec-decode-with-correction-public-api`)
+- **Tier:** `cross-repo`
+- **Companion:** `bg002h/mnemonic-toolkit` FOLLOWUPS.md `toolkit-repair-consume-native-codec-api`
+
 ### `secret-memory-hygiene-v0_9-cycle-a` — cross-repo cycle: OWNED-buffer secret-memory hygiene v0.9.0 Cycle A
 
 - **Surfaced:** 2026-05-13. Cycle SPEC at `mnemonic-toolkit/design/SPEC_secret_memory_hygiene_v0_9_0.md`. Plan at `/home/bcg/.claude/plans/v0_9_0-secret-memory-hygiene.md`. Survey precursor at `mnemonic-toolkit/design/agent-reports/v0_9_0-secret-memory-survey.md`. R1+R2+R3+R4+R5 architect-review disposition at `mnemonic-toolkit/design/agent-reports/v0_9_0-phase-0-spec-plan-r1.md` (5 rounds: Sonnet/Sonnet/Opus/Opus/Sonnet, cleared CLEAR 0C/0I after R3 SPLIT-CYCLE pushback + user decisions).
