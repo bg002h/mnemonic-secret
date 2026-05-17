@@ -38,6 +38,7 @@
 #![cfg_attr(not(test), deny(missing_docs))]
 
 pub mod bch;
+pub mod bch_decode;
 pub mod consts;
 pub mod decode;
 pub mod encode;
@@ -48,7 +49,7 @@ pub mod tag;
 
 mod envelope; // crate-private; v0.2-migration seam
 
-pub use decode::decode;
+pub use decode::{CorrectionDetail, decode, decode_with_correction};
 pub use encode::encode;
 pub use error::{Error, Result};
 pub use inspect::{inspect, InspectReport};

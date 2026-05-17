@@ -61,6 +61,22 @@ pub enum Error {
         /// The observed payload byte length (after stripping the prefix byte).
         got: usize,
     },
+    /// BCH error-correction (`bch_decode`) reported the input is uncorrectable
+    /// — the number of symbol errors exceeds the regular code's `t = 4`
+    /// correction capacity (singleton bound `d = 8`). Surfaced by
+    /// [`crate::decode_with_correction`] when `bch_decode::decode_regular_errors`
+    /// returns `None`, or when a post-correction re-verification step fails
+    /// (catches pathological 5+-error patterns that fool the decoder into
+    /// producing a "consistent" but invalid locator). Added v0.2.0 per plan
+    /// §1 D29 + §2.B.2.
+    ///
+    /// `bound = 8` is the BCH(93,80,8) singleton bound. ms1 is single-chunk
+    /// only — no `chunk_index` field (cf. md-codec's `TooManyErrors` which
+    /// carries chunk-set context).
+    TooManyErrors {
+        /// Singleton bound for the BCH regular code (always 8).
+        bound: u8,
+    },
 }
 
 impl fmt::Display for Error {
@@ -108,6 +124,9 @@ impl fmt::Display for Error {
                 got,
                 expected
             ),
+            Error::TooManyErrors { bound } => {
+                write!(f, "more than {} errors; uncorrectable", bound)
+            }
         }
     }
 }
