@@ -47,7 +47,7 @@ pub struct EncodeArgs {
 }
 
 /// Run `ms encode` with the parsed args. Writes to stdout/stderr per SPEC §2.1.
-pub fn run(mut args: EncodeArgs) -> Result<()> {
+pub fn run(mut args: EncodeArgs) -> Result<u8> {
     use zeroize::Zeroizing;
     // SPEC v0.9.0 §1 item 2 — consume + immediately wrap the clap-owned
     // secret fields (phrase / hex) at `run()` entry. clap-derive does not
@@ -94,7 +94,7 @@ pub fn run(mut args: EncodeArgs) -> Result<()> {
     } else {
         emit_text(&ms1, language_for_card, word_count, args.no_engraving_card)?;
     }
-    Ok(())
+    Ok(0)
 }
 
 fn parse_hex_entropy(hex_str: &str) -> Result<Vec<u8>> {

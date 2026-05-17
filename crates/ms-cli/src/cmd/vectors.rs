@@ -19,7 +19,7 @@ pub struct VectorsArgs {
 }
 
 /// Run `ms vectors`. Always exits 0 with the corpus on stdout.
-pub fn run(args: VectorsArgs) -> Result<()> {
+pub fn run(args: VectorsArgs) -> Result<u8> {
     if args.pretty {
         let parsed: serde_json::Value = serde_json::from_str(VECTORS_V0_1_JSON)
             .map_err(|e| CliError::BadInput(format!("vector corpus parse: {}", e)))?;
@@ -33,5 +33,5 @@ pub fn run(args: VectorsArgs) -> Result<()> {
             println!();
         }
     }
-    Ok(())
+    Ok(0)
 }

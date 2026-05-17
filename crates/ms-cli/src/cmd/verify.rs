@@ -36,7 +36,7 @@ pub struct VerifyArgs {
 }
 
 /// Run `ms verify` per SPEC §2.4.1 validation order.
-pub fn run(mut args: VerifyArgs) -> Result<()> {
+pub fn run(mut args: VerifyArgs) -> Result<u8> {
     use zeroize::Zeroizing;
     // SPEC v0.9.0 §1 item 2 — consume + immediately wrap the clap-owned
     // secret-bearing `phrase` field at `run()` entry. clap-derive does not
@@ -64,7 +64,10 @@ pub fn run(mut args: VerifyArgs) -> Result<()> {
         Ok((_, _)) => unreachable!("ms-codec v0.1 only decodes to Payload::Entr"),
         Err(ms_codec::Error::ReservedTagNotEmittedInV01 { got }) => {
             // Exit 3 path: print the success-shaped "valid future format" message.
-            return emit_future_format(&got, args.json);
+            // emit_future_format always returns Err(FutureFormat), so propagate
+            // via `?`; the Ok arm is unreachable but the compiler can't prove that.
+            emit_future_format(&got, args.json)?;
+            return Ok(0);
         }
         Err(e) => return Err(e.into()),
     };
@@ -89,7 +92,8 @@ pub fn run(mut args: VerifyArgs) -> Result<()> {
         let supplied_str: Zeroizing<String> = Zeroizing::new(supplied_mnemonic.to_string());
         let derived_str: Zeroizing<String> = Zeroizing::new(derived_mnemonic.to_string());
         if *supplied_str == *derived_str {
-            return emit_round_trip_ok(&derived_mnemonic, args.language.as_str(), args.json);
+            emit_round_trip_ok(&derived_mnemonic, args.language.as_str(), args.json)?;
+            return Ok(0);
         } else {
             return Err(CliError::VerifyPhraseMismatch);
         }
@@ -98,7 +102,8 @@ pub fn run(mut args: VerifyArgs) -> Result<()> {
     // No --phrase: simple validity OK.
     let word_count = entropy.len() * 3 / 4;
     let str_len = ms1.len();
-    emit_simple_ok(word_count, str_len, args.json)
+    emit_simple_ok(word_count, str_len, args.json)?;
+    Ok(0)
 }
 
 fn emit_simple_ok(word_count: usize, str_len: usize, json: bool) -> Result<()> {

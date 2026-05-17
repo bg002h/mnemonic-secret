@@ -186,6 +186,15 @@ impl From<ms_codec::Error> for CliError {
                 tag,
                 expected: _,
             } => CliError::PayloadLengthMismatch { got, tag },
+            // v0.2.0 BCH error-correction variant. `bound = 8` is the
+            // BCH(93,80,8) singleton bound. Maps to a FormatViolation so
+            // the SPEC §6 exit-2 slot covers BCH-uncorrectable input —
+            // matches D26 (`ms repair` unrepairable → exit 2).
+            ms_codec::Error::TooManyErrors { bound } => CliError::FormatViolation {
+                underlying_kind: "TooManyErrors",
+                message: format!("more than {} errors; uncorrectable", bound),
+                details: Some(json!({ "bound": bound })),
+            },
             // ms_codec::Error is #[non_exhaustive]; v0.2+ may add variants.
             // If you hit this in production, ms-codec added a variant ms-cli
             // hasn't dispatched yet — add an arm above for the new variant.
@@ -250,6 +259,18 @@ mod tests {
         let e: CliError = ms_codec::Error::ReservedPrefixViolation { got: 0x01 }.into();
         let details = e.details().expect("FormatViolation has details");
         assert_eq!(details["got"], 1);
+    }
+
+    #[test]
+    fn too_many_errors_maps_to_format_violation_exit_2() {
+        // v0.2.0: ms_codec::Error::TooManyErrors dispatches to
+        // FormatViolation (kind="TooManyErrors") so D26 'unrepairable → exit 2'
+        // holds for `ms repair`. Bound is the BCH(93,80,8) singleton bound.
+        let e: CliError = ms_codec::Error::TooManyErrors { bound: 8 }.into();
+        assert_eq!(e.kind(), "TooManyErrors");
+        assert_eq!(e.exit_code(), 2);
+        let details = e.details().expect("FormatViolation has details");
+        assert_eq!(details["bound"], 8);
     }
 
     #[test]

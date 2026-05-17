@@ -33,7 +33,7 @@ pub struct DecodeArgs {
 }
 
 /// Run `ms decode`.
-pub fn run(args: DecodeArgs) -> Result<()> {
+pub fn run(args: DecodeArgs) -> Result<u8> {
     use zeroize::Zeroizing;
     // Note: `ms1` is the codex32 string, not directly secret-bearing,
     // but it's encrypted-form-equivalent (an attacker with this string
@@ -68,7 +68,7 @@ pub fn run(args: DecodeArgs) -> Result<()> {
     } else {
         emit_text(&entropy[..], &phrase, cli_lang.as_str(), word_count, defaulted)?;
     }
-    Ok(())
+    Ok(0)
 }
 
 fn emit_json(

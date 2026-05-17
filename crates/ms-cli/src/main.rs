@@ -83,6 +83,19 @@ enum Command {
         after_long_help = "EXAMPLES:\n  ms gui-schema | jq .version             # always 1\n  ms gui-schema | jq '.subcommands[].name' # list subcommands\n  ms gui-schema | jq '.subcommands[] | select(.name == \"encode\").flags'"
     )]
     GuiSchema,
+
+    /// Repair an ms1 string via BCH error correction (exit 5 = REPAIR_APPLIED).
+    ///
+    /// Single-HRP context: no `--hrp` flag. Up to BCH(93,80,8) t=4 single-chunk
+    /// correction capacity via `ms_codec::decode_with_correction`. The corrected
+    /// ms1 is emitted on stdout (with a stderr `secret material on stdout`
+    /// advisory per D9 — ms1 is BIP-39 entropy and sensitive). Exit 5 on
+    /// correction-applied (D26); exit 0 if input was already valid; exit 2
+    /// if BCH-uncorrectable (`TooManyErrors`).
+    #[command(
+        after_long_help = "EXAMPLES:\n  ms repair --ms1 ms10entrsqq...        # text-form report on stdout\n  ms repair --ms1 - < broken.txt        # read ms1 from stdin\n  ms repair --ms1 ms10entrsqq... --json # JSON envelope on stdout"
+    )]
+    Repair(cmd::repair::RepairArgs),
 }
 
 fn main() -> ExitCode {
@@ -107,17 +120,18 @@ fn main() -> ExitCode {
 
     let json_mode = is_json_mode(&cli.command);
 
-    let result: Result<()> = match cli.command {
+    let result: Result<u8> = match cli.command {
         Command::Encode(args) => cmd::encode::run(args),
         Command::Decode(args) => cmd::decode::run(args),
         Command::Inspect(args) => cmd::inspect::run(args),
         Command::Verify(args) => cmd::verify::run(args),
         Command::Vectors(args) => cmd::vectors::run(args),
         Command::GuiSchema => cmd::gui_schema::run(),
+        Command::Repair(args) => cmd::repair::run(args),
     };
 
     let exit = match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => ExitCode::from(code),
         Err(e) => {
             emit_error(&e, json_mode);
             ExitCode::from(e.exit_code())
@@ -140,6 +154,7 @@ fn is_json_mode(cmd: &Command) -> bool {
         Command::Verify(a) => a.json,
         Command::Vectors(_) => false, // vectors output is always JSON-shaped
         Command::GuiSchema => false,  // gui-schema output is always JSON-shaped
+        Command::Repair(a) => a.json,
     }
 }
 

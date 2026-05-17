@@ -26,7 +26,7 @@ pub struct InspectArgs {
 
 /// Run `ms inspect`. Lenient: returns a report even when the string would fail
 /// decoder rules. If BIP-93 parse itself fails, treats the error per §6.
-pub fn run(args: InspectArgs) -> Result<()> {
+pub fn run(args: InspectArgs) -> Result<u8> {
     let ms1 = read_input(args.ms1.as_deref())?;
     let report = ms_codec::inspect(&ms1)?; // §2.3.1: failures return CliError::Codex32 here.
 
@@ -37,7 +37,7 @@ pub fn run(args: InspectArgs) -> Result<()> {
     } else {
         emit_text(&report, would_decode, &reasons);
     }
-    Ok(())
+    Ok(0)
 }
 
 /// Re-walk SPEC §4 rules against the InspectReport's fields.

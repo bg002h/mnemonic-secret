@@ -65,7 +65,7 @@ struct SchemaPositional {
 
 /// Run `ms gui-schema`. Walks the clap command tree and prints the JSON
 /// blob on stdout. Always exits 0 (clap parse errors land in main.rs).
-pub fn run() -> Result<()> {
+pub fn run() -> Result<u8> {
     let cmd = Cli::command();
     let mut subcommands: Vec<SchemaSubcommand> = Vec::new();
     for sub in cmd.get_subcommands() {
@@ -86,7 +86,7 @@ pub fn run() -> Result<()> {
     let s = serde_json::to_string(&root)
         .map_err(|e| CliError::BadInput(format!("gui-schema serialization: {}", e)))?;
     println!("{}", s);
-    Ok(())
+    Ok(0)
 }
 
 /// Reflect a single `clap::Command` into a `SchemaSubcommand` entry.
