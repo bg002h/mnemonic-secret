@@ -41,6 +41,37 @@ Then derive your BIP-32 master seed via the BIP-39 PBKDF2 (with optional passphr
 
 ms1 v0.1 does **not** carry the BIP-39 wordlist language on the wire. A user whose original wallet used a non-English wordlist who recovers via English-defaulted wallet software will silently derive a different BIP-32 master seed → different addresses → empty wallet. Users with non-English wallets MUST record their wordlist language alongside the engraved card. A future v0.2+ payload kind `mnem` (reserved tag) is allocated to address this on the wire.
 
+## BCH error correction (v0.2.0+)
+
+ms-codec v0.2.0 exposes a `decode_with_correction` wrapper that runs
+BCH error-correction (`BCH(93,80,8)`, `t=4`: up to four substitution
+errors) before the standard decode pipeline. Use it when an engraved
+or hand-copied ms1 may have a small number of damaged characters:
+
+```rust
+use ms_codec::{decode_with_correction, CorrectionDetail};
+
+let damaged = "ms10entrsqqqqqqqqqqqzqqqqqqqqqqqqqqqqcj9sxraq34v7f"; // pos 17 'z' instead of 'q'
+let (tag, payload, corrections) = decode_with_correction(damaged).unwrap();
+for c in &corrections {
+    println!("pos {}: {:?} -> {:?}", c.position, c.was, c.now);
+}
+```
+
+The new `bch` + `bch_decode` modules expose the underlying primitives
+(`MS_REGULAR_CONST = 0x962958058f2c192a`, `polymod_run`, `hrp_expand`,
+`bch_create_checksum_regular`, `bch_verify_regular`,
+`decode_regular_errors`) for downstream consumers that need direct
+access — though most callers should prefer the `decode_with_correction`
+wrapper. The vendoring is intentional per the v0.22.x follow-ups cycle
+plan §1 D22: each sibling codec carries its own BCH primitives so
+ms-codec / md-codec / mk-codec stay free of sideways dependencies.
+
+When the input exceeds the `t=4` correction capacity, the call returns
+`Error::TooManyErrors { bound: 8 }` (singleton-bound diagnostic — the
+caller cannot uniquely correct beyond `t=4` because the `BCH(93,80,8)`
+code does not localize > 4 errors).
+
 ## Documentation
 
 Full design documents live in the [parent repo](https://github.com/bg002h/mnemonic-secret):

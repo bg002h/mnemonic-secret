@@ -36,7 +36,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **Where:** `crates/ms-codec/src/decode.rs` (new public surface).
 - **What:** Add `pub fn decode_with_correction(s: &str) -> Result<(Tag, Payload, Vec<RepairDetail>)>` that internally runs BCH correction within t=4 capacity before the existing decode pipeline. Lets toolkit `repair.rs` consume the sibling-codec native API instead of replicating BCH primitives (codex32-vs-mk-codec polymod-frame translation currently lives in toolkit per the empirical `MS_NUMS_TARGET = 0x962958058f2c192a` derivation).
 - **Why deferred:** toolkit v0.22.0 shipped its own primitive consuming mk-codec's promoted BCH internals; adopting a native ms-codec API is a v0.23+ cleanup.
-- **Status:** open
+- **Status:** `resolved f3fa531` — v0.22.x follow-ups cycle Phase B.3+B.4: new `bch` module (vendored from md-codec's structure parameterized on `MS_REGULAR_CONST = 0x962958058f2c192a`, byte-exact with toolkit's vendored constant) landed at `676097d` (B.3); new `bch_decode` module (~280 LOC BM+Chien port) + `decode_with_correction(s: &str) -> Result<(Tag, Payload, Vec<CorrectionDetail>), Error>` per Q1 lock + new `Error::TooManyErrors { bound: 8 }` variant + 9 unit cells landed at `f3fa531` (B.4). ms-codec v0.2.0. Toolkit-side consumer migration tracked at `toolkit-repair-consume-native-codec-api`.
 - **Tier:** `cross-repo`
 - **Companion:** `bg002h/mnemonic-toolkit` FOLLOWUPS.md `ms-codec-decode-with-correction-public-api`
 
@@ -45,7 +45,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **Surfaced:** 2026-05-17, mnemonic-toolkit v0.22.0 brainstorm.
 - **Where:** `crates/ms-cli/src/cmd/` (NEW subcommand).
 - **What:** Add `ms repair <ms1>` for ms1 BCH error-correction (up to 4 substitutions per chunk). Mirrors the toolkit's `mnemonic repair --ms1` subcommand at the per-codec CLI level. Blocked on `ms-codec-decode-with-correction-public-api` (or could vendor toolkit's per-HRP correction primitive).
-- **Status:** open (blocked)
+- **Status:** `resolved 18f558a` — v0.22.x follow-ups cycle Phase B.5: new `ms-cli/src/cmd/repair.rs` with `--ms1 <MS1>` required option (single-chunk per codex32 spec) + `--json` flag + exit-code parity (`0` already valid / `5` REPAIR_APPLIED / `2` unrepairable) + cross-CLI `RepairJson` schema parity (D27) + D9 secret-on-stdout advisory preserved. Wraps `ms_codec::decode_with_correction` (B.4). D25 handler-signature unification cascade (all 5 pre-existing handlers refactored to `Result<u8>` with `Ok(0)` terminators; runtime no-op). 5 integration cells. ms-cli v0.4.0.
 - **Tier:** `cross-repo`
 - **Companion:** `bg002h/mnemonic-toolkit` FOLLOWUPS.md `ms-cli-repair-flag`
 
@@ -54,9 +54,19 @@ Single source of truth for items that surfaced during a review or implementation
 - **Surfaced:** 2026-05-17, mnemonic-toolkit v0.22.0 R1.
 - **Where:** cross-repo coordination point; informational mirror in this sibling so the dependency is visible from both sides.
 - **What:** Once `ms-codec-decode-with-correction-public-api` lands, toolkit `repair.rs` will switch its ms1 path from the empirical mk-codec-frame primitive call to the native ms-codec API (cleaner layering; one BCH implementation per codec).
-- **Status:** open (blocked on `ms-codec-decode-with-correction-public-api`)
+- **Status:** `resolved b8ca6df` — v0.22.x follow-ups cycle Phase B.7: toolkit `repair.rs` deleted `MS_NUMS_TARGET` vendored constant + `(Self::Ms1, BchCode::Regular)` arm in `target_residue()`; new `repair_via_ms_codec` private helper delegates to `ms_codec::decode_with_correction` (B.4) with `ms_codec::Error` → `RepairError` translation per plan §2.B.4 D29 table; new `RepairError::PostCorrectionDecodeFailed { chunk_index: Option<usize>, detail: String }` catch-all variant absorbs orphan §4-rule decoder errors. mk1 branch unchanged (mk-codec primitives still consumed natively). mnemonic-toolkit v0.23.0.
 - **Tier:** `cross-repo`
 - **Companion:** `bg002h/mnemonic-toolkit` FOLLOWUPS.md `toolkit-repair-consume-native-codec-api`
+
+### `md-codec-decode-with-correction-supports-non-chunked-md1` — sibling-codec consistency mirror
+
+- **Surfaced:** 2026-05-17, v0.22.x follow-ups cycle Phase B.8 (filed after B.6+B.7 surfaced the gap). Informational mirror in mnemonic-secret to keep sibling-codec consumers (and any future ms-codec API extension that takes a similar shape) aware of the cross-codec asymmetry.
+- **Where:** Cross-repo coordination point; primary lives at `descriptor-mnemonic/design/FOLLOWUPS.md` `md-codec-decode-with-correction-supports-non-chunked-md1`. ms-codec's `decode_with_correction` is single-chunk by codex32-spec design (HRP `ms` is always single-string `BCH(93,80,8)`), so the constraint asymmetry is structural — md1 is the only HRP family where chunked vs non-chunked is a wire-format distinction.
+- **What:** Tracking entry only — when md-codec's `decode_with_correction` gains non-chunked-form coverage, document the cross-codec parity (or explicit non-parity) here so consumers of the ms-codec wrapper understand the structural difference. No ms-codec API change required.
+- **Why deferred:** ms-codec scope is unaffected; tracked for cross-codec API surface consistency only.
+- **Status:** open
+- **Tier:** `cross-repo`
+- **Companion:** `bg002h/descriptor-mnemonic` `design/FOLLOWUPS.md` `md-codec-decode-with-correction-supports-non-chunked-md1` (primary).
 
 ### `secret-memory-hygiene-v0_9-cycle-a` — cross-repo cycle: OWNED-buffer secret-memory hygiene v0.9.0 Cycle A
 
