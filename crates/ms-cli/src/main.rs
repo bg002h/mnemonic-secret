@@ -19,6 +19,7 @@ mod language;
 #[allow(dead_code)]
 mod mlock;
 mod parse;
+mod process_hardening;
 
 use std::io::Write;
 use std::process::ExitCode;
@@ -99,6 +100,8 @@ enum Command {
 }
 
 fn main() -> ExitCode {
+    // argv-hardening: deny other-UID /proc/$PID/cmdline reads + core dumps.
+    process_hardening::set_non_dumpable();
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(e) => {
