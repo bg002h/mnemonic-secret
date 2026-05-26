@@ -29,11 +29,35 @@ use clap::{Parser, Subcommand};
 use error::{CliError, Result};
 use format::{ErrorBodyJson, ErrorEnvelopeJson};
 
+/// Top-level `after_help` footer (renders on both `ms -h` and `ms --help`).
+/// Mirror of the `mnemonic` CLI footer: points users who hold the entropy
+/// (an ms1 backup / seed words) but have lost the BIP-39 passphrase at
+/// btcrecover. A BIP-39 passphrase has no internal verifier, so it cannot
+/// be brute-forced from the entropy alone — correctness is only definable
+/// against a known address/xpub/master-fingerprint (external-derivation
+/// oracle, which `ms` does not perform — `ms` only encodes/decodes
+/// entropy). Date-stamped per the 2026-05-25 recon decision; guarded by
+/// `tests/cli_help_pointer.rs` and mirrored in the constellation manual at
+/// `mnemonic-toolkit/docs/manual/src/40-cli-reference/43-ms.md`.
+const PASSPHRASE_RECOVERY_HELP: &str = "\
+RECOVERING A FORGOTTEN BIP-39 PASSPHRASE:
+  If you have your entropy (your ms1 backup or seed words) but not the
+  BIP-39 passphrase (the optional \"25th word\"), it cannot be
+  brute-forced from the entropy alone. An external open-source tool can:
+  btcrecover searches passphrase candidates and confirms each by deriving
+  an address / xpub / master-fingerprint at common default paths and
+  matching a value you already know.
+    btcrecover (maintained):  https://github.com/3rdIteration/btcrecover
+    original:                 https://github.com/gurnec/btcrecover
+  Pointer current as of 2026-05-25. Run untrusted recovery tools
+  offline, on an air-gapped machine.";
+
 #[derive(Parser, Debug)]
 #[command(
     name = "ms",
     version,
-    about = "ms — engrave-friendly BIP-39 entropy backups (the ms1 format)"
+    about = "ms — engrave-friendly BIP-39 entropy backups (the ms1 format)",
+    after_help = PASSPHRASE_RECOVERY_HELP
 )]
 pub(crate) struct Cli {
     #[command(subcommand)]
