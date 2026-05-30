@@ -9,10 +9,12 @@
 //! downstream `bch_decode` module (B.4) re-declares the 3 internal consts locally
 //! per the Q3 lock — they stay bare-private here.
 //!
-//! The `MS_REGULAR_CONST` value is byte-exact with the toolkit's vendored copy at
-//! `mnemonic-toolkit/crates/mnemonic-toolkit/src/repair.rs:42` per Phase B.0 (e)
-//! cross-check. The toolkit's v0.23.0 migration (Phase B.7) deletes its local
-//! copy and delegates to this crate.
+//! `MS_REGULAR_CONST` is the BIP-93 codex32 short-code target residue
+//! ("SECRETSHARE32"); ms-codec is its single source of truth. (The toolkit's
+//! former vendored copy was deleted in its v0.23.0 migration, which now
+//! delegates to this crate. That copy held the pre-v0.2.1 WRONG value paired
+//! with a wrong `POLYMOD_INIT` — see
+//! `design/BUG_decode_with_correction_length_divergence.md`.)
 
 /// BCH(93,80,8) generator polynomial coefficients (5 × 65-bit).
 ///
@@ -26,17 +28,28 @@ pub const GEN_REGULAR: [u128; 5] = [
     0x07729a039cfc75f5a,
 ];
 
-/// MS-domain target residue: codex32's "SECRETSHARE32" Fe-vec packed in
-/// big-endian 5-bit chunks (the natural u128 representation that
-/// [`polymod_run`] produces for a valid ms1 input).
+/// MS-domain target residue: codex32's "SECRETSHARE32" Fe-vec packed
+/// big-endian in 5-bit chunks — the value [`polymod_run`] (started from the
+/// codex32 initial residue [`POLYMOD_INIT`]) produces for ANY valid ms1
+/// input, independent of entropy length.
 ///
-/// Empirical-stable across distinct valid ms1 strings — see the toolkit's
-/// `ms_nums_target_is_stable_across_distinct_valid_strings` cell at
-/// `mnemonic-toolkit/crates/mnemonic-toolkit/src/repair.rs` for the
-/// stability derivation. Byte-exact with the toolkit per Phase B.0 (e).
-pub const MS_REGULAR_CONST: u128 = 0x962958058f2c192a;
+/// `SECRETSHARE32 = [s,e,c,r,e,t,s,h,a,r,e,3,2] = [16,25,24,3,25,11,16,23,29,3,25,17,10]`
+/// packed as `Σ vᵢ << (5·(12−i))` → `0x10ce0795c2fd1e62a` (bit 64 set). This is
+/// the BIP-93 codex32 short-code target the `rust-codex32` engine (which
+/// `envelope.rs` uses to encode) checks against, so the hand-rolled path here
+/// is byte-equivalent to codex32 for all ms1 lengths.
+///
+/// NOTE (v0.2.1 fix): the previous value `0x962958058f2c192a`, paired with a
+/// wrong `POLYMOD_INIT`, was empirically lifted from a single 12-word vector
+/// and only validated 16-byte seeds — see
+/// `design/BUG_decode_with_correction_length_divergence.md`.
+pub const MS_REGULAR_CONST: u128 = 0x10ce0795c2fd1e62a;
 
-const POLYMOD_INIT: u128 = 0x23181b3;
+/// codex32 initial polymod residue: the field element `1` (BIP-173/BIP-93
+/// bech32-style start state), processed against `hrp_expand("ms") || data`.
+/// (Was wrongly `0x23181b3`, which made `polymod_run` length-variant for valid
+/// codewords — the root cause of the 20/24/28/32-byte correction bug.)
+const POLYMOD_INIT: u128 = 0x1;
 const REGULAR_SHIFT: u32 = 60;
 const REGULAR_MASK: u128 = 0x0fffffffffffffff;
 

@@ -1,6 +1,6 @@
 [package]
 name = "ms-cli"
-version = "0.4.1"
+version = "0.4.2"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -17,7 +17,7 @@ name = "ms"
 path = "src/main.rs"
 
 [dependencies]
-ms-codec = { path = "../ms-codec", version = "=0.2.0" }
+ms-codec = { path = "../ms-codec", version = "=0.2.1" }
 bip39 = { version = "2", features = ["all-languages"] }
 clap = { version = "4", features = ["derive"] }
 codex32 = { workspace = true }

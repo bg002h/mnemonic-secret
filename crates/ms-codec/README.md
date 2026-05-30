@@ -59,7 +59,7 @@ for c in &corrections {
 ```
 
 The new `bch` + `bch_decode` modules expose the underlying primitives
-(`MS_REGULAR_CONST = 0x962958058f2c192a`, `polymod_run`, `hrp_expand`,
+(`MS_REGULAR_CONST = 0x10ce0795c2fd1e62a`, `polymod_run`, `hrp_expand`,
 `bch_create_checksum_regular`, `bch_verify_regular`,
 `decode_regular_errors`) for downstream consumers that need direct
 access — though most callers should prefer the `decode_with_correction`

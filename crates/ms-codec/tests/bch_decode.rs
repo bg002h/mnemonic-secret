@@ -15,14 +15,14 @@
 //!     (still within t=4; verifies the decoder treats checksum + data
 //!     symbols symmetrically).
 //!
-//! All cells exercise the canonical 12-word abandon ms1 vector from
-//! `tests/vectors/v0.1.json` (entry 0; same fixture as
-//! `tests/bch_drift.rs`). The 12-word length is the BCH-correctable
-//! anchor for the regular code's polymod residue (other v0.1 lengths
-//! decode via the rust-codex32 path but do not satisfy the
-//! `polymod == MS_REGULAR_CONST` invariant the BCH decoder assumes;
-//! cf. toolkit `tests/cli_repair.rs` which also uses only the 12-word
-//! anchor vector).
+//! These cells use the canonical 12-word abandon ms1 vector from
+//! `tests/vectors/v0.1.json` (entry 0; same fixture as `tests/bch_drift.rs`).
+//! NOTE (v0.2.1): the regular-code polymod invariant
+//! `polymod == MS_REGULAR_CONST` now holds for ALL ms1 entropy lengths
+//! (16/20/24/28/32 B), not just the 12-word anchor — the pre-v0.2.1 code's
+//! wrong `POLYMOD_INIT` made `decode_with_correction` reject clean 20+-byte
+//! seeds. The all-length sweep lives in `tests/bch_all_lengths.rs`; see
+//! `design/BUG_decode_with_correction_length_divergence.md`.
 
 use ms_codec::{CorrectionDetail, Error, Tag, decode_with_correction};
 

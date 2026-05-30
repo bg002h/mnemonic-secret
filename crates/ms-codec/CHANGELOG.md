@@ -4,6 +4,31 @@ All notable changes to the `ms-codec` crate are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-05-29
+
+### Fixed
+
+- **`decode_with_correction` now error-corrects all entropy lengths, not just
+  16-byte (12-word) seeds.** The hand-rolled BCH path used a wrong
+  `POLYMOD_INIT` (`0x23181b3`) and an empirically-lifted `MS_REGULAR_CONST`
+  (`0x962958058f2c192a`) calibrated to a single 12-word vector, so `polymod_run`
+  was length-variant for valid codewords and `decode_with_correction` returned
+  `TooManyErrors` on CLEAN 20/24/28/32-byte ms1 strings. Corrected to the
+  standard codex32 short-code start state (`POLYMOD_INIT = 1`) and the true
+  "SECRETSHARE32" target (`MS_REGULAR_CONST = 0x10ce0795c2fd1e62a`). The
+  generator and Berlekamp-Massey/Chien/Forney decoder were already correct and
+  are unchanged. Downstream impact: the toolkit's `ms repair`, `repair
+  --max-indel`, and `Ms1IndelOracle` now work for 15/18/21/24-word seeds.
+  Root cause + evidence: `design/BUG_decode_with_correction_length_divergence.md`.
+
+### Added
+
+- `tests/bch_all_lengths.rs` — all-five-length BCH regression suite (the
+  constant-derivation + single-target-residue gate that would have caught the
+  bug; clean-passthrough; 1–4-error correction with position checks; the 5–8-
+  error miscorrection sweep; and the indel reject-contract). Replaces the prior
+  12-word-only test monoculture that hid the defect.
+
 ## [0.1.1] — 2026-05-07
 
 BIP test vector audit close-out (Phase 10 of the v0.7.1 audit cycle). No
