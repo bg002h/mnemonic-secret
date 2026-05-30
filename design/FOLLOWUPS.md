@@ -336,3 +336,12 @@ Single source of truth for items that surfaced during a review or implementation
 - **Phase C.2 (v0.2):** `ms gui-schema` subcommand added — emits SPEC §7 JSON via `clap::CommandFactory` reflection. Stays in lockstep with `Cli` automatically (no parallel hand-written table to maintain).
 - **Status:** `open` (mirror-invariant; tracking only — every flag-surface PR carries this lockstep work).
 - **Tier:** `v1 / mirror-invariant`
+
+### `mnem-wordlist-language-hint-on-wire` — v0.2+ payload kind embedding the BIP-39 wordlist language
+
+- **Surfaced:** 2026-05-30, constellation feature-coverage survey → Theme-C cycle-prep recon (`mnemonic-toolkit/cycle-prep-recon-theme-c-footguns.md`, item 1).
+- **Where:** reserved tag `mnem` (`crates/ms-codec/src/consts.rs:39` `RESERVED_NOT_EMITTED_V01`); hazard documented at SPEC §6.3 (`design/SPEC_ms_v0_1.md:59`) + `crates/ms-codec/README.md:42`.
+- **What:** ms1 v0.1 does not carry the BIP-39 wordlist language on the wire — a non-English user recovering via an English-defaulted *third-party* wallet silently derives a different BIP-32 master seed → different addresses → empty wallet. (Note: `ms decode` ITSELF is not silent — it loud-annotates "DEFAULT" on stdout AND stderr when `--language` is omitted, `crates/ms-cli/src/cmd/decode.rs:43`; the residual risk is other software.) A `mnem` payload kind (entropy + wordlist-language discriminant) makes the card self-describing so ANY decoder is unambiguous.
+- **Scope note:** NOT an independent small fix — `mnem` rides the **v0.2 prefix-byte migration** (`0x00`/`0x01` discriminator, SPEC §1.3 `:24-29`), the same framing K-of-N share encoding and the `seed`/`xprv`/`prvk` kinds all require. Sequence WITH the ms-v0.2 cycle, not standalone.
+- **Status:** `open`.
+- **Tier:** `v0.2-feature`.
