@@ -97,7 +97,7 @@ pub fn run(mut args: EncodeArgs) -> Result<u8> {
     Ok(0)
 }
 
-fn parse_hex_entropy(hex_str: &str) -> Result<Vec<u8>> {
+pub(crate) fn parse_hex_entropy(hex_str: &str) -> Result<Vec<u8>> {
     if hex_str.is_empty() {
         return Err(CliError::BadInput(
             "expected hex of length 32/40/48/56/64 chars (got empty input)".into(),

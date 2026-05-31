@@ -5,6 +5,7 @@
 
 #![allow(missing_docs)] // ms-cli is binary-only; field-level docs are pretty but not load-bearing for a non-published lib API. Mirror md-cli precedent at crates/md-cli/src/main.rs:1.
 
+mod advisory;
 mod bip39_friendly;
 mod cmd;
 mod codex32_friendly;

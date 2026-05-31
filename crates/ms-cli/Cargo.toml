@@ -19,6 +19,7 @@ path = "src/main.rs"
 [dependencies]
 ms-codec = { path = "../ms-codec", version = "=0.2.1" }
 bip39 = { version = "2", features = ["all-languages"] }
+bitcoin = "0.32"
 clap = { version = "4", features = ["derive"] }
 codex32 = { workspace = true }
 hex = "0.4"
