@@ -54,6 +54,20 @@ pub struct DecodeJson<'a> {
     pub language_defaulted: bool,
 }
 
+/// Structured output for `ms derive --json` (read-only: fingerprint + xpub).
+#[derive(Serialize)]
+pub struct DeriveJson<'a> {
+    pub schema_version: &'static str,
+    pub master_fingerprint: String,
+    pub network: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_xpub: Option<String>,
+    pub language: &'a str,
+    pub language_defaulted: bool,
+}
+
 /// Inspect's `report` field (SPEC §5.3).
 #[derive(Serialize)]
 pub struct InspectReportJson {

@@ -67,6 +67,9 @@ pub(crate) struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    /// Derive the master fingerprint (+ account xpub with --template) — read-only public derivation.
+    Derive(cmd::derive::DeriveArgs),
+
     /// Encode a BIP-39 mnemonic (or hex entropy) as an ms1 string for engraving.
     #[command(
         after_long_help = "EXAMPLES:\n  ms encode --phrase \"abandon abandon … about\"\n  ms encode --phrase - < phrase.txt\n  ms encode --hex 00000000000000000000000000000000 --no-engraving-card\n  ms encode --phrase \"...\" --json | jq .ms1"
@@ -149,6 +152,7 @@ fn main() -> ExitCode {
     let json_mode = is_json_mode(&cli.command);
 
     let result: Result<u8> = match cli.command {
+        Command::Derive(args) => cmd::derive::run(args),
         Command::Encode(args) => cmd::encode::run(args),
         Command::Decode(args) => cmd::decode::run(args),
         Command::Inspect(args) => cmd::inspect::run(args),
@@ -176,6 +180,7 @@ fn main() -> ExitCode {
 
 fn is_json_mode(cmd: &Command) -> bool {
     match cmd {
+        Command::Derive(a) => a.json,
         Command::Encode(a) => a.json,
         Command::Decode(a) => a.json,
         Command::Inspect(a) => a.json,
