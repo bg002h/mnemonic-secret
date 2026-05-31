@@ -4,6 +4,15 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.5.0] — 2026-05-31
+
+**SemVer-MINOR — new `ms derive` subcommand: read-only public derivation (master fingerprint + account xpub).** Theme B piece #3 of the m-format constellation (after `mk derive`/`mk address` and `mnemonic addresses`). `ms` could recover the BIP-39 entropy (`ms decode`) but not produce the **master fingerprint** — the cheapest "did I recover the RIGHT seed?" verification oracle. `ms derive` fills that.
+
+- **`ms derive [<ms1>] [--hex|--phrase] [--template] [--account] [--network] [--passphrase|--passphrase-stdin] [--language] [--json]`** — always emits the master fingerprint; with `--template` (bip44/49/84/86) also an account xpub at `m/<purpose>'/<coin>'/<account>'`. **PUBLIC outputs ONLY** — no master seed, root xprv, or private keys on stdout, no signing (a user wanting the xprv uses the toolkit's `mnemonic convert`).
+- **The wordlist language is load-bearing here:** the BIP-39 seed = PBKDF2 over the language-specific mnemonic string, so the master fingerprint/xpub depend on `--language` — `ms derive` carries `ms decode`'s "DEFAULT" annotation (stdout + stderr) when `--language` is omitted.
+- Adds `bitcoin = "0.32"` to ms-cli (the derivation spine: seed → master xpriv → fingerprint / account xpub). `--passphrase`/`--passphrase-stdin` is ms-cli's first passphrase channel (single-stdin guard); inline secrets get a new argv-leak advisory. ms-codec unchanged at 0.2.1.
+- Lockstep: manual `43-ms.md` + GUI `mnemonic-gui/src/schema/ms.rs` (+ backfilled the never-mirrored `repair`) + toolkit ms-cli pin.
+
 ## ms-cli [0.4.1] — 2026-05-23
 
 **SemVer-PATCH — process argv-hardening (`PR_SET_DUMPABLE`).** `ms` now calls `prctl(PR_SET_DUMPABLE, 0)` at the top of `main()` (Linux; no-op elsewhere), making `/proc/$PID/` unreadable to OTHER non-root UIDs and disabling core dumps — so a secret passed inline on argv can no longer be harvested by another user via `/proc/$PID/cmdline` or a core file. Residual same-UID window documented + accepted. New `process_hardening` module (`libc` already a dep). Part of the m-format constellation argv-hardening rollout (mnemonic-toolkit v0.34.7 + md-cli v0.6.1 + mk-cli v0.4.2). Tracked via the toolkit's `argv-overwrite-after-parse` FOLLOWUP closure.
