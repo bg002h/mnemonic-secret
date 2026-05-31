@@ -115,6 +115,21 @@ fn passphrase_stdin_reads_stdin() {
 }
 
 #[test]
+fn passphrase_stdin_preserves_multiword_matches_inline() {
+    // C1 regression: a multi-word passphrase via stdin must NOT be whitespace-
+    // stripped — it must equal the inline --passphrase result for the same bytes.
+    let inline = ms(&["derive", "--hex", ZEROS_HEX, "--passphrase", "a b c", "--json"]);
+    let from_stdin = Command::cargo_bin("ms").unwrap()
+        .args(["derive", "--hex", ZEROS_HEX, "--passphrase-stdin", "--json"])
+        .write_stdin("a b c\n").output().unwrap();
+    let vi: serde_json::Value = serde_json::from_str(&out(&inline)).unwrap();
+    let vs: serde_json::Value = serde_json::from_str(&String::from_utf8(from_stdin.stdout).unwrap()).unwrap();
+    assert_eq!(vi["master_fingerprint"], vs["master_fingerprint"], "stdin passphrase must match inline");
+    // and differ from the no-passphrase fp (proves it was actually applied).
+    assert_ne!(vi["master_fingerprint"], MASTER_FP_EN);
+}
+
+#[test]
 fn single_stdin_guard() {
     // ms1 from stdin + --passphrase-stdin → BadInput (one stdin).
     let card = ms1_of(ZEROS_HEX);

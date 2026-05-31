@@ -187,9 +187,11 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
         Mnemonic::from_entropy_in(lang, &entropy[..]).map_err(CliError::Bip39)?
     };
 
-    // BIP-39 passphrase (stdin or inline).
+    // BIP-39 passphrase (stdin or inline). C1: stdin via the byte-preserving
+    // reader (NOT read_input, which strips/dedups whitespace and would mangle a
+    // multi-word passphrase + disagree with the inline path).
     let passphrase: Zeroizing<String> = if args.passphrase_stdin {
-        Zeroizing::new(read_input(Some("-"))?)
+        crate::parse::read_stdin_passphrase()?
     } else {
         passphrase_arg.unwrap_or_else(|| Zeroizing::new(String::new()))
     };
