@@ -117,8 +117,8 @@ enum Command {
     ///
     /// Single-HRP context: no `--hrp` flag. Up to BCH(93,80,8) t=4 single-chunk
     /// correction capacity via `ms_codec::decode_with_correction`. The corrected
-    /// ms1 is emitted on stdout (with a stderr `secret material on stdout`
-    /// advisory per D9 — ms1 is BIP-39 entropy and sensitive). Exit 5 on
+    /// ms1 is emitted on stdout (with a stderr `PrivateKeyMaterial` advisory
+    /// per D9 — ms1 is BIP-39 entropy and sensitive). Exit 5 on
     /// correction-applied (D26); exit 0 if input was already valid; exit 2
     /// if BCH-uncorrectable (`TooManyErrors`).
     #[command(

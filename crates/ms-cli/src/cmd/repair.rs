@@ -25,7 +25,8 @@
 //! subcommand ALWAYS emits a stderr advisory when invoked (regardless of
 //! whether corrections fired or whether `--json` was set — even
 //! pass-through of a valid ms1 to stdout is sensitive material on stdout).
-//! Byte-matches `mnemonic-toolkit/src/secret_advisory.rs::secret_on_stdout_warning`.
+//! Emitted via `emit_output_class_advisory(PrivateKeyMaterial)` — byte-identical
+//! to mnemonic-toolkit's `secret_advisory::emit_output_class_advisory`.
 //!
 //! Text output mirrors `mnemonic repair`'s text-form report shape (see
 //! `mnemonic-toolkit/src/cmd/repair.rs::emit_repair_text`). JSON output
@@ -33,12 +34,11 @@
 //! `schema_version`, `kind`, `corrected_chunks`, `repairs`) so cross-CLI
 //! parsers reuse the same struct.
 
-use std::io::Write;
-
 use clap::Args;
 use ms_codec::CorrectionDetail;
 use serde::Serialize;
 
+use crate::advisory::{OutputClass, emit_output_class_advisory};
 use crate::error::{CliError, Result};
 use crate::parse::read_input;
 
@@ -100,13 +100,11 @@ pub fn run(args: RepairArgs) -> Result<u8> {
         emit_text(&corrected_chunks, &reports)?;
     }
 
-    // D9: emit sensitive-secret stderr warning (always — even pass-through
-    // of a valid ms1 to stdout is sensitive material on stdout). Byte-matches
-    // mnemonic-toolkit's `secret_on_stdout_warning` for kind == Ms1.
-    let _ = writeln!(
-        std::io::stderr(),
-        "warning: secret material on stdout — consider redirecting (e.g., '> file.txt' or '| age -e ...')"
-    );
+    // D9: emit sensitive-secret stderr advisory (always — even pass-through
+    // of a valid ms1 to stdout is sensitive material on stdout). Uses the
+    // canonical OutputClass::PrivateKeyMaterial line (byte-identical to
+    // mnemonic-toolkit's emit_output_class_advisory for PrivateKeyMaterial).
+    emit_output_class_advisory(OutputClass::PrivateKeyMaterial, &mut std::io::stderr().lock());
 
     let any_correction = reports.iter().any(|r| !r.corrected_positions.is_empty());
     Ok(if any_correction { 5 } else { 0 })

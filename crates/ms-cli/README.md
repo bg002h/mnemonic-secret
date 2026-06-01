@@ -45,7 +45,7 @@ ms repair --ms1 ms10entrsqqqqqqqqqqqzqqqqqqqqqqqqqqqqcj9sxraq34v7f
 #   #   ms1 chunk 0: 1 correction at position 17: 'z' -> 'q'
 #   ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f   # corrected on last line
 # stderr:
-#   warning: secret material on stdout — consider redirecting
+#   warning: stdout carries private key material (can spend) — redirect or encrypt
 
 # Stdin via `-`:
 ms repair --ms1 - < broken.txt

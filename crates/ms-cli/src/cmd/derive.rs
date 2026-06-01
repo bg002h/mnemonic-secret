@@ -15,7 +15,7 @@ use clap::Args;
 use ms_codec::Payload;
 use zeroize::Zeroizing;
 
-use crate::advisory::secret_in_argv_warning;
+use crate::advisory::{OutputClass, emit_output_class_advisory, secret_in_argv_warning};
 use crate::cmd::encode::parse_hex_entropy;
 use crate::error::{CliError, Result};
 use crate::language::CliLanguage;
@@ -251,5 +251,9 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
             writeln!(stdout, "language:            {}", cli_lang.as_str()).ok();
         }
     }
+    // WatchOnly: ms derive emits only public key material (master fingerprint +
+    // optional account xpub). Unconditional — covers --json AND text modes AND
+    // non-defaulted language. Coexists with the language-defaulted note above.
+    emit_output_class_advisory(OutputClass::WatchOnly, &mut std::io::stderr().lock());
     Ok(0)
 }

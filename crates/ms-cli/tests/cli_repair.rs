@@ -88,8 +88,8 @@ fn repair_already_valid_input_exits_0() {
     // `secret_on_stdout_warning` line.
     let stderr = String::from_utf8(out.stderr).expect("stderr utf-8");
     assert!(
-        stderr.contains("warning: secret material on stdout"),
-        "expected D9 secret-on-stdout advisory on stderr; got {stderr:?}"
+        stderr.contains("warning: stdout carries private key material"),
+        "expected D9 output-class advisory on stderr; got {stderr:?}"
     );
 }
 
@@ -131,8 +131,8 @@ fn repair_one_substitution_exits_5() {
     // D9 advisory MUST also fire on the correction-applied path.
     let stderr = String::from_utf8(out.stderr).expect("stderr utf-8");
     assert!(
-        stderr.contains("warning: secret material on stdout"),
-        "expected D9 secret-on-stdout advisory on stderr; got {stderr:?}"
+        stderr.contains("warning: stdout carries private key material"),
+        "expected D9 output-class advisory on stderr; got {stderr:?}"
     );
 }
 
@@ -260,8 +260,8 @@ fn repair_json_envelope_shape() {
     // stdout regardless of representation).
     let stderr = String::from_utf8(out.stderr).expect("stderr utf-8");
     assert!(
-        stderr.contains("warning: secret material on stdout"),
-        "expected D9 secret-on-stdout advisory on stderr in JSON mode; got {stderr:?}"
+        stderr.contains("warning: stdout carries private key material"),
+        "expected D9 output-class advisory on stderr in JSON mode; got {stderr:?}"
     );
 }
 

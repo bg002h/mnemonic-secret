@@ -10,6 +10,7 @@ use clap::Args;
 use ms_codec::Payload;
 use serde_json::to_string;
 
+use crate::advisory::{OutputClass, emit_output_class_advisory};
 use crate::error::Result;
 use crate::format::DecodeJson;
 use crate::language::CliLanguage;
@@ -68,6 +69,7 @@ pub fn run(args: DecodeArgs) -> Result<u8> {
     } else {
         emit_text(&entropy[..], &phrase, cli_lang.as_str(), word_count, defaulted)?;
     }
+    emit_output_class_advisory(OutputClass::PrivateKeyMaterial, &mut std::io::stderr().lock());
     Ok(0)
 }
 

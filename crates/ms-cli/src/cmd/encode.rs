@@ -11,6 +11,7 @@ use hex::FromHex;
 use ms_codec::{Payload, Tag};
 use serde_json::to_string;
 
+use crate::advisory::{OutputClass, emit_output_class_advisory};
 use crate::error::{CliError, Result};
 use crate::format::{chunked, EncodeJson};
 use crate::language::CliLanguage;
@@ -94,6 +95,7 @@ pub fn run(mut args: EncodeArgs) -> Result<u8> {
     } else {
         emit_text(&ms1, language_for_card, word_count, args.no_engraving_card)?;
     }
+    emit_output_class_advisory(OutputClass::PrivateKeyMaterial, &mut std::io::stderr().lock());
     Ok(0)
 }
 
