@@ -4,6 +4,11 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.5.1] — 2026-05-31
+
+### Added
+- **Output-type stderr advisory (constellation cycle B, Phase 1).** `ms encode`/`ms decode` (BIP-39 entropy = private key material) and `ms repair` now emit `warning: stdout carries private key material (can spend) …`; `ms derive` (public derivation) emits `note: stdout is watch-only …`. Byte-identical wording to `mnemonic`'s advisory (cross-repo parity test). Replaces the prior `ms repair` "secret material on stdout" line. stderr-only.
+
 ## ms-cli [0.5.0] — 2026-05-31
 
 **SemVer-MINOR — new `ms derive` subcommand: read-only public derivation (master fingerprint + account xpub).** Theme B piece #3 of the m-format constellation (after `mk derive`/`mk address` and `mnemonic addresses`). `ms` could recover the BIP-39 entropy (`ms decode`) but not produce the **master fingerprint** — the cheapest "did I recover the RIGHT seed?" verification oracle. `ms derive` fills that.
