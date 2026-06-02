@@ -45,18 +45,38 @@ pub fn run(args: DecodeArgs) -> Result<u8> {
         Some(l) => (l, false),
         None => (CliLanguage::English, true),
     };
-    let lang: Language = cli_lang.into();
 
     let (_tag, payload) = ms_codec::decode(&ms1)?;
     // SPEC v0.9.0 §1 item 2 — wrap the entropy Vec at the consumer
     // boundary per `payload.rs` caller-wrap contract.
-    let entropy: Zeroizing<Vec<u8>> = match payload {
-        Payload::Entr(b) => Zeroizing::new(b),
-        // ms_codec::Payload is #[non_exhaustive]; v0.2+ may add variants.
-        // v0.1 ms-codec emits Entr only — unreachable in practice.
-        _ => unreachable!("ms-codec v0.1 only decodes to Payload::Entr"),
+    //
+    // For Payload::Mnem the wire language byte is authoritative: if the user
+    // passed --language AND it disagrees with the wire, the wire wins and we
+    // print a stderr note (exit 0). "Explicitly passed" is detectable because
+    // args.language is Option<CliLanguage> — Some means user-set, None means
+    // defaulted.
+    let (entropy, effective_lang, effective_lang_defaulted) = match payload {
+        Payload::Entr(b) => (Zeroizing::new(b), cli_lang, defaulted),
+        Payload::Mnem { language: wire_code, entropy } => {
+            let wire_cli_lang = CliLanguage::from_code(wire_code).unwrap_or(CliLanguage::English);
+            // Wire wins; warn only if user EXPLICITLY supplied --language that disagrees.
+            if !defaulted && wire_cli_lang != cli_lang {
+                let mut stderr = std::io::stderr().lock();
+                writeln!(
+                    stderr,
+                    "note: this ms1 carries wordlist language '{}'; ignoring --language {}",
+                    wire_cli_lang.as_str(),
+                    cli_lang.as_str()
+                )
+                .ok();
+            }
+            (Zeroizing::new(entropy), wire_cli_lang, false)
+        }
+        // ms_codec::Payload is #[non_exhaustive]; guard against future variants.
+        _ => unreachable!("ms-codec decode returned unknown Payload variant"),
     };
 
+    let lang: Language = effective_lang.into();
     // SAFETY: third-party-blocked — `bip39::Mnemonic` has no Drop+Zeroize;
     // FOLLOWUP `rust-bip39-mnemonic-zeroize-upstream`.
     let mnemonic = Mnemonic::from_entropy_in(lang, &entropy[..])
@@ -65,9 +85,21 @@ pub fn run(args: DecodeArgs) -> Result<u8> {
     let word_count = phrase.split_whitespace().count();
 
     if args.json {
-        emit_json(&entropy[..], &phrase, cli_lang.as_str(), word_count, defaulted)?;
+        emit_json(
+            &entropy[..],
+            &phrase,
+            effective_lang.as_str(),
+            word_count,
+            effective_lang_defaulted,
+        )?;
     } else {
-        emit_text(&entropy[..], &phrase, cli_lang.as_str(), word_count, defaulted)?;
+        emit_text(
+            &entropy[..],
+            &phrase,
+            effective_lang.as_str(),
+            word_count,
+            effective_lang_defaulted,
+        )?;
     }
     emit_output_class_advisory(OutputClass::PrivateKeyMaterial, &mut std::io::stderr().lock());
     Ok(0)
