@@ -245,7 +245,7 @@ BIP-39 entropy → mnemonic conversion depends on the wordlist language (English
 
 - Users MUST record their BIP-39 wordlist language alongside the engraved `ms1 entr` card. The recording need not be machine-readable; "English" stamped on the back of the steel plate is sufficient. English is the de-facto default and many wallets do not expose a language picker.
 - Wallet software that decodes `ms1 entr` SHOULD expose a wordlist-language selector and SHOULD warn the user that the default (English) may not match their original mnemonic.
-- A future v0.2+ payload kind `mnem` (reserved tag, currently rejected in v0.1) is allocated for an "entropy + 4-bit-encoded wordlist-language hint" payload that addresses this on the wire. The 10 BIP-39-defined languages fit in 4 bits. Specification deferred to v0.2+.
+- **Addressed in v0.2 (ms-codec 0.3.0):** the `mnem` payload kind records the wordlist language on the wire. It is carried by a new `0x02` prefix byte (not a reserved tag — the wire tag stays `entr`), with the layout `[0x02][language][entropy]`: a **1-byte language field** (only the low nibble is used — values 0–9 index the 10 BIP-39 wordlists, English = 0). The field is byte-aligned, not the 4-bit-packed form this note originally anticipated: codex32's `sanity_check` rejects a sub-byte-padded payload for the 15/18/24-word entropy lengths, so a whole language byte is required. v0.1 decoders still reject the `0x02` prefix; see `SPEC_ms_mnem_wordlist_language.md` for the v0.2 specification.
 
 ### §6.4 Engraving the post-passphrase 64-B master seed is an anti-pattern
 

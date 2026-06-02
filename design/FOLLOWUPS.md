@@ -30,6 +30,15 @@ Single source of truth for items that surfaced during a review or implementation
 
 ## Open items
 
+### `ms-codec-no-ci-workflow` — add CI (test + clippy + fmt) for both crates + a one-time fmt normalization
+
+- **Surfaced:** 2026-06-01, ms `mnem` v0.2 cycle (Phase 0 spike + every phase gate).
+- **Where:** `.github/workflows/` — the only workflow is `rust.yml`, scoped to `crates/ms-cli/**` and with **no `fmt` step**. `ms-codec` has **no CI at all**.
+- **What:** (a) Add a workflow that runs `cargo test --no-fail-fast`, `cargo clippy --all-targets -- -D warnings`, and `cargo +stable fmt --check --all` across **both** crates on push/PR. The `mnem` cycle's only gate was local verification because of this gap. (b) Before the `fmt --check` step can pass, the repo needs a one-time repo-wide normalization: `cargo +stable fmt --all` currently rewrites ~16 pre-existing files (across `ms-codec` and `ms-cli`, drift accumulated from the prior advisory cycle). Land that as a standalone `chore(fmt)` commit FIRST — do **not** bundle it into a feature cycle (the `mnem` cycle deliberately wrote fmt-clean-by-hand and skipped the fmt gate to avoid pulling that churn in).
+- **Why deferred:** out of scope for the `mnem` feature; the local gate (full suite + clippy at every phase) was sufficient for this cycle. CI hardening is its own small cycle.
+- **Status:** open
+- **Tier:** `v0.1-nice-to-have`
+
 ### `ms-codec-decode-with-correction-public-api` — promote `decode_with_correction` for downstream BCH consumers
 
 - **Surfaced:** 2026-05-17, mnemonic-toolkit v0.22.0 cycle (BCH error-correction launch).
