@@ -5,8 +5,11 @@
 //! schema), audit C3/I5 (would_decode + failure_reasons).
 
 use clap::Args;
-use ms_codec::consts::{RESERVED_NOT_EMITTED_V01, TAG_ENTR, VALID_ENTR_LENGTHS, VALID_STR_LENGTHS};
-use ms_codec::InspectReport;
+use ms_codec::consts::{
+    MNEM_LANGUAGE_NAMES, RESERVED_NOT_EMITTED_V01, TAG_ENTR, VALID_ENTR_LENGTHS,
+    VALID_MNEM_STR_LENGTHS, VALID_STR_LENGTHS,
+};
+use ms_codec::{InspectKind, InspectReport};
 use serde_json::to_string;
 
 use crate::error::Result;
@@ -75,17 +78,36 @@ fn analyze(report: &InspectReport, str_len: usize) -> (bool, Vec<&'static str>) 
             reasons.push("unknown-tag");
         }
     }
-    // Rule 8: prefix byte == 0x00.
-    if report.prefix_byte != 0x00 {
+    // Rule 8: prefix byte must be a recognised kind (0x00 = entr, 0x02 = mnem).
+    // Only flag non-zero-prefix if the kind is Unknown (not a recognised v0.2 type).
+    if report.kind == InspectKind::Unknown {
         reasons.push("non-zero-prefix");
     }
-    // Rule 9: total string length in v0.1 set.
-    if !VALID_STR_LENGTHS.contains(&str_len) {
+    // Rule 9: total string length must be in the valid set for the detected kind.
+    let valid_lengths: &[usize] = match report.kind {
+        InspectKind::Mnem => VALID_MNEM_STR_LENGTHS,
+        _ => VALID_STR_LENGTHS,
+    };
+    if !valid_lengths.contains(&str_len) {
         reasons.push("unexpected-string-length");
     }
-    // Rule 10: payload length matches tag's expected set (only entr in v0.1).
-    if tag_bytes == TAG_ENTR && !VALID_ENTR_LENGTHS.contains(&report.payload_bytes.len()) {
-        reasons.push("payload-length-mismatch");
+    // Rule 10: payload length matches the expected set for the detected kind.
+    // - entr: payload = entropy bytes ∈ {16,20,24,28,32}
+    // - mnem: payload = [lang_byte][entropy] = entropy_len + 1 ∈ {17,21,25,29,33}
+    match report.kind {
+        InspectKind::Entr if tag_bytes == TAG_ENTR => {
+            if !VALID_ENTR_LENGTHS.contains(&report.payload_bytes.len()) {
+                reasons.push("payload-length-mismatch");
+            }
+        }
+        InspectKind::Mnem => {
+            // payload_bytes = [lang_byte, entropy...]; valid if len - 1 ∈ VALID_ENTR_LENGTHS.
+            let entropy_len = report.payload_bytes.len().saturating_sub(1);
+            if !VALID_ENTR_LENGTHS.contains(&entropy_len) {
+                reasons.push("payload-length-mismatch");
+            }
+        }
+        _ => {}
     }
 
     (reasons.is_empty(), reasons)
@@ -93,21 +115,29 @@ fn analyze(report: &InspectReport, str_len: usize) -> (bool, Vec<&'static str>) 
 
 fn reason_text(tag: &'static str) -> &'static str {
     match tag {
-        "unexpected-string-length" => "string length not in v0.1 set [50, 56, 62, 69, 75]",
+        "unexpected-string-length" => {
+            "string length not in valid set for this kind ([50,56,62,69,75] entr / [51,58,64,70,77] mnem)"
+        }
         "wrong-hrp" => "HRP is not \"ms\"",
         "threshold-not-zero" => "threshold not 0 (v0.1 is single-string only)",
         "share-index-not-secret" => "share-index not 's' (BIP-93 requires 's' for threshold=0)",
         "reserved-tag-not-emitted" => "tag is reserved-not-emitted in v0.1; deferred to v0.2+",
         "unknown-tag" => "tag not in v0.1 RESERVED_TAG_TABLE",
-        "non-zero-prefix" => "reserved-prefix byte is not 0x00 (v0.1 reserves it)",
-        "payload-length-mismatch" => "entr payload length not in [16, 20, 24, 28, 32] bytes",
+        "non-zero-prefix" => "prefix byte is not a recognised kind (0x00=entr, 0x02=mnem)",
+        "payload-length-mismatch" => {
+            "payload length not valid for kind (entr: [16,20,24,28,32] B; mnem: [17,21,25,29,33] B)"
+        }
         _ => "<unknown reason>",
     }
 }
 
 fn emit_text(report: &InspectReport, would_decode: bool, reasons: &[&'static str]) {
     if would_decode {
-        println!("OK: would decode v0.1");
+        let version = match report.kind {
+            InspectKind::Mnem => "v0.2",
+            _ => "v0.1",
+        };
+        println!("OK: would decode {}", version);
     } else {
         println!("FAIL: would NOT decode v0.1");
         for r in reasons {
@@ -125,9 +155,24 @@ fn emit_text(report: &InspectReport, would_decode: bool, reasons: &[&'static str
     println!("prefix_byte: 0x{:02x}", report.prefix_byte);
     println!("payload_bytes: {}", hex::encode(&report.payload_bytes));
     println!("checksum_valid: {}", report.checksum_valid);
+    println!("kind: {}", report.kind.as_str());
+    if let Some(lang_code) = report.language {
+        let name = MNEM_LANGUAGE_NAMES
+            .get(lang_code as usize)
+            .copied()
+            .unwrap_or("unknown");
+        println!("language: {}", name);
+    }
 }
 
 fn emit_json(report: &InspectReport, would_decode: bool, reasons: &[&'static str]) -> Result<()> {
+    let language_name: Option<String> = report.language.map(|code| {
+        MNEM_LANGUAGE_NAMES
+            .get(code as usize)
+            .copied()
+            .unwrap_or("unknown")
+            .to_string()
+    });
     let json = InspectJson {
         schema_version: "1",
         report: InspectReportJson {
@@ -140,6 +185,8 @@ fn emit_json(report: &InspectReport, would_decode: bool, reasons: &[&'static str
             prefix_byte: report.prefix_byte,
             payload_bytes_hex: hex::encode(&report.payload_bytes),
             checksum_valid: report.checksum_valid,
+            kind: report.kind.as_str().to_string(),
+            language: language_name,
         },
         would_decode,
         failure_reasons: reasons.to_vec(),

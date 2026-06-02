@@ -1,9 +1,32 @@
 //! Structural inspection of an ms1 string for debugging / future ms-cli.
 
+use crate::consts::MNEM_PREFIX;
 use crate::envelope;
 use crate::error::Result;
 use crate::tag::Tag;
 use codex32::Codex32String;
+
+/// Payload kind as decoded by `inspect()`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InspectKind {
+    /// `entr` — raw BIP-39 entropy (0x00 prefix byte, v0.1).
+    Entr,
+    /// `mnem` — BIP-39 mnemonic entropy with language tag (0x02 prefix byte, v0.2).
+    Mnem,
+    /// Any other prefix byte — future or invalid.
+    Unknown,
+}
+
+impl InspectKind {
+    /// Kebab-case name for text/JSON output.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            InspectKind::Entr => "entr",
+            InspectKind::Mnem => "mnem",
+            InspectKind::Unknown => "unknown",
+        }
+    }
+}
 
 /// Structural dump of a parsed ms1 string. `#[non_exhaustive]` per SPEC §10
 /// — v0.2+ may add fields (share-index detail, threshold-layer hints,
@@ -25,6 +48,11 @@ pub struct InspectReport {
     pub payload_bytes: Vec<u8>,
     /// BCH verification result. True if the upstream codex32 parser accepted.
     pub checksum_valid: bool,
+    /// Payload kind derived from the prefix byte.
+    pub kind: InspectKind,
+    /// For `kind == Mnem`: the language byte (index into `MNEM_LANGUAGE_NAMES`).
+    /// `None` for all other kinds.
+    pub language: Option<u8>,
 }
 
 /// Inspect an ms1 string. Less strict than `decode()`: returns a report even
@@ -51,6 +79,17 @@ pub fn inspect(s: &str) -> Result<InspectReport> {
         (payload_with_prefix[0], payload_with_prefix[1..].to_vec())
     };
 
+    // Classify the payload kind and extract the language byte for mnem payloads.
+    let (kind, language) = match prefix_byte {
+        0x00 => (InspectKind::Entr, None),
+        MNEM_PREFIX => {
+            // payload_bytes = [lang_byte, entropy...]; language is the first byte.
+            let lang = payload_bytes.first().copied();
+            (InspectKind::Mnem, lang)
+        }
+        _ => (InspectKind::Unknown, None),
+    };
+
     Ok(InspectReport {
         hrp: fields.hrp.to_string(),
         threshold: fields.threshold_byte - b'0', // ASCII to digit
@@ -59,6 +98,8 @@ pub fn inspect(s: &str) -> Result<InspectReport> {
         prefix_byte,
         payload_bytes,
         checksum_valid: true, // if from_string accepted, BCH was valid
+        kind,
+        language,
     })
 }
 

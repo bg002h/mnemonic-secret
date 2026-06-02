@@ -52,6 +52,6 @@ mod envelope; // crate-private; v0.2-migration seam
 pub use decode::{CorrectionDetail, decode, decode_with_correction};
 pub use encode::encode;
 pub use error::{Error, Result};
-pub use inspect::{inspect, InspectReport};
+pub use inspect::{inspect, InspectKind, InspectReport};
 pub use payload::{Payload, PayloadKind};
 pub use tag::Tag;

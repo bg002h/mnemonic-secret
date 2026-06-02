@@ -78,6 +78,9 @@ pub struct InspectReportJson {
     pub prefix_byte: u8,
     pub payload_bytes_hex: String,
     pub checksum_valid: bool,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
 }
 
 /// Structured output for `ms inspect --json` (SPEC §5.3).
