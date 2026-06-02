@@ -82,12 +82,23 @@ pub fn run(mut args: EncodeArgs) -> Result<u8> {
             ));
         };
 
-    // ms_codec::Payload::Entr(Vec<u8>) is the public-API caller-wrap-contract
-    // shape; clone the wrapped buffer's contents into the public Vec at the
-    // call boundary. The original `entropy` Zeroizing<Vec<u8>> scrubs on drop
-    // at function exit. (R1 N-1 fold — removed intermediate
-    // `entropy_for_codec` indirection.)
-    let ms1 = ms_codec::encode(Tag::ENTR, &Payload::Entr((*entropy).clone()))?;
+    // Route to Payload::Mnem when input is a phrase in a non-English language;
+    // English phrases and --hex always stay Payload::Entr (byte-identical to v0.1).
+    // ms_codec::Payload::Entr(Vec<u8>) / Payload::Mnem are the public-API
+    // caller-wrap-contract shapes; clone the wrapped buffer's contents into the
+    // public Vec at the call boundary. The original `entropy` Zeroizing<Vec<u8>>
+    // scrubs on drop at function exit.
+    let ms1 = if args.language != CliLanguage::English && phrase_arg.is_some() {
+        ms_codec::encode(
+            Tag::ENTR,
+            &Payload::Mnem {
+                language: args.language.code(),
+                entropy: (*entropy).clone(),
+            },
+        )?
+    } else {
+        ms_codec::encode(Tag::ENTR, &Payload::Entr((*entropy).clone()))?
+    };
     let word_count = entropy.len() * 3 / 4; // 16->12, 20->15, 24->18, 28->21, 32->24
 
     if args.json {
