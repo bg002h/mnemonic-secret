@@ -23,7 +23,7 @@ pub fn encode(tag: Tag, payload: &Payload) -> Result<String> {
     // §3.5: payload length validation.
     payload.validate()?;
     // Hand off to envelope.
-    let c = envelope::package(tag, payload.as_bytes())?;
+    let c = envelope::package(tag, payload)?;
     Ok(c.to_string())
 }
 

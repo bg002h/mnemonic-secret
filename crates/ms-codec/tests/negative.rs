@@ -99,7 +99,10 @@ fn rule_6_unknown_tag_rejected() {
 
 #[test]
 fn rule_7_reserved_not_emitted_tags_rejected() {
-    for reserved in ["seed", "xprv", "mnem", "prvk"] {
+    // "mnem" as a TAG is not in RESERVED_NOT_EMITTED_V01 any more (v0.2 removed
+    // it from the not-emitted set since the Mnem payload now uses the "entr" tag
+    // with a 0x02 prefix byte). "mnem" as a tag now falls through to UnknownTag.
+    for reserved in ["seed", "xprv", "prvk"] {
         let s = build_with("ms", 0, reserved, Fe::S, VALID_PREFIX, ENTROPY_16);
         let err = decode(&s).unwrap_err();
         assert!(
@@ -109,6 +112,14 @@ fn rule_7_reserved_not_emitted_tags_rejected() {
             err
         );
     }
+    // "mnem" as a tag (distinct from the mnem payload kind which uses entr tag +
+    // 0x02 prefix) is an UnknownTag — it is no longer reserved-not-emitted.
+    let s_mnem_tag = build_with("ms", 0, "mnem", Fe::S, VALID_PREFIX, ENTROPY_16);
+    assert!(
+        matches!(decode(&s_mnem_tag), Err(Error::UnknownTag { .. })),
+        "mnem as a tag should be UnknownTag in v0.2, got {:?}",
+        decode(&s_mnem_tag)
+    );
 }
 
 #[test]
@@ -123,12 +134,14 @@ fn rule_8_reserved_prefix_violation_rejected() {
 
 #[test]
 fn rule_9_unexpected_string_length_rejected() {
-    // 51 chars: not a v0.1 emittable length.
-    let s = "ms10entrsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
-    assert_eq!(s.len(), 51);
+    // 52 chars: outside both the entr set [50,56,62,69,75] and the mnem set
+    // [51,58,64,70,77] — guaranteed to be rejected at the union length gate.
+    // (51 is now a valid mnem length in v0.2, so we use 52 instead.)
+    let s = "ms10entrsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+    assert_eq!(s.len(), 52);
     assert!(matches!(
         decode(s),
-        Err(Error::UnexpectedStringLength { got: 51, .. })
+        Err(Error::UnexpectedStringLength { got: 52, .. })
     ));
 }
 

@@ -27,9 +27,11 @@
 //! before this module is reached); `CHECKSUM_LEN_SHORT = 13` is hard-coded.
 
 use crate::consts::{
-    CHECKSUM_LEN_SHORT, HRP, RESERVED_PREFIX, SEPARATOR, SHARE_INDEX_V01, THRESHOLD_V01,
+    CHECKSUM_LEN_SHORT, HRP, MNEM_PREFIX, RESERVED_PREFIX, SEPARATOR, SHARE_INDEX_V01,
+    THRESHOLD_V01,
 };
 use crate::error::{Error, Result};
+use crate::payload::Payload;
 use crate::tag::Tag;
 use codex32::{Codex32String, Fe};
 use zeroize::Zeroizing;
@@ -81,14 +83,16 @@ pub(crate) fn extract_wire_fields(s: &str) -> Result<WireFields<'_>> {
 }
 
 /// Decode-side v0.2-migration seam. Given a BIP-93-validated codex32 string,
-/// extract `(Tag, payload_bytes_without_prefix)`. Enforces v0.1 wire-format
-/// invariants: HRP="ms", threshold='0', share-index='s', prefix byte == 0x00.
-/// Tag/payload-length validation against RESERVED_TAG_TABLE happens in `decode.rs`.
+/// extract `(Tag, Payload)` via prefix-byte dispatch. Enforces wire-format
+/// invariants: HRP="ms", threshold='0', share-index='s'.
+/// Tag/payload-length validation against the tag table happens in `decode.rs`.
 ///
-/// In v0.2 this function gains prefix-byte dispatch (`0x00` → v0.1 entr fallback,
-/// `0x01` → v0.2 entr-share path, `0x02..` → kind-specific dispatch) per SPEC §5
-/// invariant #2.
-pub(crate) fn discriminate(c: &Codex32String) -> Result<(Tag, Vec<u8>)> {
+/// Prefix-byte dispatch:
+/// - `0x00` (`RESERVED_PREFIX`) → `Payload::Entr(rest)`
+/// - `0x02` (`MNEM_PREFIX`)     → `Payload::Mnem { language: rest[0], entropy: rest[1..] }`
+///   (`.validate()` is called to reject unknown language codes immediately)
+/// - any other prefix            → `Err(Error::ReservedPrefixViolation)`
+pub(crate) fn discriminate(c: &Codex32String) -> Result<(Tag, Payload)> {
     let s = c.to_string();
     let fields = extract_wire_fields(&s)?;
 
@@ -122,41 +126,63 @@ pub(crate) fn discriminate(c: &Codex32String) -> Result<(Tag, Vec<u8>)> {
     // empty. No defensive `is_empty` arm needed.
     //
     // SPEC v0.9.0 §1 item 2 — wrap the OWNED payload buffer in `Zeroizing`
-    // so it scrubs on function exit (after the public return clones a
-    // fresh Vec). Caller is responsible for wrapping the returned Vec —
-    // see `payload.rs` doc-comment.
+    // so it scrubs on function exit. Caller is responsible for wrapping the
+    // returned Payload bytes — see `payload.rs` doc-comment.
     let payload_with_prefix: Zeroizing<Vec<u8>> = Zeroizing::new(c.parts().data());
 
-    // Reserved-prefix-byte check (SPEC §4 rule 8).
-    if payload_with_prefix[0] != RESERVED_PREFIX {
-        return Err(Error::ReservedPrefixViolation {
-            got: payload_with_prefix[0],
-        });
-    }
+    // Prefix-byte dispatch (v0.2 type discriminator).
+    let payload = match payload_with_prefix[0] {
+        RESERVED_PREFIX => {
+            // 0x00 → Entr: strip prefix, rest is raw entropy bytes.
+            Payload::Entr(payload_with_prefix[1..].to_vec())
+        }
+        MNEM_PREFIX => {
+            // 0x02 → Mnem: rest[0]=language, rest[1..]=entropy.
+            // payload_with_prefix has layout: [0x02][lang][entropy...].
+            let language = payload_with_prefix[1];
+            let entropy = payload_with_prefix[2..].to_vec();
+            let p = Payload::Mnem { language, entropy };
+            // Validate language code immediately; rejects unknown codes.
+            p.validate()?;
+            p
+        }
+        other => {
+            return Err(Error::ReservedPrefixViolation { got: other });
+        }
+    };
 
-    Ok((tag, payload_with_prefix[1..].to_vec()))
+    Ok((tag, payload))
 }
 
-/// Encode-side v0.2-migration seam. Given `(tag, payload_bytes)`, build a
-/// BIP-93-validated codex32 string with the v0.1 prefix-byte and wire-field
-/// fixed values (threshold=0, share-index='s'). The payload bytes here are
-/// the raw secret WITHOUT the reserved-prefix byte; this function prepends 0x00.
+/// Encode-side v0.2-migration seam. Given `(tag, payload)`, build a
+/// BIP-93-validated codex32 string. Wire layout by kind:
+/// - `Payload::Entr(e)`                → `[0x00][e...]` (byte-identical to v0.1)
+/// - `Payload::Mnem { language, entropy }` → `[0x02][language][entropy...]`
 ///
-/// In v0.2 this function gains a `Threshold` parameter (per SPEC §5 invariant #4)
-/// and the prefix byte becomes the type discriminator.
-pub(crate) fn package(tag: Tag, payload_bytes: &[u8]) -> Result<Codex32String> {
-    // [0x00 reserved-prefix] || payload
-    // SPEC v0.9.0 §1 item 2 — wrap the OWNED encode buffer in `Zeroizing`
-    // so the prefix+payload bytes scrub on function exit. The codex32
-    // crate's `Codex32String` is internally OWNED and not zeroized
-    // (tracked at FOLLOWUPS `rust-codex32-zeroize-upstream`); minimizing
-    // this local's lifetime is the best we can do at the seam.
-    let mut data: Zeroizing<Vec<u8>> =
-        Zeroizing::new(Vec::with_capacity(1 + payload_bytes.len()));
-    data.push(RESERVED_PREFIX);
-    data.extend_from_slice(payload_bytes);
+/// Fixed wire-field values: threshold=0, share-index='s'.
+///
+/// SPEC v0.9.0 §1 item 2 — the OWNED encode buffer is wrapped in `Zeroizing`
+/// so it scrubs on function exit (tracked at `rust-codex32-zeroize-upstream`).
+pub(crate) fn package(tag: Tag, payload: &Payload) -> Result<Codex32String> {
+    let data: Zeroizing<Vec<u8>> = match payload {
+        Payload::Entr(e) => {
+            // [0x00 reserved-prefix] || entropy — BYTE-IDENTICAL to v0.1.
+            let mut v = Zeroizing::new(Vec::with_capacity(1 + e.len()));
+            v.push(RESERVED_PREFIX);
+            v.extend_from_slice(e);
+            v
+        }
+        Payload::Mnem { language, entropy } => {
+            // [0x02 mnem-prefix] || [language] || entropy
+            let mut v = Zeroizing::new(Vec::with_capacity(2 + entropy.len()));
+            v.push(MNEM_PREFIX);
+            v.push(*language);
+            v.extend_from_slice(entropy);
+            v
+        }
+    };
 
-    // Delegate to rust-codex32. v0.1 always uses threshold=0, share=Fe::S.
+    // Delegate to rust-codex32. Always uses threshold=0, share=Fe::S.
     // `?` leverages the From<codex32::Error> for Error impl in error.rs.
     Ok(Codex32String::from_seed(
         HRP,
@@ -209,7 +235,7 @@ mod tests_discriminate {
         let c = build_v01_entr(&entropy);
         let (tag, recovered) = discriminate(&c).unwrap();
         assert_eq!(tag, Tag::ENTR);
-        assert_eq!(recovered, entropy);
+        assert_eq!(recovered, Payload::Entr(entropy));
     }
 
     #[test]
@@ -218,7 +244,7 @@ mod tests_discriminate {
         let c = build_v01_entr(&entropy);
         let (tag, recovered) = discriminate(&c).unwrap();
         assert_eq!(tag, Tag::ENTR);
-        assert_eq!(recovered, entropy);
+        assert_eq!(recovered, Payload::Entr(entropy));
     }
 
     #[test]
@@ -239,6 +265,17 @@ mod tests_discriminate {
         let c = Codex32String::from_seed("mq", 0, "entr", Fe::S, &data).unwrap();
         assert!(matches!(discriminate(&c), Err(Error::WrongHrp { .. })));
     }
+
+    #[test]
+    fn discriminate_mnem_prefix_returns_mnem_payload() {
+        let entropy = vec![0xBBu8; 16];
+        let mut data = vec![MNEM_PREFIX, 0x02u8]; // language=2 (Korean)
+        data.extend_from_slice(&entropy);
+        let c = Codex32String::from_seed(HRP, 0, "entr", Fe::S, &data).unwrap();
+        let (tag, recovered) = discriminate(&c).unwrap();
+        assert_eq!(tag, Tag::ENTR);
+        assert_eq!(recovered, Payload::Mnem { language: 2, entropy });
+    }
 }
 
 #[cfg(test)]
@@ -246,13 +283,26 @@ mod tests_package {
     use super::*;
 
     #[test]
-    fn package_round_trips_through_discriminate() {
+    fn package_entr_round_trips_through_discriminate() {
         for len in [16usize, 20, 24, 28, 32] {
             let entropy = vec![0xAAu8; len];
-            let c = package(Tag::ENTR, &entropy).unwrap();
+            let p = Payload::Entr(entropy.clone());
+            let c = package(Tag::ENTR, &p).unwrap();
             let (tag, recovered) = discriminate(&c).unwrap();
             assert_eq!(tag, Tag::ENTR);
-            assert_eq!(recovered, entropy);
+            assert_eq!(recovered, Payload::Entr(entropy));
+        }
+    }
+
+    #[test]
+    fn package_mnem_round_trips_through_discriminate() {
+        for len in [16usize, 20, 24, 28, 32] {
+            let entropy = vec![0xCCu8; len];
+            let p = Payload::Mnem { language: 3, entropy: entropy.clone() };
+            let c = package(Tag::ENTR, &p).unwrap();
+            let (tag, recovered) = discriminate(&c).unwrap();
+            assert_eq!(tag, Tag::ENTR);
+            assert_eq!(recovered, Payload::Mnem { language: 3, entropy });
         }
     }
 
@@ -261,12 +311,32 @@ mod tests_package {
         let expected_lengths = crate::consts::VALID_STR_LENGTHS;
         for (i, len) in [16usize, 20, 24, 28, 32].iter().enumerate() {
             let entropy = vec![0xAAu8; *len];
-            let c = package(Tag::ENTR, &entropy).unwrap();
+            let p = Payload::Entr(entropy);
+            let c = package(Tag::ENTR, &p).unwrap();
             let s = c.to_string();
             assert_eq!(
                 s.len(),
                 expected_lengths[i],
-                "length mismatch for {}-B entropy: got {}, expected {}",
+                "length mismatch for {}-B entr entropy: got {}, expected {}",
+                len,
+                s.len(),
+                expected_lengths[i]
+            );
+        }
+    }
+
+    #[test]
+    fn package_mnem_produces_str_lengths_in_mnem_set() {
+        let expected_lengths = crate::consts::VALID_MNEM_STR_LENGTHS;
+        for (i, len) in [16usize, 20, 24, 28, 32].iter().enumerate() {
+            let entropy = vec![0xAAu8; *len];
+            let p = Payload::Mnem { language: 0, entropy };
+            let c = package(Tag::ENTR, &p).unwrap();
+            let s = c.to_string();
+            assert_eq!(
+                s.len(),
+                expected_lengths[i],
+                "length mismatch for {}-B mnem entropy: got {}, expected {}",
                 len,
                 s.len(),
                 expected_lengths[i]

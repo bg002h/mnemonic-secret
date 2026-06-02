@@ -8,37 +8,60 @@
 //! spec, so there is no atomic-multi-chunk variant (cf. md-codec's
 //! per-chunk-set version).
 
-use crate::consts::{RESERVED_NOT_EMITTED_V01, TAG_ENTR, VALID_STR_LENGTHS};
+use crate::consts::{RESERVED_NOT_EMITTED_V01, TAG_ENTR, VALID_MNEM_STR_LENGTHS, VALID_STR_LENGTHS};
 use crate::envelope;
 use crate::error::{Error, Result};
-use crate::payload::Payload;
+use crate::payload::{Payload, PayloadKind};
 use crate::tag::Tag;
 use codex32::Codex32String;
 
-/// Decode a v0.1 ms1 string into `(Tag, Payload)`.
+/// Union of all emittable string lengths (entr ∪ mnem). Used as the
+/// pre-dispatch gate in `decode` before kind-specific binding.
+fn is_known_length(len: usize) -> bool {
+    VALID_STR_LENGTHS.contains(&len) || VALID_MNEM_STR_LENGTHS.contains(&len)
+}
+
+/// Return the kind-appropriate allowed-length set for error reporting.
+fn allowed_for_kind(kind: PayloadKind) -> &'static [usize] {
+    match kind {
+        PayloadKind::Entr => VALID_STR_LENGTHS,
+        PayloadKind::Mnem => VALID_MNEM_STR_LENGTHS,
+    }
+}
+
+/// Decode an ms1 string into `(Tag, Payload)`.
 ///
-/// Rejects per SPEC §4 rules 1-10:
+/// Rejects per SPEC §4 rules 1-10 (extended for v0.2 mnem):
 ///
 /// - Rule 1: upstream codex32 parse failure (Codex32 variant).
 /// - Rules 2-4, 8: wire-invariant violations (delegated to envelope::discriminate).
 /// - Rules 5-7: tag-table membership rules (here).
-/// - Rule 9: total string length not in v0.1-emittable set (here, before parse).
+/// - Rule 9: total string length not in the union {entr lengths} ∪ {mnem lengths}
+///   (here, before parse); then bound to the discriminated kind post-dispatch.
 /// - Rule 10: payload byte length mismatch for the tag (here, via Payload::validate()).
 pub fn decode(s: &str) -> Result<(Tag, Payload)> {
-    // §4 rule 9: total string length must be in the v0.1 set.
-    if !VALID_STR_LENGTHS.contains(&s.len()) {
+    // §4 rule 9 (pre-dispatch): total string length must be in the union set.
+    if !is_known_length(s.len()) {
         return Err(Error::UnexpectedStringLength {
             got: s.len(),
-            allowed: VALID_STR_LENGTHS,
+            allowed: VALID_STR_LENGTHS, // report the entr set as the primary allowed set
         });
     }
 
-    // §4 rule 1: delegate parse + checksum to rust-codex32. `?` leverages the
-    // From<codex32::Error> for Error impl in error.rs.
+    // §4 rule 1: delegate parse + checksum to rust-codex32.
     let c = Codex32String::from_string(s.to_string())?;
 
-    // §4 rules 2, 3, 4, 8 + tag-alphabet rule 5: envelope.
-    let (tag, payload_bytes) = envelope::discriminate(&c)?;
+    // §4 rules 2, 3, 4, 8 + tag-alphabet rule 5: envelope (returns typed Payload).
+    let (tag, payload) = envelope::discriminate(&c)?;
+
+    // §4 rule 9 (post-dispatch, bind to kind): length must be in the kind-appropriate set.
+    let kind_allowed = allowed_for_kind(payload.kind());
+    if !kind_allowed.contains(&s.len()) {
+        return Err(Error::UnexpectedStringLength {
+            got: s.len(),
+            allowed: kind_allowed,
+        });
+    }
 
     // §4 rule 7: reserved-not-emitted tags.
     if RESERVED_NOT_EMITTED_V01.contains(tag.as_bytes()) {
@@ -47,19 +70,29 @@ pub fn decode(s: &str) -> Result<(Tag, Payload)> {
         });
     }
 
-    // §4 rule 6: tag must be in the v0.1 accept set (currently {entr}).
+    // §4 rule 6: tag must be in the v0.2 accept set (currently {entr}).
     // SPEC v0.9.0 §1 item 2 — wrap the OWNED entropy buffer in `Zeroizing`
-    // so the intermediate scrub runs on function exit. `Payload::Entr(Vec<u8>)`
-    // is the public return shape (unwrapped per SPEC §3 OOS-2); the
-    // caller wraps before storing — see `payload.rs` doc-comment.
+    // so the intermediate scrub runs on function exit. The public Payload
+    // boundary is unwrapped per SPEC §3 OOS-2; caller wraps — see payload.rs.
     use zeroize::Zeroizing;
     let payload = match *tag.as_bytes() {
         x if x == TAG_ENTR => {
-            let scrubbed: Zeroizing<Vec<u8>> = Zeroizing::new(payload_bytes);
-            let p = Payload::Entr((*scrubbed).clone());
-            // §4 rule 10: validate payload length against the tag's expected set.
-            p.validate()?;
-            p
+            match payload {
+                Payload::Entr(data) => {
+                    let scrubbed: Zeroizing<Vec<u8>> = Zeroizing::new(data);
+                    let p = Payload::Entr((*scrubbed).clone());
+                    // §4 rule 10: validate payload length.
+                    p.validate()?;
+                    p
+                }
+                Payload::Mnem { language, entropy } => {
+                    let scrubbed: Zeroizing<Vec<u8>> = Zeroizing::new(entropy);
+                    let p = Payload::Mnem { language, entropy: (*scrubbed).clone() };
+                    // §4 rule 10: validate (language range + entropy length).
+                    p.validate()?;
+                    p
+                }
+            }
         }
         _ => {
             return Err(Error::UnknownTag {
@@ -266,8 +299,10 @@ mod tests {
 
     #[test]
     fn decode_rejects_unexpected_length() {
-        // 51 chars is not a v0.1 emittable length.
-        let s = "ms10entrsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+        // 52 chars is outside both the entr set [50,56,62,69,75]
+        // and the mnem set [51,58,64,70,77].
+        let s = "ms10entrsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+        assert_eq!(s.len(), 52, "test string must be 52 chars");
         assert!(matches!(
             decode(s),
             Err(Error::UnexpectedStringLength { .. })

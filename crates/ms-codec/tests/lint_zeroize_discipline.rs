@@ -42,7 +42,7 @@ const ZEROIZE_ROWS: &[ZeroizeRow] = &[
     ZeroizeRow {
         label: "envelope::package() wraps OWNED data Vec",
         source_file: "src/envelope.rs",
-        evidence: &["let mut data: Zeroizing<Vec<u8>>"],
+        evidence: &["let data: Zeroizing<Vec<u8>>"],
     },
     ZeroizeRow {
         label: "decode() Payload::Entr allocation wraps before public emit",
