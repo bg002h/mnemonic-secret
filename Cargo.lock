@@ -442,7 +442,7 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
 name = "ms-cli"
-version = "0.5.1"
+version = "0.6.0"
 dependencies = [
  "assert_cmd",
  "bip39",
@@ -460,7 +460,7 @@ dependencies = [
 
 [[package]]
 name = "ms-codec"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "bip39",
  "codex32",

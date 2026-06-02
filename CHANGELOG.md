@@ -4,6 +4,35 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.6.0] — 2026-06-01
+
+**SemVer-MINOR — `ms` records the BIP-39 wordlist language on the wire for
+non-English seeds.** Fixes the long-standing §6.3 non-English-seed footgun: a
+non-English mnemonic backed up as `ms1` previously lost which wordlist
+regenerates it (entropy alone is language-agnostic; the seed is PBKDF2 over the
+language-specific string).
+
+### Added
+
+- **`ms encode` auto-routes a non-English `--phrase` to the new `mnem` payload**
+  (records `--language` on the wire). English phrases and `--hex` input stay
+  byte-identical `entr` — no wire change for the existing common case.
+- **`ms decode` of a `mnem` string emits the phrase in the on-wire language.**
+  The wire language is authoritative: if `--language` is supplied and disagrees,
+  the wire wins and a stderr `note:` reports the override (exit 0). `entr` decode
+  is unchanged (English default + the existing DEFAULT annotation).
+- **`ms inspect` reports `kind: mnem` + `language: <name>`** (text and `--json`)
+  and recognizes the `0x02` prefix + `mnem` lengths as valid.
+
+Re-pins `ms-codec` to `=0.3.0` (the `mnem` payload kind).
+
+## ms-codec [0.3.0] — 2026-06-01
+
+See `crates/ms-codec/CHANGELOG.md` [0.3.0]: new `Payload::Mnem` (`0x02` prefix,
+byte-aligned `[0x02][language][entropy]`), `package`/`discriminate` carry the
+typed `Payload`, length-gate bound to kind, `InspectReport.kind`/`language`. The
+v0.1 `entr` path is byte-identical.
+
 ## ms-cli [0.5.1] — 2026-05-31
 
 ### Added

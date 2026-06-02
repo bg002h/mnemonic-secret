@@ -4,6 +4,37 @@ All notable changes to the `ms-codec` crate are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-06-01
+
+**SemVer-MINOR — new `mnem` payload kind: BIP-39 wordlist language on the wire.**
+Resolves the §6.3 non-English-seed footgun (a non-English mnemonic could only be
+backed up as raw `entr` entropy, losing which wordlist regenerates it).
+
+### Added
+
+- **`Payload::Mnem { language: u8, entropy: Vec<u8> }`** — a second payload kind
+  behind a new `0x02` prefix byte. Byte-aligned layout `[0x02][language][entropy]`
+  (the language byte joins the existing reserved-prefix slot; no bit-packing).
+  `language` indexes the new `MNEM_LANGUAGE_NAMES` table (10 BIP-39 wordlists,
+  English = 0).
+- New consts `MNEM_PREFIX = 0x02`, `VALID_MNEM_STR_LENGTHS = [51, 58, 64, 70, 77]`,
+  `MNEM_LANGUAGE_NAMES`. New error variant `MnemUnknownLanguage(u8)`.
+- `InspectReport` gains `kind: InspectKind` (`Entr`/`Mnem`/`Unknown`) +
+  `language: Option<u8>`, classified from the prefix byte (both `#[non_exhaustive]`).
+
+### Changed
+
+- `package`/`discriminate` now carry the typed `Payload` across the envelope seam
+  (was a raw byte vector), so the language byte survives encode→decode.
+- The decode length-gate binds string-length ↔ payload-kind: `entr` ⟺
+  `{50,56,62,69,75}`, `mnem` ⟺ `{51,58,64,70,77}` — a length carrying the wrong
+  kind is rejected (`UnexpectedStringLength` / `PayloadLengthMismatch`).
+- `mnem` removed from `RESERVED_NOT_EMITTED_V01` (it is now an emitted kind).
+
+The v0.1 `entr` (`0x00`) path is **byte-identical** — the SHA-pinned v0.1 vector
+corpus passes unchanged. `decode_with_correction` (BCH) works for all five `mnem`
+string lengths (guarded against the documented length-divergence bug class).
+
 ## [0.2.1] — 2026-05-29
 
 ### Fixed
