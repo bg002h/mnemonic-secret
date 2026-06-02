@@ -51,15 +51,15 @@ fn codex32_json_envelope() {
 
 #[test]
 fn unexpected_string_length_json_envelope() {
-    // 51-char input.
+    // 52 chars: outside both the entr {50,56,62,69,75} and mnem {51,58,64,70,77} length sets.
     let v = run_and_parse(&[
         "decode",
-        "ms10entrsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", // 51 chars
+        "ms10entrsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", // 52 chars
         "--json",
     ]);
     assert_eq!(v["error"]["kind"], "UnexpectedStringLength");
     assert_eq!(v["error"]["exit_code"], 1);
-    assert_eq!(v["error"]["details"]["got"], 51);
+    assert_eq!(v["error"]["details"]["got"], 52);
 }
 
 #[test]

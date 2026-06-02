@@ -55,10 +55,15 @@ pub fn run(args: DecodeArgs) -> Result<u8> {
     // print a stderr note (exit 0). "Explicitly passed" is detectable because
     // args.language is Option<CliLanguage> — Some means user-set, None means
     // defaulted.
-    let (entropy, effective_lang, effective_lang_defaulted) = match payload {
-        Payload::Entr(b) => (Zeroizing::new(b), cli_lang, defaulted),
-        Payload::Mnem { language: wire_code, entropy } => {
-            let wire_cli_lang = CliLanguage::from_code(wire_code).unwrap_or(CliLanguage::English);
+    //
+    // Two-step: borrow first to compute language + emit warning, then consume
+    // to extract entropy. The standalone typed binding `let entropy:
+    // Zeroizing<Vec<u8>>` is the greppable discipline anchor required by the
+    // `lint_zeroize_discipline` test (every_canonical_zeroize_row_has_evidence_anchor).
+    let (effective_lang, effective_lang_defaulted) = match &payload {
+        Payload::Entr(_) => (cli_lang, defaulted),
+        Payload::Mnem { language: wire_code, .. } => {
+            let wire_cli_lang = CliLanguage::from_code(*wire_code).unwrap_or(CliLanguage::English);
             // Wire wins; warn only if user EXPLICITLY supplied --language that disagrees.
             if !defaulted && wire_cli_lang != cli_lang {
                 let mut stderr = std::io::stderr().lock();
@@ -70,9 +75,14 @@ pub fn run(args: DecodeArgs) -> Result<u8> {
                 )
                 .ok();
             }
-            (Zeroizing::new(entropy), wire_cli_lang, false)
+            (wire_cli_lang, false)
         }
         // ms_codec::Payload is #[non_exhaustive]; guard against future variants.
+        _ => unreachable!("ms-codec decode returned unknown Payload variant"),
+    };
+    let entropy: Zeroizing<Vec<u8>> = match payload {
+        Payload::Entr(b) => Zeroizing::new(b),
+        Payload::Mnem { entropy, .. } => Zeroizing::new(entropy),
         _ => unreachable!("ms-codec decode returned unknown Payload variant"),
     };
 
