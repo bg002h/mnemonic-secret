@@ -1,6 +1,6 @@
 //! Phase 1 mnem round-trip integration tests + wire-correctness golden vector.
 
-use ms_codec::{decode, encode, Payload, PayloadKind, Tag};
+use ms_codec::{decode, decode_with_correction, encode, Payload, PayloadKind, Tag};
 
 /// Encode a Mnem payload and verify:
 /// - the output ms1 string has the correct length (51 for 16-byte entropy)
@@ -52,6 +52,80 @@ fn mnem_decode_with_correction_clean_passes() {
         matches!(recovered, Payload::Mnem { language: 0, .. }),
         "expected Mnem language=0"
     );
+}
+
+// ── BCH correction helpers (mirror of bch_all_lengths.rs) ────────────────────
+
+const ABC: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+
+fn sym(c: char) -> u8 {
+    ABC.iter().position(|&b| b == c as u8).unwrap() as u8
+}
+
+/// Flip the data-part symbol at `pos` (0-indexed into post-`ms1` region)
+/// by XOR-ing with `mask`, staying within the codex32 alphabet.
+fn corrupt_at(s: &str, pos: usize, mask: u8) -> String {
+    let mut c: Vec<char> = s.chars().collect();
+    let i = 3 + pos;
+    let v = sym(c[i].to_ascii_lowercase());
+    c[i] = ABC[((v ^ (mask & 0x1F)) & 0x1F) as usize] as char;
+    c.into_iter().collect()
+}
+
+/// Number of data-part symbols (post-`ms1`) for a given ms1 string.
+fn data_part_len(s: &str) -> usize {
+    s.len() - 3 // subtract 3-char HRP "ms1"
+}
+
+// ── Task 1.3 Step 5b: corrupted-mnem BCH correction, all 5 lengths ───────────
+
+/// BCH correction recovers a mnem string from ≤4 corrupted data-part symbols,
+/// for all five mnem entropy lengths {16,20,24,28,32} bytes.
+///
+/// This guards the mnem string-length set {51,58,64,70,77} — a brand-new,
+/// previously-unexercised length set on the correction path. The entr set
+/// {50,56,62,69,75} is already covered by bch_all_lengths.rs::corrects_1_to_4_errors.
+///
+/// Positions chosen deterministically via the same formula as bch_all_lengths.rs:
+///   positions[j] = 1 + j * max(dp / (k + 1), 1)
+/// so each k-error group is evenly spaced, non-overlapping, and well within the
+/// data-part bounds.
+#[test]
+fn mnem_decode_with_correction_recovers_from_corruption() {
+    for &n in &[16usize, 20, 24, 28, 32] {
+        let entropy = vec![0xABu8; n];
+        let p = Payload::Mnem { language: 2, entropy: entropy.clone() };
+        let s = encode(Tag::ENTR, &p)
+            .unwrap_or_else(|e| panic!("encode n={n} failed: {e:?}"));
+        let dp = data_part_len(&s);
+
+        for k in 1..=4usize {
+            let positions: Vec<usize> =
+                (0..k).map(|j| 1 + j * (dp / (k + 1)).max(1)).collect();
+            let mut bad = s.clone();
+            for &pos in &positions {
+                bad = corrupt_at(&bad, pos, 0x1F);
+            }
+
+            let (tag, recovered, corr) = decode_with_correction(&bad)
+                .unwrap_or_else(|e| panic!("n={n} k={k} correction failed: {e:?}"));
+            assert_eq!(tag, Tag::ENTR, "n={n} k={k}: tag must be ENTR");
+            assert_eq!(
+                recovered,
+                Payload::Mnem { language: 2, entropy: entropy.clone() },
+                "n={n} k={k}: recovered payload must match original (language=2, entropy=[0xAB;{n}])"
+            );
+
+            let got_positions: std::collections::BTreeSet<usize> =
+                corr.iter().map(|d| d.position).collect();
+            let want_positions: std::collections::BTreeSet<usize> =
+                positions.iter().copied().collect();
+            assert_eq!(
+                got_positions, want_positions,
+                "n={n} k={k}: reported correction positions must equal injected positions"
+            );
+        }
+    }
 }
 
 /// Wire-correctness golden vector: English (language=0) + fixed 16-byte entropy.
