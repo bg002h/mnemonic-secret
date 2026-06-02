@@ -9,6 +9,8 @@ use std::fmt;
 pub enum Error {
     /// Upstream codex32 parse / checksum failure (delegated from rust-codex32).
     Codex32(codex32::Error),
+    /// Mnem wordlist-language byte was not in the valid range 0..=9 (SPEC v0.2 §3).
+    MnemUnknownLanguage(u8),
     /// HRP was not "ms" (SPEC §4 rule 2).
     WrongHrp {
         /// The HRP that was observed.
@@ -83,6 +85,9 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Codex32(e) => write!(f, "codex32 parse error: {:?}", e),
+            Error::MnemUnknownLanguage(code) => {
+                write!(f, "unknown mnem wordlist-language code: {0}", code)
+            }
             Error::WrongHrp { got } => write!(f, "wrong HRP: got {:?}, expected \"ms\"", got),
             Error::ThresholdNotZero { got } => {
                 write!(

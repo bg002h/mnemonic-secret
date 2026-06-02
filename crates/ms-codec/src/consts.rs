@@ -35,8 +35,31 @@ pub const VALID_STR_LENGTHS: &[usize] = &[50, 56, 62, 69, 75];
 /// 4-byte type tag — v0.1 emit (also accept).
 pub const TAG_ENTR: [u8; 4] = *b"entr";
 
+/// v0.2 mnem-prefix byte (type discriminator for Mnem payloads).
+pub const MNEM_PREFIX: u8 = 0x02;
+
+/// Allowed v0.2 mnem total ms1 string lengths (byte-aligned: prefix + lang + entropy).
+/// Computed: 9 fixed + ceil((entropy_bytes + 2) * 8 / 5) payload symbols + 13 cksum.
+pub const VALID_MNEM_STR_LENGTHS: &[usize] = &[51, 58, 64, 70, 77];
+
+/// BIP-39 wordlist language names indexed by language byte (0 = English).
+/// This order MUST match ms-cli's `CliLanguage` declaration order (Phase 2 depends on it).
+pub const MNEM_LANGUAGE_NAMES: [&str; 10] = [
+    "english",
+    "japanese",
+    "korean",
+    "spanish",
+    "chinese-simplified",
+    "chinese-traditional",
+    "french",
+    "italian",
+    "czech",
+    "portuguese",
+];
+
 /// 4-byte type tags reserved-not-emitted in v0.1 (decoder rejects).
-pub const RESERVED_NOT_EMITTED_V01: &[[u8; 4]] = &[*b"seed", *b"xprv", *b"mnem", *b"prvk"];
+/// `mnem` is no longer reserved-not-emitted: it is emitted in v0.2+ as Payload::Mnem.
+pub const RESERVED_NOT_EMITTED_V01: &[[u8; 4]] = &[*b"seed", *b"xprv", *b"prvk"];
 
 #[cfg(test)]
 mod tests {
@@ -57,6 +80,25 @@ mod tests {
                 total, VALID_STR_LENGTHS[i],
                 "entropy {} B -> expected str.len {}, got {} (bijection drift)",
                 entropy_bytes, VALID_STR_LENGTHS[i], total
+            );
+        }
+    }
+
+    /// Locks the bijection between VALID_ENTR_LENGTHS and VALID_MNEM_STR_LENGTHS.
+    /// Mnem payload = [0x02 prefix] + [lang byte] + entropy = entropy_bytes + 2 bytes.
+    /// Formula: total = 9 fixed + ceil((entropy_bytes + 2) * 8 / 5) payload symbols
+    /// + 13 short checksum.
+    #[test]
+    fn valid_mnem_str_lengths_match_entr_lengths_via_bijection() {
+        assert_eq!(VALID_ENTR_LENGTHS.len(), VALID_MNEM_STR_LENGTHS.len());
+        for (i, &entropy_bytes) in VALID_ENTR_LENGTHS.iter().enumerate() {
+            let data_bits = (entropy_bytes + 2) * 8; // +2 for 0x02 prefix + lang byte
+            let payload_symbols = data_bits.div_ceil(5);
+            let total = 9 + payload_symbols + CHECKSUM_LEN_SHORT;
+            assert_eq!(
+                total, VALID_MNEM_STR_LENGTHS[i],
+                "entropy {} B -> expected mnem str.len {}, got {} (bijection drift)",
+                entropy_bytes, VALID_MNEM_STR_LENGTHS[i], total
             );
         }
     }
