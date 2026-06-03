@@ -4,6 +4,24 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.7.0] — 2026-06-03
+
+**SemVer-MINOR — `ms split` / `ms combine` (K-of-N codex32 shares).**
+
+### Added
+
+- **`ms split [--phrase|--hex] -k <K> -n <N> [--language] [--json]`** — split a secret into N codex32 shares (any K recombine); a non-English `--phrase` produces `mnem` shares so the wordlist language survives the split. Output is private-key-material (the share *set* is secret-equivalent).
+- **`ms combine <share>... [--to phrase|entropy|ms1] [--json]`** — recombine ≥K shares into the recovered secret (phrase in the on-wire language for mnem). Surfaces the codex32/share error taxonomy (below-threshold, mismatched id/threshold/length, repeated index, secret-share-supplied).
+- **`ms inspect` of a lone share** is now first-class (reports `kind: share` + threshold/id/index, exit 0) rather than a decode failure.
+
+### Changed
+
+- `ms decode` of a threshold∈2..9 string now exits 2 `IsShareNotSingleString` (directing to `ms combine`), replacing the v0.1 `ThresholdNotZero`. Re-pins `ms-codec` to `=0.4.0`.
+
+## ms-codec [0.4.0] — 2026-06-03
+
+See `crates/ms-codec/CHANGELOG.md` [0.4.0]: `Threshold` + `encode_shares`/`combine_shares` (K-of-N for entr AND mnem), threshold-field share dispatch, `0x01` unallocated, byte-identical v0.1/mnem single-strings.
+
 ## ms-cli [0.6.0] — 2026-06-01
 
 **SemVer-MINOR — `ms` records the BIP-39 wordlist language on the wire for

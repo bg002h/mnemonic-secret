@@ -4,6 +4,22 @@ All notable changes to the `ms-codec` crate are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-06-03
+
+**SemVer-MINOR — K-of-N codex32 Shamir shares.** Split an `entr` or `mnem` secret
+into N shares, any K of which recombine. v0.1/mnem single-strings stay
+byte-identical and forward-readable.
+
+### Added
+
+- **`Threshold`** (`ZERO` const + `new(2..=9)`), **`encode_shares(tag, threshold, n, &Payload) -> Vec<String>`** (derives all N shares internally via `getrandom`; `ZERO`/`n=1` is byte-identical to `encode`), **`combine_shares(&[String]) -> (Tag, Payload)`** (recovers via `interpolate_at(Fe::S)`; works for entr AND mnem — language survives the split).
+- Shares key on the codex32 **threshold field** (`k`) + per-share **index** + group by `id` (BIP-93 native); the secret-at-S is never distributed. `0x01` stays unallocated (the prefix byte remains the payload-kind discriminator).
+- `RESERVED_ID_BLOCKLIST` (anti-collision for random share-set ids; retains `mnem`). New errors `InvalidShareCount`, `InvalidThreshold`, `IsShareNotSingleString`, `SecretShareSuppliedToCombine`; codex32 share errors surface via `Error::Codex32`.
+
+### Changed
+
+- `decode` of a threshold∈2..9 string returns `IsShareNotSingleString` (was the v0.1 `ThresholdNotZero` hard-reject) — routes the user to recombination. The internal `[prefix]||payload` assembly is factored into `payload_wire_bytes()` (shared by `package`/`encode_shares`); `package` byte-identical. §5/MIGRATION.md migration contract amended (threshold-field dispatch).
+
 ## [0.3.0] — 2026-06-01
 
 **SemVer-MINOR — new `mnem` payload kind: BIP-39 wordlist language on the wire.**
