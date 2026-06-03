@@ -310,6 +310,38 @@ mod tests {
     }
 
     #[test]
+    fn decode_routes_share_to_is_share_not_single_string() {
+        // A distributed share of an entr-16 secret is a 50-char string (same
+        // length as a v0.1 entr-16 single — disambiguated by the threshold char,
+        // not length). It passes the length gate, parses, then discriminate must
+        // route it → IsShareNotSingleString (NOT ThresholdNotZero).
+        use crate::shares::{encode_shares, Threshold};
+        let p = Payload::Entr(vec![0xAAu8; 16]);
+        let shares = encode_shares(Tag::ENTR, Threshold::new(2).unwrap(), 3, &p).unwrap();
+        let s = &shares[0];
+        assert_eq!(s.len(), 50, "threshold=2 entr-16 share must be 50 chars");
+        match decode(s) {
+            Err(Error::IsShareNotSingleString { threshold, .. }) => {
+                assert_eq!(threshold, '2');
+            }
+            other => panic!("expected IsShareNotSingleString, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn decode_v01_single_strings_still_ok() {
+        // v0.1 entr single + v0.2 mnem single both decode unchanged.
+        let entr = encode::encode(Tag::ENTR, &Payload::Entr(vec![0x11u8; 16])).unwrap();
+        assert!(decode(&entr).is_ok(), "v0.1 entr single must still decode");
+        let mnem = encode::encode(
+            Tag::ENTR,
+            &Payload::Mnem { language: 1, entropy: vec![0x22u8; 16] },
+        )
+        .unwrap();
+        assert!(decode(&mnem).is_ok(), "mnem single must still decode");
+    }
+
+    #[test]
     fn decode_rejects_short_seed_string_with_reserved_tag() {
         // Hand-build a 50-char string with id="seed" — 16-B entropy worth.
         // The string-length check passes; tag-rule 7 fails.

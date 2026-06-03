@@ -48,19 +48,29 @@ fn rule_2_wrong_hrp_rejected() {
 }
 
 #[test]
-fn rule_3_threshold_not_zero_rejected() {
+fn rule_3_threshold_2_routes_to_is_share() {
+    // v0.2 (SPEC_ms_v0_2_kofn §1): the v0.1 ThresholdNotZero hard-reject for
+    // threshold∈2..9 is RELAXED into a route — a threshold=2 string is one share
+    // of a K-of-N set, so decode surfaces IsShareNotSingleString (directing the
+    // user to `ms combine`), NOT ThresholdNotZero.
+    //
     // Threshold = 2 with share_index = Fe::A produces a valid-length string
-    // (9 fixed + 28 payload + 13 cksum = 50, in VALID_STR_LENGTHS). Length
-    // check passes; upstream from_string accepts threshold=2 + share=A
-    // (parts_inner rejects threshold=0 + share!=S only); our envelope
-    // discriminate fires ThresholdNotZero deterministically.
+    // (9 fixed + 28 payload + 13 cksum = 50, in VALID_STR_LENGTHS). Length check
+    // passes; upstream from_string accepts threshold=2 + share=A; our envelope
+    // discriminate routes it deterministically.
     let s = build_with("ms", 2, "entr", Fe::A, VALID_PREFIX, ENTROPY_16);
     assert_eq!(
         s.len(),
         50,
         "sanity: 16-B + 0x00 prefix in threshold-2 form is 50 chars"
     );
-    assert!(matches!(decode(&s), Err(Error::ThresholdNotZero { .. })));
+    match decode(&s) {
+        Err(Error::IsShareNotSingleString { threshold, index }) => {
+            assert_eq!(threshold, '2');
+            assert_eq!(index, 'a');
+        }
+        other => panic!("expected IsShareNotSingleString, got {other:?}"),
+    }
 }
 
 #[test]
