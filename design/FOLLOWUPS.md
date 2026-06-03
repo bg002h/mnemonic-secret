@@ -331,6 +331,16 @@ Single source of truth for items that surfaced during a review or implementation
 - **Status:** `resolved 2026-05-03 — Option A locked + shipped in ms-codec v0.1.0 (tag ab374ed). v0.1 narrowed to entr-only; seed/xprv reserved-not-emitted with decoder rejection (Error::ReservedTagNotEmittedInV01) and encoder symmetry (SPEC §3.5.1). 50 tests passing including the forward-compat 1..=255 prefix-byte sweep that locks the v0.2-migration contract from day 1. BIP-32 master seed backup use case preserved via the BIP-39 phrase → entropy → ms1 entr → engrave → recover → BIP-39 mnemonic → PBKDF2 routing in SPEC §1.2 / README. Cross-repo mirrors in mk1 + md1 closed in lockstep.`
 - **Tier:** `v0.1-blocker`
 
+### `ms-kofn-json-wire-shape-ungated` — `ms split`/`combine`/`inspect`-share + `mnemonic ms-shares` `--json` wire-shapes (and the `--to` value-enum) are NOT schema_mirror-gated
+
+- **Surfaced:** 2026-06-03, ms K-of-N v0.2 cycle Phase 4 (Task 4.2c) — ms-codec 0.4.0 / ms-cli v0.7.0 / mnemonic-toolkit v0.40.0.
+- **Where:** `crates/ms-cli/src/cmd/{split.rs,combine.rs,inspect.rs}` (the `--json` emit paths); toolkit `crates/mnemonic-toolkit/src/cmd/ms_shares.rs` (`split`/`combine` `--json` emit). GUI mirror `mnemonic-gui/src/schema/{ms.rs,mnemonic.rs}` (the consumer of the *flag-name* projection).
+- **What:** The new K-of-N surface adds `--json` output objects that downstream GUI consumers may parse: `ms split --json` → `{ shares, k, n, id, kind, language? }`; `ms combine --json` → the recovered-secret object; `ms inspect --json` of a share → `{ kind: "share", threshold, id, index }` (with the payload-kind/`prefix_byte` fields suppressed); `mnemonic ms-shares split --json` → `{ "shares": [...] }`; `mnemonic ms-shares combine --json` → the recovered-secret object. The `schema_mirror` gate (`mnemonic-gui/tests/schema_mirror.rs` + `schema_mirror_secret_drift.rs`) enforces ONLY clap **flag-NAME** parity (plus the per-flag `secret` projection) — it does NOT gate the runtime `--json` **wire-shape** of any of these subcommands, nor the `combine --to` value-enum dropdown contents (`phrase|entropy|ms1`). A wire-shape change (renamed/added/removed JSON key, or a new `--to` value) will NOT trip any automated drift gate; it accumulates silently until a GUI consumer mis-parses at runtime.
+- **Why deferred:** This is the documented standing posture for ALL toolkit/sibling `--json` wire-shapes (per `mnemonic-toolkit/CLAUDE.md` "Scope of the gate — clap flag-NAME parity, NOT JSON wire-shape"; the broader generalization is the toolkit FOLLOWUP `schema-mirror-flag-name-vs-wire-shape-conceptual-clarification` option (b), v0.30+). Downstream consumers self-update via the **paired-PR rule**: any `--json` wire-shape or `--to` value-enum change to this K-of-N surface MUST land a same-cycle (or paired sibling) PR on `mnemonic-gui` that updates the consumer. This entry records the K-of-N instances so a future wire-shape edit knows where the un-gated consumers live.
+- **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md` entry `ms-kofn-json-wire-shape-ungated` (toolkit-side mirror); generalization tracked at toolkit `schema-mirror-flag-name-vs-wire-shape-conceptual-clarification`.
+- **Status:** `open` (standing-posture / paired-PR tracking — fires no automated gate by design).
+- **Tier:** `cross-repo`
+
 ---
 
 ## Resolved items
