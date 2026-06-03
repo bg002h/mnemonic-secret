@@ -130,17 +130,38 @@ pub(crate) fn discriminate(c: &Codex32String) -> Result<(Tag, Payload)> {
     // returned Payload bytes — see `payload.rs` doc-comment.
     let payload_with_prefix: Zeroizing<Vec<u8>> = Zeroizing::new(c.parts().data());
 
-    // Prefix-byte dispatch (v0.2 type discriminator).
-    let payload = match payload_with_prefix[0] {
+    // Prefix-byte dispatch (v0.2 type discriminator) — the header-gate-free
+    // tail, shared with `combine_shares` (which has NO threshold/share-index
+    // header to gate — the recovered secret-at-S carries a random id + threshold
+    // k, so it must NOT route through the gate above).
+    let payload = dispatch_payload(&payload_with_prefix)?;
+
+    Ok((tag, payload))
+}
+
+/// Header-gate-free prefix→`Payload` dispatch: read `data[0]` and split the
+/// remaining bytes into the typed `Payload`, then `validate()`. This is the
+/// TAIL of `discriminate` factored out so `combine_shares` can reuse it WITHOUT
+/// the threshold/share-index header gate (the recovered secret-at-S has a random
+/// id + threshold `k`, so it must never re-enter that gate).
+///
+/// - `0x00` (`RESERVED_PREFIX`) → `Payload::Entr(rest)`
+/// - `0x02` (`MNEM_PREFIX`)     → `Payload::Mnem { language: rest[0], entropy: rest[1..] }`
+/// - any other prefix          → `Err(Error::ReservedPrefixViolation)`
+///
+/// `validate()` rejects unknown language codes / bad payload lengths. NOTE:
+/// `data` is `Codex32String::parts().data()` (`Parts::data()`), NOT `c.data()`.
+pub(crate) fn dispatch_payload(data: &[u8]) -> Result<Payload> {
+    let payload = match data[0] {
         RESERVED_PREFIX => {
             // 0x00 → Entr: strip prefix, rest is raw entropy bytes.
-            Payload::Entr(payload_with_prefix[1..].to_vec())
+            Payload::Entr(data[1..].to_vec())
         }
         MNEM_PREFIX => {
             // 0x02 → Mnem: rest[0]=language, rest[1..]=entropy.
-            // payload_with_prefix has layout: [0x02][lang][entropy...].
-            let language = payload_with_prefix[1];
-            let entropy = payload_with_prefix[2..].to_vec();
+            // layout: [0x02][lang][entropy...].
+            let language = data[1];
+            let entropy = data[2..].to_vec();
             let p = Payload::Mnem { language, entropy };
             // Validate language code immediately; rejects unknown codes.
             p.validate()?;
@@ -150,8 +171,7 @@ pub(crate) fn discriminate(c: &Codex32String) -> Result<(Tag, Payload)> {
             return Err(Error::ReservedPrefixViolation { got: other });
         }
     };
-
-    Ok((tag, payload))
+    Ok(payload)
 }
 
 /// Assemble the on-wire payload bytes for a `Payload`: the `[prefix]||payload`

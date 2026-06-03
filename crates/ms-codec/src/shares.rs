@@ -10,8 +10,8 @@
 //! v0.1/mnem single-strings stay byte-identical: `encode_shares(tag, ZERO, 1, &p)`
 //! reduces to the exact `package()`/`encode()` construction (the Phase-0 gate).
 
-use crate::consts::{HRP, RESERVED_ID_BLOCKLIST};
-use crate::envelope::payload_wire_bytes;
+use crate::consts::{HRP, RESERVED_ID_BLOCKLIST, SHARE_INDEX_V01};
+use crate::envelope::{dispatch_payload, extract_wire_fields, payload_wire_bytes};
 use crate::error::{Error, Result};
 use crate::payload::Payload;
 use crate::tag::Tag;
@@ -156,6 +156,90 @@ pub fn encode_shares(
 
     debug_assert_eq!(distributed.len(), n);
     Ok(distributed)
+}
+
+/// Recombine `k` (or more) distributed shares of a K-of-N share-set into the
+/// original secret `(Tag, Payload)`.
+///
+/// Pre-validation runs BEFORE `interpolate_at` because codex32's
+/// `interpolate_at` short-circuits when the target index (`s`) is among the
+/// inputs (`lib.rs:262`) — bypassing its own payload validation. Order:
+/// 1. parse each share (`Error::Codex32` on failure);
+/// 2. **reject any share at index `s`** → `SecretShareSuppliedToCombine` (C1 —
+///    the secret-at-S is the recovery target, never a combine input);
+/// 3. `shares.len() >= k` (the first share's threshold) else surface
+///    `ThresholdNotPassed`;
+/// 4. distinct share indices else `RepeatedIndex` (codex32's own check is lazy);
+/// 5. `interpolate_at(&parsed, Fe::S)` recovers the secret-at-S (surfaces
+///    `Mismatched{Hrp,Id,Threshold,Length}` on inconsistent inputs).
+///
+/// Returns **`(Tag::ENTR, …)`** always: the recovered secret-at-S carries the
+/// share-set's RANDOM `id` (NOT a type tag); the payload KIND is the prefix byte
+/// (via `dispatch_payload`), so the random id is discarded. (We do NOT route
+/// through `discriminate` — it would rebuild a `Tag` from the random id.)
+pub fn combine_shares(shares: &[String]) -> Result<(Tag, Payload)> {
+    // 1. Parse each share (map codex32 parse/checksum failure via Error::Codex32).
+    let parsed: Vec<Codex32String> = shares
+        .iter()
+        .map(|s| Codex32String::from_string(s.clone()).map_err(Error::Codex32))
+        .collect::<Result<Vec<_>>>()?;
+
+    if parsed.is_empty() {
+        // No shares → surface as below-threshold (k unknown; report 1/0).
+        return Err(Error::Codex32(codex32::Error::ThresholdNotPassed {
+            threshold: 1,
+            n_shares: 0,
+        }));
+    }
+
+    // Re-parse wire fields for each → (threshold_byte, share_index_byte). Both
+    // are `u8` (Copy), so this owns nothing that borrows the per-share string.
+    let fields: Vec<(u8, u8)> = parsed
+        .iter()
+        .map(|c| {
+            let s = c.to_string();
+            extract_wire_fields(&s).map(|f| (f.threshold_byte, f.share_index_byte))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    // 2. C1: reject any input at index `s` BEFORE interpolate_at (the
+    //    short-circuit at codex32 lib.rs:262 would otherwise bypass validation).
+    if fields.iter().any(|&(_, idx)| idx == SHARE_INDEX_V01) {
+        return Err(Error::SecretShareSuppliedToCombine);
+    }
+
+    // 3. count >= k (the first share's threshold char). codex32 thresholds are
+    //    single ASCII digits ('2'..'9'); '0' (an unshared single) here means the
+    //    caller passed a v0.1 single-string into combine — also below any share
+    //    threshold, surfaced as ThresholdNotPassed.
+    let k = (fields[0].0 - b'0') as usize;
+    if parsed.len() < k {
+        return Err(Error::Codex32(codex32::Error::ThresholdNotPassed {
+            threshold: k,
+            n_shares: parsed.len(),
+        }));
+    }
+
+    // 4. distinct share indices (codex32's RepeatedIndex check is lazy — only
+    //    fires for the i==j Lagrange term — so pre-check exhaustively).
+    for i in 0..fields.len() {
+        for j in (i + 1)..fields.len() {
+            if fields[i].1 == fields[j].1 {
+                let idx = Fe::from_char(fields[i].1 as char).map_err(Error::Codex32)?;
+                return Err(Error::Codex32(codex32::Error::RepeatedIndex(idx)));
+            }
+        }
+    }
+
+    // 5. Recover the secret-at-S. Surfaces Mismatched{Hrp,Id,Threshold,Length}
+    //    via Error::Codex32 on inconsistent inputs.
+    let secret = Codex32String::interpolate_at(&parsed, Fe::S).map_err(Error::Codex32)?;
+
+    // Payload KIND is the recovered prefix byte; the id is random → discard it
+    // and always return Tag::ENTR (the kind lives in the Payload, NOT the tag).
+    let data: Zeroizing<Vec<u8>> = Zeroizing::new(secret.parts().data());
+    let payload = dispatch_payload(&data)?;
+    Ok((Tag::ENTR, payload))
 }
 
 #[cfg(test)]
@@ -326,5 +410,99 @@ mod tests {
                 }
             }
         }
+    }
+
+    // --- combine_shares tests (Task 1.4) ---
+
+    #[test]
+    fn combine_round_trip_entr_and_mnem_all_lengths() {
+        for ent_len in [16usize, 20, 24, 28, 32] {
+            let entr = Payload::Entr(vec![0x37u8; ent_len]);
+            let mnem = Payload::Mnem { language: 7, entropy: vec![0x91u8; ent_len] };
+            for p in [entr, mnem] {
+                for k in 2u8..=9 {
+                    let n = (k as usize) + 1;
+                    let shares =
+                        encode_shares(Tag::ENTR, Threshold::new(k).unwrap(), n, &p).unwrap();
+                    // First k and last k subsets both combine back to the secret.
+                    for subset in [&shares[..k as usize], &shares[n - k as usize..]] {
+                        let (tag, recovered) = combine_shares(subset).unwrap();
+                        assert_eq!(tag, Tag::ENTR, "combine always returns Tag::ENTR");
+                        assert_eq!(
+                            recovered,
+                            p,
+                            "k={k} n={n} ent_len={ent_len} must recover the exact payload"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn combine_rejects_below_threshold() {
+        let p = entr_p();
+        let shares = encode_shares(Tag::ENTR, Threshold::new(3).unwrap(), 4, &p).unwrap();
+        // Only 2 of a 3-of-4 set.
+        let err = combine_shares(&shares[..2]).unwrap_err();
+        assert!(
+            matches!(err, Error::Codex32(codex32::Error::ThresholdNotPassed { .. })),
+            "expected ThresholdNotPassed, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn combine_rejects_duplicate_index() {
+        let p = entr_p();
+        let shares = encode_shares(Tag::ENTR, Threshold::new(2).unwrap(), 3, &p).unwrap();
+        // Same share twice → duplicate index.
+        let dup = vec![shares[0].clone(), shares[0].clone()];
+        assert!(matches!(
+            combine_shares(&dup),
+            Err(Error::Codex32(codex32::Error::RepeatedIndex(_)))
+        ));
+    }
+
+    #[test]
+    fn combine_rejects_secret_share_index_s() {
+        // Hand-build the secret-at-S directly (index `s`, threshold 2). It must
+        // be rejected BEFORE interpolate_at (C1 — the short-circuit would
+        // otherwise bypass payload validation).
+        let bytes = crate::envelope::payload_wire_bytes(&entr_p());
+        let secret_s = Codex32String::from_seed(HRP, 2, "tst7", Fe::S, &bytes[..])
+            .unwrap()
+            .to_string();
+        // Need >= k shares to get past the count check and reach the index check;
+        // but the index-s check runs first regardless, so a single secret-s input
+        // is rejected on the index axis.
+        let p = entr_p();
+        let shares = encode_shares(Tag::ENTR, Threshold::new(2).unwrap(), 2, &p).unwrap();
+        let with_secret = vec![secret_s, shares[0].clone()];
+        assert!(matches!(
+            combine_shares(&with_secret),
+            Err(Error::SecretShareSuppliedToCombine)
+        ));
+    }
+
+    #[test]
+    fn combine_rejects_mismatched_threshold() {
+        // Two shares from different-threshold sets, at DISTINCT indices (so the
+        // distinct-index pre-check passes and interpolate_at's eager
+        // MismatchedThreshold check fires). set2[0]=index q; set3[1]=index p.
+        let p = entr_p();
+        let set2 = encode_shares(Tag::ENTR, Threshold::new(2).unwrap(), 2, &p).unwrap();
+        let set3 = encode_shares(Tag::ENTR, Threshold::new(3).unwrap(), 3, &p).unwrap();
+        let mixed = vec![set2[0].clone(), set3[1].clone()];
+        let err = combine_shares(&mixed).unwrap_err();
+        assert!(
+            matches!(err, Error::Codex32(codex32::Error::MismatchedThreshold(..))),
+            "expected MismatchedThreshold, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn combine_rejects_unparseable() {
+        let bad = vec!["not-an-ms1-string".to_string(), "also-bad".to_string()];
+        assert!(matches!(combine_shares(&bad), Err(Error::Codex32(_))));
     }
 }

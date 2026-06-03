@@ -55,5 +55,5 @@ pub use encode::encode;
 pub use error::{Error, Result};
 pub use inspect::{inspect, InspectKind, InspectReport};
 pub use payload::{Payload, PayloadKind};
-pub use shares::{encode_shares, Threshold};
+pub use shares::{combine_shares, encode_shares, Threshold};
 pub use tag::Tag;
