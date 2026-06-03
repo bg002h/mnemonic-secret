@@ -154,17 +154,17 @@ pub(crate) fn discriminate(c: &Codex32String) -> Result<(Tag, Payload)> {
     Ok((tag, payload))
 }
 
-/// Encode-side v0.2-migration seam. Given `(tag, payload)`, build a
-/// BIP-93-validated codex32 string. Wire layout by kind:
-/// - `Payload::Entr(e)`                → `[0x00][e...]` (byte-identical to v0.1)
+/// Assemble the on-wire payload bytes for a `Payload`: the `[prefix]||payload`
+/// layout shared by `package()` (v0.1 single-string emit) and `encode_shares()`
+/// (v0.2 K-of-N share-set emit). Wire layout by kind:
+/// - `Payload::Entr(e)`                    → `[0x00][e...]`
 /// - `Payload::Mnem { language, entropy }` → `[0x02][language][entropy...]`
 ///
-/// Fixed wire-field values: threshold=0, share-index='s'.
-///
-/// SPEC v0.9.0 §1 item 2 — the OWNED encode buffer is wrapped in `Zeroizing`
-/// so it scrubs on function exit (tracked at `rust-codex32-zeroize-upstream`).
-pub(crate) fn package(tag: Tag, payload: &Payload) -> Result<Codex32String> {
-    let data: Zeroizing<Vec<u8>> = match payload {
+/// The returned buffer is `Zeroizing` so it scrubs on drop (secret material).
+/// `Payload` is a closed 2-variant enum within this crate (`#[non_exhaustive]`
+/// only affects downstream crates), so the match is exhaustive.
+pub(crate) fn payload_wire_bytes(p: &Payload) -> Zeroizing<Vec<u8>> {
+    match p {
         Payload::Entr(e) => {
             // [0x00 reserved-prefix] || entropy — BYTE-IDENTICAL to v0.1.
             let mut v = Zeroizing::new(Vec::with_capacity(1 + e.len()));
@@ -180,7 +180,20 @@ pub(crate) fn package(tag: Tag, payload: &Payload) -> Result<Codex32String> {
             v.extend_from_slice(entropy);
             v
         }
-    };
+    }
+}
+
+/// Encode-side v0.2-migration seam. Given `(tag, payload)`, build a
+/// BIP-93-validated codex32 string. Wire layout by kind:
+/// - `Payload::Entr(e)`                → `[0x00][e...]` (byte-identical to v0.1)
+/// - `Payload::Mnem { language, entropy }` → `[0x02][language][entropy...]`
+///
+/// Fixed wire-field values: threshold=0, share-index='s'.
+///
+/// SPEC v0.9.0 §1 item 2 — the OWNED encode buffer is wrapped in `Zeroizing`
+/// so it scrubs on function exit (tracked at `rust-codex32-zeroize-upstream`).
+pub(crate) fn package(tag: Tag, payload: &Payload) -> Result<Codex32String> {
+    let data: Zeroizing<Vec<u8>> = payload_wire_bytes(payload);
 
     // Delegate to rust-codex32. Always uses threshold=0, share=Fe::S.
     // `?` leverages the From<codex32::Error> for Error impl in error.rs.
@@ -275,6 +288,27 @@ mod tests_discriminate {
         let (tag, recovered) = discriminate(&c).unwrap();
         assert_eq!(tag, Tag::ENTR);
         assert_eq!(recovered, Payload::Mnem { language: 2, entropy });
+    }
+}
+
+#[cfg(test)]
+mod tests_wire_bytes {
+    use super::*;
+
+    #[test]
+    fn entr_wire_bytes_are_prefix_plus_entropy() {
+        let p = Payload::Entr(vec![0xABu8; 16]);
+        let mut expected = vec![0x00u8];
+        expected.extend(std::iter::repeat_n(0xABu8, 16));
+        assert_eq!(&payload_wire_bytes(&p)[..], &expected[..]);
+    }
+
+    #[test]
+    fn mnem_wire_bytes_are_prefix_lang_entropy() {
+        let p = Payload::Mnem { language: 1, entropy: vec![0xABu8; 16] };
+        let mut expected = vec![0x02u8, 0x01u8];
+        expected.extend(std::iter::repeat_n(0xABu8, 16));
+        assert_eq!(&payload_wire_bytes(&p)[..], &expected[..]);
     }
 }
 
