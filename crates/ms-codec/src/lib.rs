@@ -45,6 +45,7 @@ pub mod encode;
 pub mod error;
 pub mod inspect;
 pub mod payload;
+pub mod shares;
 pub mod tag;
 
 mod envelope; // crate-private; v0.2-migration seam
@@ -54,4 +55,5 @@ pub use encode::encode;
 pub use error::{Error, Result};
 pub use inspect::{inspect, InspectKind, InspectReport};
 pub use payload::{Payload, PayloadKind};
+pub use shares::Threshold;
 pub use tag::Tag;

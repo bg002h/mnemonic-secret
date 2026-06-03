@@ -79,6 +79,37 @@ pub enum Error {
         /// Singleton bound for the BCH regular code (always 8).
         bound: u8,
     },
+
+    // --- v0.2 K-of-N share variants (SPEC_ms_v0_2_kofn §2) ---
+    //
+    // Inserted alphabetically AMONG THEMSELVES (the pre-existing v0.1 variants
+    // above are NOT retro-sorted — mirrors the toolkit's
+    // `error-rs-retroactive-alphabetical-sort` deferral). These carry `Display`
+    // arms only: `ms_codec::Error` has no `exit_code`/`kind` methods — the
+    // exit-code/message mapping is ms-cli's `CliError` job.
+    /// Share count `n` was outside the valid range for threshold `k` (need
+    /// `k <= n <= 31`; there are exactly 31 valid non-`s` share indices).
+    InvalidShareCount {
+        /// The threshold `k` that was requested.
+        k: u8,
+        /// The share count `n` that was requested (out of range).
+        n: usize,
+    },
+    /// Threshold `k` was not in the valid share range `2..=9`
+    /// (`Threshold::ZERO` is the unshared single-string sentinel, a const).
+    InvalidThreshold(u8),
+    /// A single-string `decode` was handed one share of a K-of-N share-set
+    /// (threshold char `2..9`). Use `ms combine` to recombine K shares.
+    IsShareNotSingleString {
+        /// The threshold char observed on the wire (`'2'..'9'`).
+        threshold: char,
+        /// The share-index char observed on the wire.
+        index: char,
+    },
+    /// `combine_shares` was handed the secret-at-S (index `s`) as an input.
+    /// The secret-at-S is the recovery target, never a combine input; codex32's
+    /// `interpolate_at` would short-circuit on it and bypass validation (C1).
+    SecretShareSuppliedToCombine,
 }
 
 impl fmt::Display for Error {
@@ -132,6 +163,27 @@ impl fmt::Display for Error {
             Error::TooManyErrors { bound } => {
                 write!(f, "more than {} errors; uncorrectable", bound)
             }
+            Error::InvalidShareCount { k, n } => write!(
+                f,
+                "invalid share count n={} for threshold k={}; require k <= n <= 31",
+                n, k
+            ),
+            Error::InvalidThreshold(k) => write!(
+                f,
+                "invalid threshold {}; K-of-N shares require k in 2..=9",
+                k
+            ),
+            Error::IsShareNotSingleString { threshold, index } => write!(
+                f,
+                "this is one share of a K-of-N set (threshold '{}', index '{}'); \
+                 use `ms combine` to recombine K shares",
+                threshold, index
+            ),
+            Error::SecretShareSuppliedToCombine => write!(
+                f,
+                "the secret share (index 's') cannot be supplied to combine; \
+                 supply only distributed shares (the secret is the recovery target)"
+            ),
         }
     }
 }

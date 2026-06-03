@@ -61,6 +61,16 @@ pub const MNEM_LANGUAGE_NAMES: [&str; 10] = [
 /// `mnem` is no longer reserved-not-emitted: it is emitted in v0.2+ as Payload::Mnem.
 pub const RESERVED_NOT_EMITTED_V01: &[[u8; 4]] = &[*b"seed", *b"xprv", *b"prvk"];
 
+/// Anti-collision blocklist for the random 4-char `id` of a v0.2 K-of-N
+/// share-set (SPEC_ms_v0_2_kofn §2 consts / design-review I4). A share-set's
+/// `id` is random-per-set; re-roll while it lands in this set so a share-set
+/// `id` never collides with a v0.1 type-tag-shaped value.
+///
+/// **DISTINCT from `RESERVED_NOT_EMITTED_V01`** (the decoder-reject set, which
+/// dropped `mnem` in Cycle 1): `mnem` MUST stay in this id-blocklist.
+pub const RESERVED_ID_BLOCKLIST: &[[u8; 4]] =
+    &[*b"entr", *b"seed", *b"xprv", *b"mnem", *b"prvk"];
+
 #[cfg(test)]
 mod tests {
     use super::*;
