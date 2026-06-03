@@ -47,32 +47,46 @@ pub struct EncodeArgs {
     pub json: bool,
 }
 
-/// Run `ms encode` with the parsed args. Writes to stdout/stderr per SPEC §2.1.
-pub fn run(mut args: EncodeArgs) -> Result<u8> {
+/// Resolve a secret source (`--phrase` / `--hex`) to a `(Payload, language_for_card)`
+/// pair — the shared entropy-resolution + AUTO-route used by `ms encode` AND
+/// `ms split` (Task 2.1). Extracted verbatim from the former `encode::run`
+/// inline logic.
+///
+/// - A non-English `--phrase` → `Payload::Mnem { language, entropy }` (the
+///   wordlist language survives onto the wire).
+/// - An English `--phrase` OR `--hex` → `Payload::Entr(entropy)` (byte-identical
+///   to v0.1).
+///
+/// The 2nd tuple element is `language_for_card`: `Some(language.as_str())` for a
+/// phrase (the BIP-39 wordlist used to parse it), `None` for `--hex`. A bare
+/// `Payload` cannot tell an English phrase from `--hex` (both → `Payload::Entr`),
+/// so callers that surface a `language` field MUST use this 2nd element rather
+/// than re-deriving from the `Payload`.
+///
+/// Exactly one of `phrase` / `hex` MUST be `Some` (clap's required group enforces
+/// this for both `encode` and `split`); both-`None` is a defensive `BadInput`.
+pub(crate) fn resolve_secret_payload(
+    phrase: Option<&str>,
+    hex: Option<&str>,
+    language: CliLanguage,
+) -> Result<(Payload, Option<&'static str>)> {
     use zeroize::Zeroizing;
-    // SPEC v0.9.0 §1 item 2 — consume + immediately wrap the clap-owned
-    // secret fields (phrase / hex) at `run()` entry. clap-derive does not
-    // natively emit `Zeroizing<String>`, so we `mem::take` the Option
-    // contents, wrapping the captured String. The clap-owned `Option<String>`
-    // slots are left as `None` (its allocation freed; the actual bytes are
-    // now in the Zeroizing wrapper and will be scrubbed on drop).
-    let phrase_arg: Option<Zeroizing<String>> =
-        std::mem::take(&mut args.phrase).map(Zeroizing::new);
-    let hex_arg: Option<Zeroizing<String>> =
-        std::mem::take(&mut args.hex).map(Zeroizing::new);
 
     // clap's mutually-exclusive group enforces exactly-one-of-{phrase,hex}.
-    let (entropy, language_for_card): (Zeroizing<Vec<u8>>, Option<&str>) =
-        if let Some(phrase_arg) = &phrase_arg {
-            let phrase: Zeroizing<String> = read_phrase_input(Some(phrase_arg.as_str()))?;
-            let lang: Language = args.language.into();
+    // `entropy` is the secret byte buffer; `language_for_card` is the 2nd
+    // element returned to the caller. Both are bound here (lint anchor:
+    // `let (entropy, language_for_card): (Zeroizing<Vec<u8>>`).
+    let (entropy, language_for_card): (Zeroizing<Vec<u8>>, Option<&'static str>) =
+        if let Some(phrase_arg) = phrase {
+            let phrase: Zeroizing<String> = read_phrase_input(Some(phrase_arg))?;
+            let lang: Language = language.into();
             // SAFETY: third-party-blocked — `bip39::Mnemonic` has no Drop+
             // Zeroize; tracked at FOLLOWUP `rust-bip39-mnemonic-zeroize-upstream`
             // (companion of the mnemonic-toolkit cycle entry).
             let mnemonic = Mnemonic::parse_in(lang, phrase.as_str())?;
-            (Zeroizing::new(mnemonic.to_entropy()), Some(args.language.as_str()))
-        } else if let Some(hex_arg) = &hex_arg {
-            let hex_str = Zeroizing::new(read_input(Some(hex_arg.as_str()))?);
+            (Zeroizing::new(mnemonic.to_entropy()), Some(language.as_str()))
+        } else if let Some(hex_arg) = hex {
+            let hex_str = Zeroizing::new(read_input(Some(hex_arg))?);
             let bytes = Zeroizing::new(parse_hex_entropy(&hex_str)?);
             (bytes, None)
         } else {
@@ -88,17 +102,43 @@ pub fn run(mut args: EncodeArgs) -> Result<u8> {
     // caller-wrap-contract shapes; clone the wrapped buffer's contents into the
     // public Vec at the call boundary. The original `entropy` Zeroizing<Vec<u8>>
     // scrubs on drop at function exit.
-    let ms1 = if args.language != CliLanguage::English && phrase_arg.is_some() {
-        ms_codec::encode(
-            Tag::ENTR,
-            &Payload::Mnem {
-                language: args.language.code(),
-                entropy: (*entropy).clone(),
-            },
-        )?
+    let payload = if language != CliLanguage::English && phrase.is_some() {
+        Payload::Mnem {
+            language: language.code(),
+            entropy: (*entropy).clone(),
+        }
     } else {
-        ms_codec::encode(Tag::ENTR, &Payload::Entr((*entropy).clone()))?
+        Payload::Entr((*entropy).clone())
     };
+    Ok((payload, language_for_card))
+}
+
+/// Run `ms encode` with the parsed args. Writes to stdout/stderr per SPEC §2.1.
+pub fn run(mut args: EncodeArgs) -> Result<u8> {
+    use zeroize::Zeroizing;
+    // SPEC v0.9.0 §1 item 2 — consume + immediately wrap the clap-owned
+    // secret fields (phrase / hex) at `run()` entry. clap-derive does not
+    // natively emit `Zeroizing<String>`, so we `mem::take` the Option
+    // contents, wrapping the captured String. The clap-owned `Option<String>`
+    // slots are left as `None` (its allocation freed; the actual bytes are
+    // now in the Zeroizing wrapper and will be scrubbed on drop).
+    let phrase_arg: Option<Zeroizing<String>> =
+        std::mem::take(&mut args.phrase).map(Zeroizing::new);
+    let hex_arg: Option<Zeroizing<String>> =
+        std::mem::take(&mut args.hex).map(Zeroizing::new);
+
+    // Shared entropy-resolution + AUTO-route (also used by `ms split`).
+    let (payload, language_for_card) = resolve_secret_payload(
+        phrase_arg.as_ref().map(|p| p.as_str()),
+        hex_arg.as_ref().map(|h| h.as_str()),
+        args.language,
+    )?;
+
+    let ms1 = ms_codec::encode(Tag::ENTR, &payload)?;
+
+    // Re-derive the output `entropy` view from the resolved Payload (the
+    // entropy bytes, sans prefix/language). word_count + entropy_hex use it.
+    let entropy: Zeroizing<Vec<u8>> = Zeroizing::new(payload.as_bytes().to_vec());
     let word_count = entropy.len() * 3 / 4; // 16->12, 20->15, 24->18, 28->21, 32->24
 
     if args.json {

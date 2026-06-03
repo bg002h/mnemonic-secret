@@ -125,6 +125,17 @@ enum Command {
         after_long_help = "EXAMPLES:\n  ms repair --ms1 ms10entrsqq...        # text-form report on stdout\n  ms repair --ms1 - < broken.txt        # read ms1 from stdin\n  ms repair --ms1 ms10entrsqq... --json # JSON envelope on stdout"
     )]
     Repair(cmd::repair::RepairArgs),
+
+    /// Split a secret (mnemonic / hex entropy) into N codex32 K-of-N shares.
+    ///
+    /// Any K of the N shares recombine to the original via `ms combine`. The
+    /// whole N-share SET is secret-equivalent (a stderr `PrivateKeyMaterial`
+    /// advisory is emitted). A non-English `--phrase` splits as a `mnem`
+    /// share-set so the wordlist language survives the split. Bounds: 2 ≤ K ≤ N ≤ 31.
+    #[command(
+        after_long_help = "EXAMPLES:\n  ms split --phrase \"abandon abandon … about\" -k 2 -n 3\n  ms split --hex 00000000000000000000000000000000 -k 3 -n 5\n  ms split --language japanese --phrase \"…\" -k 2 -n 3 --json | jq .shares"
+    )]
+    Split(cmd::split::SplitArgs),
 }
 
 fn main() -> ExitCode {
@@ -160,6 +171,7 @@ fn main() -> ExitCode {
         Command::Vectors(args) => cmd::vectors::run(args),
         Command::GuiSchema => cmd::gui_schema::run(),
         Command::Repair(args) => cmd::repair::run(args),
+        Command::Split(args) => cmd::split::run(args),
     };
 
     let exit = match result {
@@ -188,6 +200,7 @@ fn is_json_mode(cmd: &Command) -> bool {
         Command::Vectors(_) => false, // vectors output is always JSON-shaped
         Command::GuiSchema => false,  // gui-schema output is always JSON-shaped
         Command::Repair(a) => a.json,
+        Command::Split(a) => a.json,
     }
 }
 

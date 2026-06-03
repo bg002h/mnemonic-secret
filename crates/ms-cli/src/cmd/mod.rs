@@ -7,5 +7,6 @@ pub mod encode;
 pub mod gui_schema;
 pub mod inspect;
 pub mod repair;
+pub mod split;
 pub mod vectors;
 pub mod verify;

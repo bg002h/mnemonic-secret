@@ -43,6 +43,38 @@ pub struct EncodeJson<'a> {
     pub entropy_hex: String,
 }
 
+/// Structured output for `ms split --json` (SPEC_ms_v0_2_kofn §3).
+/// `language` is `None` for an `entr` (English-phrase / `--hex`) share-set.
+#[derive(Serialize)]
+pub struct SplitJson<'a> {
+    pub schema_version: &'static str,
+    pub shares: Vec<String>,
+    pub k: u8,
+    pub n: usize,
+    pub id: String,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<&'a str>,
+}
+
+/// Structured output for `ms combine --json` (SPEC_ms_v0_2_kofn §3).
+/// `entropy_hex` is always present; `phrase`/`language`/`word_count` are present
+/// when the recovered secret renders to a BIP-39 phrase (`--to phrase`).
+#[derive(Serialize)]
+pub struct CombineJson<'a> {
+    pub schema_version: &'static str,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ms1: Option<String>,
+    pub entropy_hex: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phrase: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub word_count: Option<usize>,
+}
+
 /// Structured output for `ms decode --json` (SPEC §5.2).
 #[derive(Serialize)]
 pub struct DecodeJson<'a> {
