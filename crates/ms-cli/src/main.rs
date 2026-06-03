@@ -136,6 +136,17 @@ enum Command {
         after_long_help = "EXAMPLES:\n  ms split --phrase \"abandon abandon … about\" -k 2 -n 3\n  ms split --hex 00000000000000000000000000000000 -k 3 -n 5\n  ms split --language japanese --phrase \"…\" -k 2 -n 3 --json | jq .shares"
     )]
     Split(cmd::split::SplitArgs),
+
+    /// Recombine K-of-N codex32 shares (from `ms split`) into the original secret.
+    ///
+    /// Supply K (or more) distributed shares with distinct indices. The recovered
+    /// secret is emitted per `--to` (default `phrase`; also `entropy` / `ms1`).
+    /// The secret-at-`s` share is NEVER a valid input. Recovered output is
+    /// private key material (a stderr advisory is emitted).
+    #[command(
+        after_long_help = "EXAMPLES:\n  ms combine <share1> <share2>                  # recover the BIP-39 phrase\n  ms combine <share1> <share2> --to ms1         # recover a single ms1 string\n  ms combine <share1> <share2> --to entropy     # recover raw entropy hex\n  ms combine <share1> <share2> --json | jq .phrase"
+    )]
+    Combine(cmd::combine::CombineArgs),
 }
 
 fn main() -> ExitCode {
@@ -172,6 +183,7 @@ fn main() -> ExitCode {
         Command::GuiSchema => cmd::gui_schema::run(),
         Command::Repair(args) => cmd::repair::run(args),
         Command::Split(args) => cmd::split::run(args),
+        Command::Combine(args) => cmd::combine::run(args),
     };
 
     let exit = match result {
@@ -201,6 +213,7 @@ fn is_json_mode(cmd: &Command) -> bool {
         Command::GuiSchema => false,  // gui-schema output is always JSON-shaped
         Command::Repair(a) => a.json,
         Command::Split(a) => a.json,
+        Command::Combine(a) => a.json,
     }
 }
 

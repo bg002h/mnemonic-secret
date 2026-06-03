@@ -1,6 +1,7 @@
 //! Subcommand handlers. Each module is independent and consumes Phase 1
 //! foundation modules + the `ms-codec` library.
 
+pub mod combine;
 pub mod decode;
 pub mod derive;
 pub mod encode;
