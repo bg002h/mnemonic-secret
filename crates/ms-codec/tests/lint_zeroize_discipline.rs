@@ -29,7 +29,8 @@ struct ZeroizeRow {
     evidence: &'static [&'static str],
 }
 
-/// Canonical 4-row list per survey §1 ms-codec table.
+/// Canonical 5-row list: 4 v0.1 survey §1 ms-codec rows + 1 v0.2 K-of-N
+/// shares.rs coverage row.
 /// Per-row evidence anchors tightened post R1 I-4 fold so each row enforces
 /// its specific call-site discipline (not just any Zeroizing reference in
 /// the file).
@@ -54,6 +55,18 @@ const ZEROIZE_ROWS: &[ZeroizeRow] = &[
         source_file: "src/payload.rs",
         evidence: &["Caller-wrap contract", "must wrap"],
     },
+    // v0.2 K-of-N (SPEC_ms_v0_2_kofn §2): shares.rs wraps the OWNED secret
+    // material it handles — the CSPRNG defining-share payload (`encode_shares`)
+    // and the recovered secret-at-S bytes (`combine_shares`). Coverage row
+    // (these are already Zeroizing-wrapped; this anchors them against regression).
+    ZeroizeRow {
+        label: "shares::{encode_shares,combine_shares} wrap OWNED secret Vecs",
+        source_file: "src/shares.rs",
+        evidence: &[
+            "let mut filler: Zeroizing<Vec<u8>>",
+            "let data: Zeroizing<Vec<u8>> = Zeroizing::new(secret.parts().data())",
+        ],
+    },
 ];
 
 fn crate_root() -> &'static Path {
@@ -64,8 +77,8 @@ fn crate_root() -> &'static Path {
 fn canonical_list_has_expected_row_count() {
     let n = ZEROIZE_ROWS.len();
     assert_eq!(
-        n, 4,
-        "ZEROIZE_ROWS row count = {n}; expected 4 (survey §1 ms-codec table)."
+        n, 5,
+        "ZEROIZE_ROWS row count = {n}; expected 5 (4 v0.1 survey §1 rows + 1 v0.2 K-of-N shares.rs row)."
     );
 }
 

@@ -33,6 +33,20 @@ pub fn run(args: InspectArgs) -> Result<u8> {
     let ms1 = read_input(args.ms1.as_deref())?;
     let report = ms_codec::inspect(&ms1)?; // §2.3.1: failures return CliError::Codex32 here.
 
+    // A threshold ∈ 2..=9 string is one share of a K-of-N share-set — a
+    // first-class read, NOT a malformed v0.1 single-string. Report it as such
+    // (kind: share, threshold/id/index) and SKIP the v0.1 rule-walk: a
+    // distributed share's data()[0] is an interpolated value, not a payload
+    // prefix, so prefix_byte / payload_bytes / the entr/mnem kind are garbage.
+    if is_share(&report) {
+        if args.json {
+            emit_share_json(&report)?;
+        } else {
+            emit_share_text(&report);
+        }
+        return Ok(0);
+    }
+
     let (would_decode, reasons) = analyze(&report, ms1.len());
 
     if args.json {
@@ -41,6 +55,53 @@ pub fn run(args: InspectArgs) -> Result<u8> {
         emit_text(&report, would_decode, &reasons);
     }
     Ok(0)
+}
+
+/// True iff the inspected string is one share of a K-of-N set: the codex32
+/// threshold field is a share threshold (`2..=9`). Threshold `0` is the v0.1
+/// single-string; `1` is invalid-per-codex32 (never constructible).
+fn is_share(report: &InspectReport) -> bool {
+    (2..=9).contains(&report.threshold)
+}
+
+/// Text report for a lone K-of-N share. Reports kind/threshold/id/index +
+/// "would combine (needs k)". Suppresses prefix_byte / payload_bytes / the
+/// entr/mnem kind — a distributed share's data()[0] is interpolated, not a
+/// payload-kind prefix.
+fn emit_share_text(report: &InspectReport) {
+    println!("OK: K-of-N share (would combine: needs {} shares)", report.threshold);
+    println!();
+    println!("hrp: {}", report.hrp);
+    println!("threshold: {}", report.threshold);
+    println!(
+        "id: {}",
+        std::str::from_utf8(report.tag.as_bytes()).unwrap_or("<non-utf8>")
+    );
+    println!("index: {}", report.share_index);
+    println!("checksum_valid: {}", report.checksum_valid);
+    println!("kind: share");
+}
+
+/// JSON report for a lone K-of-N share. `would_decode: true` carries the
+/// "would combine" semantics (a share is a valid read). The garbage
+/// prefix_byte / payload_bytes_hex / entr-mnem kind are omitted.
+fn emit_share_json(report: &InspectReport) -> Result<()> {
+    let json = serde_json::json!({
+        "schema_version": "1",
+        "report": {
+            "hrp": report.hrp,
+            "threshold": report.threshold,
+            "tag": std::str::from_utf8(report.tag.as_bytes()).unwrap_or("<non-utf8>"),
+            "share_index": report.share_index.to_string(),
+            "checksum_valid": report.checksum_valid,
+            "kind": "share",
+        },
+        "would_decode": true,
+        "would_combine": true,
+        "failure_reasons": Vec::<&str>::new(),
+    });
+    println!("{}", serde_json::to_string(&json).expect("inspect share json serializes"));
+    Ok(())
 }
 
 /// Re-walk SPEC §4 rules against the InspectReport's fields.

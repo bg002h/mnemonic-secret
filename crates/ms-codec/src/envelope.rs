@@ -339,11 +339,40 @@ mod tests_discriminate {
     }
 
     #[test]
-    fn discriminate_threshold_1_still_threshold_not_zero() {
-        // Threshold '1' is not a valid share threshold (codex32 rejects it on
-        // from_seed); but if it somehow reached discriminate it routes to
-        // ThresholdNotZero (the `other` arm). We can't build a '1' via from_seed,
-        // so this is covered by the share-routing test above + the b'0' happy path.
+    fn threshold_1_is_unconstructible_so_never_reaches_discriminate() {
+        // m2 (P1-R0): threshold '1' is NOT a valid codex32 share threshold
+        // (BIP-93 admits 0 = unshared or 2..=9 = K-of-N; never 1). Two facts
+        // pin this — proven empirically against the pinned codex32 0.1.0:
+        //
+        // (a) `from_seed(.., 1, ..)` is rejected at construction with
+        //     `InvalidThresholdN(1)` — you cannot MINT a threshold-1 string.
+        let mut data = vec![0x00u8];
+        data.extend_from_slice(&[0xAAu8; 16]);
+        match Codex32String::from_seed(HRP, 1, "tst7", Fe::A, &data) {
+            Err(codex32::Error::InvalidThresholdN(1)) => {}
+            other => panic!("expected InvalidThresholdN(1) from from_seed, got {other:?}"),
+        }
+
+        // (b) Hand-flipping a valid threshold-2 string's threshold char to '1'
+        //     breaks the BCH checksum (the threshold char is covered by the
+        //     code), so `from_string` rejects it with `InvalidChecksum` — it
+        //     never reaches `discriminate`'s threshold gate. There is therefore
+        //     NO validly-checksummed threshold-'1' string for `discriminate` to
+        //     route; the `other => ThresholdNotZero` arm is unreachable for '1'.
+        let s2 = Codex32String::from_seed(HRP, 2, "tst7", Fe::A, &data)
+            .unwrap()
+            .to_string();
+        let sep = s2.rfind('1').expect("codex32 separator '1' present");
+        let mut bytes = s2.into_bytes();
+        bytes[sep + 1] = b'1'; // threshold char '2' -> '1'
+        let forged = String::from_utf8(bytes).unwrap();
+        assert!(
+            matches!(
+                Codex32String::from_string(forged),
+                Err(codex32::Error::InvalidChecksum { .. })
+            ),
+            "a forged threshold-'1' char must fail the BCH checksum at from_string",
+        );
     }
 }
 
