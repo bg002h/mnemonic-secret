@@ -464,6 +464,7 @@ version = "0.3.0"
 dependencies = [
  "bip39",
  "codex32",
+ "getrandom 0.3.4",
  "proptest",
  "serde",
  "serde_json",
