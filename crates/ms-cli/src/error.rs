@@ -195,6 +195,51 @@ impl From<ms_codec::Error> for CliError {
                 message: format!("more than {} errors; uncorrectable", bound),
                 details: Some(json!({ "bound": bound })),
             },
+
+            // ── v0.2 K-of-N share variants (SPEC_ms_v0_2_kofn §3) ──
+            //
+            // A single-string `decode` was handed one share of a K-of-N set.
+            // This is a FORMAT VIOLATION (exit 2, the §6 ms1-shape class): the
+            // string is well-formed codex32 but not a v0.1 single-string. The
+            // message (carried from ms_codec's Display) directs the user to
+            // `ms combine`.
+            ms_codec::Error::IsShareNotSingleString { threshold, index } => {
+                CliError::FormatViolation {
+                    underlying_kind: "IsShareNotSingleString",
+                    message: format!(
+                        "this is one share of a K-of-N set (threshold '{}', index '{}'); \
+                         use `ms combine` to recombine K shares",
+                        threshold, index
+                    ),
+                    details: Some(json!({
+                        "threshold": threshold.to_string(),
+                        "index": index.to_string(),
+                    })),
+                }
+            }
+            // The secret-at-S (index 's') was supplied to `combine`. The secret
+            // is the recovery TARGET, never a combine input — also a format
+            // violation (exit 2): the wrong KIND of share for this operation.
+            ms_codec::Error::SecretShareSuppliedToCombine => CliError::FormatViolation {
+                underlying_kind: "SecretShareSuppliedToCombine",
+                message: "the secret share (index 's') must not be combined; \
+                          supply only distributed shares (the secret is the recovery target)"
+                    .to_string(),
+                details: None,
+            },
+            // Bad `-k` / `-n` arguments to `ms split` — user-input errors
+            // (exit 1, the BadInput class). There is no exit-64 `CliError`
+            // variant (clap parse-level 64s never reach `From<ms_codec::Error>`);
+            // the BadInput user-input class is the existing-taxonomy fit.
+            ms_codec::Error::InvalidThreshold(k) => CliError::BadInput(format!(
+                "invalid threshold {}; K-of-N shares require k in 2..=9",
+                k
+            )),
+            ms_codec::Error::InvalidShareCount { k, n } => CliError::BadInput(format!(
+                "invalid share count n={} for threshold k={}; require k <= n <= 31",
+                n, k
+            )),
+
             // ms_codec::Error is #[non_exhaustive]; v0.2+ may add variants.
             // If you hit this in production, ms-codec added a variant ms-cli
             // hasn't dispatched yet — add an arm above for the new variant.
@@ -283,5 +328,59 @@ mod tests {
     fn display_includes_message() {
         let e = CliError::BadInput("test message".into());
         assert_eq!(e.to_string(), "error: test message");
+    }
+
+    // ── v0.2 K-of-N share-variant dispatch (Task 2.0) ──
+
+    #[test]
+    fn is_share_not_single_string_maps_to_format_violation_exit_2() {
+        let e: CliError = ms_codec::Error::IsShareNotSingleString {
+            threshold: '2',
+            index: 'a',
+        }
+        .into();
+        assert_eq!(e.kind(), "IsShareNotSingleString");
+        assert_eq!(e.exit_code(), 2);
+        assert!(e.message().contains("ms combine"));
+        let details = e.details().expect("FormatViolation has details");
+        assert_eq!(details["threshold"], "2");
+        assert_eq!(details["index"], "a");
+    }
+
+    #[test]
+    fn secret_share_supplied_to_combine_maps_to_format_violation_exit_2() {
+        let e: CliError = ms_codec::Error::SecretShareSuppliedToCombine.into();
+        assert_eq!(e.kind(), "SecretShareSuppliedToCombine");
+        assert_eq!(e.exit_code(), 2);
+        assert!(e.message().contains("secret share"));
+    }
+
+    #[test]
+    fn invalid_threshold_maps_to_bad_input_exit_1() {
+        let e: CliError = ms_codec::Error::InvalidThreshold(1).into();
+        assert_eq!(e.kind(), "BadInput");
+        assert_eq!(e.exit_code(), 1);
+        assert!(e.message().contains("2..=9"));
+    }
+
+    #[test]
+    fn invalid_share_count_maps_to_bad_input_exit_1() {
+        let e: CliError = ms_codec::Error::InvalidShareCount { k: 2, n: 1 }.into();
+        assert_eq!(e.kind(), "BadInput");
+        assert_eq!(e.exit_code(), 1);
+        assert!(e.message().contains("k <= n <= 31"));
+    }
+
+    #[test]
+    fn codex32_share_errors_route_through_friendly() {
+        // ThresholdNotPassed surfaces via Error::Codex32 → friendly_codex32.
+        let e: CliError = ms_codec::Error::Codex32(codex32::Error::ThresholdNotPassed {
+            threshold: 3,
+            n_shares: 1,
+        })
+        .into();
+        assert_eq!(e.kind(), "Codex32");
+        assert_eq!(e.exit_code(), 1);
+        assert!(e.message().contains("not enough shares"));
     }
 }
