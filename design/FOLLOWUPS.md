@@ -128,7 +128,23 @@ Single source of truth for items that surfaced during a review or implementation
 - **Surfaced:** 2026-05-13, v0.9.0 Cycle A Phase 2 ms-codec envelope work — surfaced while landing the Zeroizing<Vec<u8>> local in `envelope::package`.
 - **Where:** Upstream crate `codex32 = "0.1"` (the `rust-codex32` repo). Affects `crates/ms-codec/src/envelope.rs::package` — `Codex32String::from_seed` copies payload bytes into its private buffer during construction; those bytes live for the `Codex32String`'s lifetime (extends until the caller's binding drops).
 - **What:** `envelope::package`'s `Zeroizing<Vec<u8>>` local scrubs the `data` buffer when the function exits, but the bytes that `Codex32String::from_seed` copied into its private buffer during construction are NOT scrubbed. Mitigation is lifetime minimization at the ms-codec layer + caller-wrap discipline. Closes when upstream `rust-codex32` adds `impl Drop` + Zeroize on `Codex32String` (or when ms-codec migrates to an internally-controlled codex32 implementation).
-- **Status:** `open` (upstream-blocked)
+- **Status:** `open` (upstream-blocked) — **NOTE (2026-06-09): the upstream crate is effectively DORMANT** (see `rust-codex32-upstream-pr2-recovery-bug-not-exposed` + `codex32-upstream-dormant-vendor-vs-accept-decision`), so "closes when upstream adds Zeroize" is unlikely to ever fire; the realistic close path is vendor/fork or accept-the-mitigation.
+- **Tier:** `external`
+
+### `rust-codex32-upstream-pr2-recovery-bug-not-exposed` — upstream codex32 PR #2 (shamir recover padding bug); our path verified unexposed + guarded
+
+- **Surfaced:** 2026-06-09, constellation backup/safety gap audit — upstream-repo check on the pinned `codex32 = "=0.1.0"` dep.
+- **Where:** Upstream `apoelstra/rust-codex32` **PR #2** (scgbckbone, opened 2026-... [Dec 5 2025], updated Apr 16 2026, **unmerged**): "Serialization to seed & subsequent re-serialization to shares breaks shamir recover result." Root cause: padding — reconstructing a share via `Codex32String::from_seed` from decomposed `data`+metadata recovers a WRONG secret (last-nibble flip on a 16-byte/128-bit secret, `…4979 9` vs `…4979 f`).
+- **What:** **Our pipeline is NOT exposed.** `ms_codec::shares::combine_shares` recovers via `Codex32String::interpolate_at` over the parsed share STRINGS (`shares.rs:236`), never the decompose-to-`data` → `from_seed` reload the bug requires — we carry the full codex32 share string end-to-end. Verified two ways: (1) structural (combine never calls `from_seed`); (2) empirical — `ms split`→`ms combine` of PR#2's exact 16-byte secret recovers it correctly across all 2-of-3 pairs; broad cross-length coverage in `tests/spike_kofn.rs` (claim b) + `shares.rs::combine_round_trip_entr_and_mnem_all_lengths` is GREEN. Added a NAMED regression anchor: `crates/ms-codec/tests/codex32_upstream_recovery_regression.rs` (pins PR#2's exact secret round-tripping correctly — fails loudly with a pointer if a future `codex32` bump reintroduces the bug on our path).
+- **Status:** `resolved` (our exposure: NONE, verified + guarded). The upstream PR remains open on a dormant crate; we track the dependency decision separately.
+- **Tier:** `external` (upstream-tracking; no action required on our side).
+
+### `codex32-upstream-dormant-vendor-vs-accept-decision` — the pinned codex32 crate is abandoned; decide vendor/fork vs accept
+
+- **Surfaced:** 2026-06-09, same audit.
+- **Where:** dep `codex32 = "=0.1.0"` (crates.io; source `apoelstra/rust-codex32`). Frozen at **0.1.0 since 2023-03-10**; maintainer note: "as of July 2023 the library is slated to be largely rewritten… may not be worthwhile to improve it until that rewrite arrives" — that rewrite never shipped (3 years on). crates.io carries no repository link. 0 open issues, 1 open PR (the recovery bug above).
+- **What:** Both codex32-upstream items (`rust-codex32-zeroize-upstream` + PR#2 above) can never close via an upstream RELEASE — the upstream is dormant. For a steel-backup-of-funds tool sitting on a dormant secret-sharing dep, the dependency posture is a deliberate decision worth making rather than drifting: **(a) accept** (we're unexposed to the recovery bug; the zeroize gap has a working lifetime-minimization mitigation), or **(b) vendor/fork** the crate (own the fixes — adds Zeroize/Drop, de-risks the dormant dep, but takes on maintenance of the BCH/Shamir primitives). Pre-decision: keep the `=0.1.0` exact-pin (no surprise bumps) + the spike/named guards (catch any future bump that breaks invariants).
+- **Status:** `open` (strategic decision, no urgency — we are not exposed to a live bug).
 - **Tier:** `external`
 
 ### `md-mk-private-key-surface-watch` — reopen md/mk Cycle A participation if either repo grows a private-key surface
