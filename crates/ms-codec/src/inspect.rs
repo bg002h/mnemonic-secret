@@ -62,7 +62,11 @@ pub struct InspectReport {
 pub fn inspect(s: &str) -> Result<InspectReport> {
     // `?` leverages From<codex32::Error> for Error.
     let c = Codex32String::from_string(s.to_string())?;
-    let s_owned = c.to_string();
+    // Canonical lowercase wire copy (BIP-173 uppercase QR form folds here;
+    // codex32 already rejected mixed case). Lowercasing loses no diagnostic
+    // information — codex32 enforces whole-string uniform case, and the
+    // "surface the raw observation" intent is about non-table tag VALUES.
+    let s_owned = envelope::wire_string(&c);
     let fields = envelope::extract_wire_fields(&s_owned)?;
 
     // For tag construction in inspect we accept whatever bytes were on the wire

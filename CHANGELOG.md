@@ -4,6 +4,19 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-codec [0.4.2] — 2026-06-10
+
+**SemVer-PATCH — accept all-uppercase ms1 per BIP-173 (the QR alphanumeric form); fixes a combine-side secret-leak guard bypass.**
+
+### Fixed
+
+- The wire layer (envelope discrimination, inspect, combine grouping) read RAW string bytes past codex32's case-folded checksum validation, so a valid all-uppercase MS1 card failed `WrongHrp { got: "MS" }`. Wire extraction now canonicalizes the owned copy (lowercase) — codex32 has already enforced consistent case + a valid checksum upstream, so this is canonical-form normalization, not case-laundering (mixed-case still dies as `InvalidCase` before any of this). Pristine uppercase cards now decode, inspect, repair (`decode_with_correction`'s clean-codeword pass-through), and combine.
+- **SECURITY (combine guard restored):** an all-uppercase secret-at-`S` card bypassed the `SecretShareSuppliedToCombine` guard (raw `b's'` compare missed `b'S'`) and — in a uniform-uppercase same-id set — codex32's index-match short-circuit RETURNED THE SECRET PAYLOAD from `combine_shares`. The canonicalized fields restore the guard; pinned by a red-first test that demonstrated the leak.
+- Mixed-case SETS now combine (one consistently-uppercase share among lowercase): `combine_shares` re-canonicalizes each share after its first parse and hands the canonical vector to interpolation (codex32's cross-share hrp/id compares are raw); recovered output is lowercase.
+- A true wrong-HRP error now reports the canonicalized form (`got: "xs"` for `XS1…`).
+
+10 new cells (ms-codec `uppercase_envelope.rs` ×9 + an ms-cli CI-visible decode cell — CI runs only `-p ms-cli`). Wire emission unchanged (lowercase). ms-cli exact pin → `=0.4.2` (ms-cli version unchanged). Resolves `ms1-envelope-uppercase-bip173` (companion of toolkit v0.53.3 / audit M11). Plan + 3 R0 rounds + impl review: `design/PLAN_ms1_envelope_uppercase.md`, `design/agent-reports/ms1-uppercase-*.md`.
+
 ## ms-codec [0.4.1] — 2026-06-10
 
 **SemVer-PATCH — `combine_shares` rejects (no longer aborts on) a non-standard-length Entr share set.**

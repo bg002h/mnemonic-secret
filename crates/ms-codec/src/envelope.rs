@@ -82,6 +82,26 @@ pub(crate) fn extract_wire_fields(s: &str) -> Result<WireFields<'_>> {
     })
 }
 
+/// Lowercase the OWNED wire copy of a BIP-93-validated codex32 string.
+///
+/// Soundness — canonicalization, NOT case-laundering: `Codex32String` has
+/// already enforced consistent case + a valid checksum (codex32 rejects
+/// within-one-string MIXED case as `InvalidCase` before any value reaches
+/// here), so lowercasing the owned copy is canonical-form normalization of
+/// the BIP-173 uppercase (QR-alphanumeric) form. Used by the production
+/// extraction sites (`discriminate`, `inspect`, `combine_shares`) so the
+/// wire-field compares (`hrp != "ms"`, `share_index != b's'`, …) see the
+/// canonical lowercase form.
+///
+/// The returned bare `String` carries secret material unwrapped — an explicit
+/// PARITY decision with the existing `c.to_string()` copies along the parse
+/// pipeline: wrapping only this site in `Zeroizing` while the pipeline holds
+/// unwrapped copies would be theater. The repo-wide Zeroizing posture is
+/// tracked separately.
+pub(crate) fn wire_string(c: &Codex32String) -> String {
+    c.to_string().to_ascii_lowercase()
+}
+
 /// Decode-side v0.2-migration seam. Given a BIP-93-validated codex32 string,
 /// extract `(Tag, Payload)` via prefix-byte dispatch. Enforces wire-format
 /// invariants: HRP="ms", threshold='0', share-index='s'.
@@ -93,7 +113,7 @@ pub(crate) fn extract_wire_fields(s: &str) -> Result<WireFields<'_>> {
 ///   (`.validate()` is called to reject unknown language codes immediately)
 /// - any other prefix            → `Err(Error::ReservedPrefixViolation)`
 pub(crate) fn discriminate(c: &Codex32String) -> Result<(Tag, Payload)> {
-    let s = c.to_string();
+    let s = wire_string(c);
     let fields = extract_wire_fields(&s)?;
 
     // Wire-invariant checks (SPEC §4 rules 2, 3, 4).

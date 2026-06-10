@@ -4,6 +4,14 @@ All notable changes to the `ms-codec` crate are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] — 2026-06-10
+
+**PATCH — accept all-uppercase ms1 per BIP-173; combine secret-leak guard restored.**
+
+- Wire extraction canonicalizes (lowercases) the owned string copy after codex32 validation — uppercase cards decode/inspect/repair/combine; mixed-case within one string still rejects (`InvalidCase`).
+- SECURITY: uniform-uppercase secret-at-`S` no longer bypasses `SecretShareSuppliedToCombine` (raw `b's'` compare missed `b'S'`; in a same-id uppercase set the interpolation short-circuit returned the secret).
+- Mixed-case SETS combine via per-share re-canonicalization before interpolation; recovered output lowercase. `WrongHrp.got` reports the canonicalized form.
+
 ## [0.4.1] — 2026-06-10
 
 **SemVer-PATCH — `combine_shares` rejects (no longer aborts on) a non-standard-length Entr share set.**

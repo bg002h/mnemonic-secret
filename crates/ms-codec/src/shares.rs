@@ -11,7 +11,7 @@
 //! reduces to the exact `package()`/`encode()` construction (the Phase-0 gate).
 
 use crate::consts::{HRP, RESERVED_ID_BLOCKLIST, SHARE_INDEX_V01};
-use crate::envelope::{dispatch_payload, extract_wire_fields, payload_wire_bytes};
+use crate::envelope::{dispatch_payload, extract_wire_fields, payload_wire_bytes, wire_string};
 use crate::error::{Error, Result};
 use crate::payload::Payload;
 use crate::tag::Tag;
@@ -164,7 +164,13 @@ pub fn encode_shares(
 /// Pre-validation runs BEFORE `interpolate_at` because codex32's
 /// `interpolate_at` short-circuits when the target index (`s`) is among the
 /// inputs (`lib.rs:262`) — bypassing its own payload validation. Order:
-/// 1. parse each share (`Error::Codex32` on failure);
+/// 1. parse each share (`Error::Codex32` on failure — preserves the
+///    within-one-string mixed-case `InvalidCase` rejection), then re-parse the
+///    lowercased copy into the CANONICAL vector (BIP-173 uppercase QR form
+///    folds to canonical lowercase; codex32's `interpolate_at` does raw
+///    case-sensitive cross-share hrp/id compares, so canonicalization here —
+///    not field extraction — is what makes an uppercase or mixed-case SET
+///    combine, and what lets the index-`s` guard below see `b's'`);
 /// 2. **reject any share at index `s`** → `SecretShareSuppliedToCombine` (C1 —
 ///    the secret-at-S is the recovery target, never a combine input);
 /// 3. `shares.len() >= k` (the first share's threshold) else surface
@@ -184,6 +190,24 @@ pub fn combine_shares(shares: &[String]) -> Result<(Tag, Payload)> {
         .map(|s| Codex32String::from_string(s.clone()).map_err(Error::Codex32))
         .collect::<Result<Vec<_>>>()?;
 
+    // 1b. Canonicalize: re-parse each share's lowercased wire copy (NEVER
+    //     lowercase before the first parse above — that would launder the
+    //     within-one-string mixed-case `InvalidCase` rejection). codex32's
+    //     checksum engine case-folds, so this re-parse is infallible in
+    //     practice (probe-proven byte-identical for lowercase input); still
+    //     route the Result via `?`. The canonical vector feeds both the field
+    //     extraction below AND `interpolate_at` (whose raw case-sensitive
+    //     cross-share hrp/id compares are why extraction-side lowercasing
+    //     alone cannot fix combine) — it also makes the recovered output
+    //     lowercase.
+    let parsed: Vec<Codex32String> = parsed
+        .iter()
+        .map(|c| {
+            Codex32String::from_string(c.to_string().to_ascii_lowercase())
+                .map_err(Error::Codex32)
+        })
+        .collect::<Result<Vec<_>>>()?;
+
     if parsed.is_empty() {
         // No shares → surface as below-threshold (k unknown; report 1/0).
         return Err(Error::Codex32(codex32::Error::ThresholdNotPassed {
@@ -194,10 +218,13 @@ pub fn combine_shares(shares: &[String]) -> Result<(Tag, Payload)> {
 
     // Re-parse wire fields for each → (threshold_byte, share_index_byte). Both
     // are `u8` (Copy), so this owns nothing that borrows the per-share string.
+    // `wire_string` is subsumed by the canonical vector above (already
+    // lowercase) — kept as harmless defense-in-depth; the canonical vector is
+    // the load-bearing mechanism for combine.
     let fields: Vec<(u8, u8)> = parsed
         .iter()
         .map(|c| {
-            let s = c.to_string();
+            let s = wire_string(c);
             extract_wire_fields(&s).map(|f| (f.threshold_byte, f.share_index_byte))
         })
         .collect::<Result<Vec<_>>>()?;
