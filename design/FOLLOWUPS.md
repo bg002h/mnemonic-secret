@@ -17,6 +17,14 @@ Single source of truth for items that surfaced during a review or implementation
 - **Status:** open (backlog index; individual items dispositioned in the report). 1 of 3 resolved (`combine-no-length-validation-panic`, ms-codec v0.4.1); the two `[obs]` items remain.
 - **Tier:** audit-backlog.
 
+### `ms1-envelope-uppercase-bip173` — envelope layer rejects valid all-uppercase ms1 (case-sensitive HRP/share-index compare past codex32)
+
+- **Surfaced:** 2026-06-10, toolkit v0.53.3 HRP-case cycle recon (audit M11). **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md::hrp-classifier-rejects-valid-uppercase-cards` (resolved there; the toolkit's probes are now case-insensitive and pass the ORIGINAL string through — this entry is the remaining leg).
+- **Where:** `crates/ms-codec/src/envelope.rs:100` (`fields.hrp != HRP` — raw compare) and `:112` (`share_index_byte != SHARE_INDEX_V01` — raw `b's'` compare), at ms-codec 0.4.0/0.4.1.
+- **What:** codex32 itself accepts consistent-uppercase strings (BIP-173/93: uppercase is the QR alphanumeric-mode form, so engraved/QR'd cards legitimately come back uppercase; the checksum engine case-folds and `set_check_case` rejects only MIXED) — but ms-codec's envelope discrimination then compares the raw HRP/share-index case-sensitively, so a valid all-uppercase MS1 card fails `WrongHrp { got: "MS" }`. Fix: case-normalize the envelope comparisons (lowercase `fields.hrp` and the share-index byte before comparing), keeping mixed-case rejection where codex32 already enforces it. After shipping, the toolkit pin bump cycle must INVERT the staged toolkit characterization cells (they currently pin the WrongHrp/repair-marker ERRORS — a bare pin bump turns them RED, nothing flips green automatically; staged v0.53.3: inspect/repair/silent-payment uppercase-ms1 cells in cli_hrp_case_insensitive.rs).
+- **Status:** `open`
+- **Tier:** `bip173-conformance`
+
 ### `combine-no-length-validation-panic` — `ms combine` aborted on a non-standard-length Entr share set (RESOLVED ms-codec v0.4.1)
 
 - **Surfaced:** 2026-06-10 audit (above). **Resolved:** 2026-06-10, ms-codec v0.4.1 (PATCH). Plan + reviews: `design/PLAN_combine_entr_length_validation.md`, `design/agent-reports/combine-entr-length-plan-r0-round{1,2}-review.md`.
