@@ -168,7 +168,14 @@ pub(crate) fn dispatch_payload(data: &[u8]) -> Result<Payload> {
     let payload = match data[0] {
         RESERVED_PREFIX => {
             // 0x00 → Entr: strip prefix, rest is raw entropy bytes.
-            Payload::Entr(data[1..].to_vec())
+            let p = Payload::Entr(data[1..].to_vec());
+            // Validate length immediately; rejects non-standard entropy lengths.
+            // Parity with the Mnem arm below + this fn's doc contract. WITHOUT
+            // this, a valid-checksum but non-standard-length Entr share set
+            // recovered via `combine_shares` flowed unvalidated to the CLI's
+            // `from_entropy_in`, which panicked (audit I9, exit 101).
+            p.validate()?;
+            p
         }
         MNEM_PREFIX => {
             // 0x02 → Mnem: rest[0]=language, rest[1..]=entropy.

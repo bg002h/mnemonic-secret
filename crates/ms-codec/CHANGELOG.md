@@ -4,6 +4,14 @@ All notable changes to the `ms-codec` crate are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — 2026-06-10
+
+**SemVer-PATCH — `combine_shares` rejects (no longer aborts on) a non-standard-length Entr share set.**
+
+### Fixed
+
+- `dispatch_payload`'s `Entr` (`0x00`) arm now calls `validate()` — parity with the `Mnem` arm and the function's own doc contract. Previously a **valid-checksum but non-standard-length** Entr share set (entropy length ∉ {16,20,24,28,32}) recovered via `combine_shares` returned an *unvalidated* `Payload::Entr`; the downstream `ms combine --to phrase` / `ms decode` then hit `bip39::Mnemonic::from_entropy_in(...).expect(...)` and **panicked** (abort, exit 101). The Entr arm now returns `Error::PayloadLengthMismatch` for all `dispatch_payload` callers (single-string `discriminate` + `combine_shares`), so the CLI surfaces a clean error and the `.expect` invariants in `ms-cli combine.rs` / `decode.rs` become true. The encode path was never affected (it validates up front). No new error variant; no API/wire change. Resolves audit-2026-06-10 finding `combine-no-length-validation-panic` (I9).
+
 ## [0.4.0] — 2026-06-03
 
 **SemVer-MINOR — K-of-N codex32 Shamir shares.** Split an `entr` or `mnem` secret

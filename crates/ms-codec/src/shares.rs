@@ -281,6 +281,7 @@ mod tests {
 
     // --- encode_shares tests (Task 1.3) ---
 
+    use crate::consts::RESERVED_PREFIX;
     use crate::encode::encode;
     use crate::payload::Payload;
     use crate::tag::Tag;
@@ -504,5 +505,68 @@ mod tests {
     fn combine_rejects_unparseable() {
         let bad = vec!["not-an-ms1-string".to_string(), "also-bad".to_string()];
         assert!(matches!(combine_shares(&bad), Err(Error::Codex32(_))));
+    }
+
+    // --- audit I9: combine must REJECT (not panic on) a non-standard-length
+    // Entr share set. The encode path validates length up front, but codex32
+    // share strings are an open format — an externally-constructed valid-checksum
+    // set with a non-standard payload length must surface a clean error, not abort.
+
+    /// Build a valid-checksum K-of-N Entr share set whose recovered payload has a
+    /// NON-STANDARD entropy length, bypassing `encode_shares`' `secret.validate()`
+    /// guard (which would reject it). Mirrors `encode_shares`' codex32
+    /// construction with a fixed id for determinism.
+    fn nonstandard_entr_distributed(k: usize, n: usize, entropy_len: usize) -> Vec<String> {
+        // wire payload = [RESERVED_PREFIX] || entropy
+        let mut bytes = vec![RESERVED_PREFIX];
+        bytes.extend(std::iter::repeat(0xCDu8).take(entropy_len));
+        let id = "tst7";
+        let secret_s = Codex32String::from_seed(HRP, k, id, Fe::S, &bytes[..]).unwrap();
+        let pool = non_s_index_pool();
+        let mut defining = vec![secret_s];
+        for pidx in pool.iter().take(k - 1) {
+            let filler = vec![0u8; bytes.len()];
+            defining.push(Codex32String::from_seed(HRP, k, id, *pidx, &filler[..]).unwrap());
+        }
+        let mut out = Vec::new();
+        for s in defining.iter().skip(1) {
+            out.push(s.to_string());
+        }
+        for pidx in pool.iter().take(n).skip(k - 1) {
+            out.push(Codex32String::interpolate_at(&defining, *pidx).unwrap().to_string());
+        }
+        out
+    }
+
+    #[test]
+    fn combine_rejects_nonstandard_entr_length_not_panics() {
+        // 17-byte entropy ∉ VALID_ENTR_LENGTHS. Pre-fix `combine_shares` returned
+        // Ok(unvalidated Entr) and `ms combine`'s from_entropy_in panicked
+        // (exit 101). Post-fix: a clean PayloadLengthMismatch, no panic.
+        let shares = nonstandard_entr_distributed(2, 2, 17);
+        let res = combine_shares(&shares);
+        assert!(
+            matches!(res, Err(Error::PayloadLengthMismatch { got: 17, .. })),
+            "expected PayloadLengthMismatch{{got:17}}, got {res:?}"
+        );
+    }
+
+    #[test]
+    fn dispatch_payload_validates_entr_length() {
+        // Unit-level: the Entr arm now validates length (parity with the Mnem arm
+        // and this fn's doc contract). Audit I9.
+        let mut bad = vec![RESERVED_PREFIX];
+        bad.extend(std::iter::repeat(0xCDu8).take(17));
+        assert!(
+            matches!(dispatch_payload(&bad), Err(Error::PayloadLengthMismatch { got: 17, .. })),
+            "non-standard Entr length must Err"
+        );
+        // Positive control: a standard length (16) still decodes Ok — no over-rejection.
+        let mut good = vec![RESERVED_PREFIX];
+        good.extend(std::iter::repeat(0xCDu8).take(16));
+        assert!(
+            matches!(dispatch_payload(&good), Ok(Payload::Entr(_))),
+            "standard Entr length must Ok"
+        );
     }
 }

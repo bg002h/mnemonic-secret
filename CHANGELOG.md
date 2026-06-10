@@ -4,6 +4,14 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-codec [0.4.1] — 2026-06-10
+
+**SemVer-PATCH — `combine_shares` rejects (no longer aborts on) a non-standard-length Entr share set.**
+
+### Fixed
+
+- `dispatch_payload`'s `Entr` (`0x00`) arm now calls `validate()`. A **valid-checksum but non-standard-length** Entr share set (entropy length ∉ {16,20,24,28,32}) recovered via `combine_shares` previously returned an *unvalidated* payload, and `ms combine --to phrase` / `ms decode` then **panicked** inside `bip39::from_entropy_in(...).expect(...)` (exit 101). The Entr arm now returns `Error::PayloadLengthMismatch`, so the CLI surfaces a clean error instead of aborting. Encode path unaffected (validates up front); no new error variant, no API/wire change. `ms-cli` is unchanged (inherits the fix via the `ms-codec` bump). Resolves audit-2026-06-10 finding `combine-no-length-validation-panic` (I9). See `crates/ms-codec/CHANGELOG.md`.
+
 ## ms-cli [0.7.0] — 2026-06-03
 
 **SemVer-MINOR — `ms split` / `ms combine` (K-of-N codex32 shares).**
