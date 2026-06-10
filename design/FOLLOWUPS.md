@@ -7,6 +7,16 @@ Single source of truth for items that surfaced during a review or implementation
 **Format for each entry:**
 
 ```markdown
+### `audit-2026-06-10-backlog` — verified findings from the first independent Fable constellation audit
+
+- **Surfaced:** 2026-06-10, the 23-agent read-only architecture audit (find → adversarial-verify → synthesize). 48 verified findings constellation-wide (0 critical); this repo's share below. **Full report + per-finding detail (claim/evidence/fix/disposition):** `../../mnemonic-toolkit/design/agent-reports/constellation-architecture-audit-2026-06-10.md` (committed in the toolkit repo). Promote any line to its own `### <id>` entry when worked; resolve here as fixed.
+- **This repo's verified findings (3):**
+  - **[IMPORTANT]** `combine-no-length-validation-panic` — combine_shares recovers an Entr payload via dispatch_payload, whose Entr arm (envelope.rs:169-172) returns Payload::Entr(data[1..].to_vec()) WITHOUT calling .validate() (only the Mnem arm validates, l (`crates/ms-codec/src/envelope.rs:167-188 (dispatch_payload Entr arm, no validate); crates/ms-codec/src/shares.rs:236-242 (combine_shares); crates/ms-cli/src/cmd/combine.rs:96-97 (emit_phrase .expect panic)`)
+  - **[obs]** `pr2-exposure-claim-verified-sound` — PR#2's padding bug requires reconstructing a share via Codex32String::from_seed from decomposed data+metadata. combine_shares never does this — it parses shares via from_string (shares.rs:184), recove (`crates/ms-codec/src/shares.rs:180-243; crates/ms-codec/tests/codex32_upstream_recovery_regression.rs; crates/ms-codec/tests/spike_kofn.rs:187; crates/ms-codec/src/shares.rs:418`)
+  - **[obs]** `recovered-secret-string-not-zeroized` — combine_shares binds `let secret = Codex32String::interpolate_at(...)` (shares.rs:236); Codex32String is a newtype over String (codex32-0.1.0 lib.rs:102 `pub struct Codex32String(String)`) with no Dro (`crates/ms-codec/src/shares.rs:236-242; codex32-0.1.0 lib.rs:102; crates/ms-codec/tests/lint_zeroize_discipline.rs:62-69`)
+- **Status:** open (backlog index; individual items dispositioned in the report).
+- **Tier:** audit-backlog.
+
 ### `<short-id>` — <one-line title>
 
 - **Surfaced:** Phase X.Y review of commit <SHA>, or "inline TODO at <file>:<line>"
