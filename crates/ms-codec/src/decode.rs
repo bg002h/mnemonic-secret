@@ -145,10 +145,20 @@ const HRP_PREFIX: &str = "ms1";
 fn parse_ms1_symbols(s: &str) -> Result<Vec<u8>> {
     let lower = s.to_ascii_lowercase();
     if !lower.starts_with(HRP_PREFIX) {
-        // Find the actual HRP (everything up to and including the last '1'
-        // separator) so the error reports the observed HRP instead of "".
-        let hrp_end = lower.rfind('1').map(|i| i + 1).unwrap_or(lower.len());
-        let got = lower[..hrp_end.saturating_sub(1)].to_string();
+        // Report the observed HRP (everything before the last '1' separator)
+        // so the error is actionable. '1' is ASCII, so `rfind('1')` always
+        // returns a char boundary — slicing there is safe regardless of any
+        // multi-byte content elsewhere. When there is NO separator, the whole
+        // (malformed) string is the observed HRP; never slice at `len-1`,
+        // which can land inside a multi-byte char and panic (found by
+        // stress-Cycle-C fuzzing on a no-`'1'` lossy-UTF8 input). Leak-neutral:
+        // the WrongHrp.got echo vector is the unchanged WITH-`'1'` path;
+        // bounding it is the separate `ms-codec-error-display-echoes-input`
+        // FOLLOWUP's job.
+        let got = match lower.rfind('1') {
+            Some(i) => lower[..i].to_string(),
+            None => lower.clone(),
+        };
         return Err(Error::WrongHrp { got });
     }
     let rest = &lower[HRP_PREFIX.len()..];
@@ -354,5 +364,56 @@ mod tests {
             decode(&s),
             Err(Error::ReservedTagNotEmittedInV01 { .. })
         ));
+    }
+
+    // Regression: `decode_with_correction` must NOT panic on a non-`ms1`
+    // input with no `'1'` separator. Found by stress-Cycle-C fuzzing
+    // (`ms1_decode`): `parse_ms1_symbols` sliced `lower[..len-1]`, which lands
+    // inside a multi-byte char when there is no separator → char-boundary
+    // panic. The minimized reproducer is a single `0xaa` byte, which
+    // `String::from_utf8_lossy` turns into the 3-byte U+FFFD.
+    #[test]
+    fn decode_with_correction_no_separator_multibyte_does_not_panic() {
+        // Each input has no `'1'`, and `len-1` lands inside a multi-byte
+        // char at a different offset (1-, 2-, 3-, 4-byte chars + a long run).
+        let cases = [
+            String::from_utf8_lossy(&[0xaa]).into_owned(), // U+FFFD, 3 bytes — the fuzz reproducer
+            "é".to_string(),                               // 2-byte
+            "añ".to_string(),                              // ascii + 2-byte
+            "€".to_string(),                               // 3-byte
+            "😀".to_string(),                              // 4-byte
+            "é".repeat(25),                                // 50-byte multi-byte run
+            "İ".to_string(),                               // dotted-capital-I (case-fold edge)
+        ];
+        for s in &cases {
+            // Must return cleanly, never panic. No `'1'` ⇒ WrongHrp, with the
+            // whole (lowercased) input echoed as the observed HRP.
+            match decode_with_correction(s) {
+                Err(Error::WrongHrp { got }) => {
+                    assert_eq!(
+                        got,
+                        s.to_ascii_lowercase(),
+                        "got echoes the whole no-separator input"
+                    );
+                }
+                other => panic!("expected WrongHrp for {s:?}, got {other:?}"),
+            }
+        }
+    }
+
+    // Preservation: an input WITH a `'1'` but a wrong HRP still reports the
+    // pre-separator part as `got` (byte-identical to pre-fix behavior).
+    #[test]
+    fn decode_with_correction_wrong_hrp_with_separator_unchanged() {
+        match decode_with_correction("xy1qqq") {
+            Err(Error::WrongHrp { got }) => assert_eq!(got, "xy"),
+            other => panic!("expected WrongHrp {{ got: \"xy\" }}, got {other:?}"),
+        }
+        // A `'1'` deep in a multi-byte string still slices at the (ASCII) '1'
+        // boundary, never inside the preceding char.
+        match decode_with_correction("ñ1zzz") {
+            Err(Error::WrongHrp { got }) => assert_eq!(got, "ñ"),
+            other => panic!("expected WrongHrp {{ got: \"ñ\" }}, got {other:?}"),
+        }
     }
 }

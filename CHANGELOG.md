@@ -4,6 +4,17 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-codec [0.4.3] — 2026-06-12
+
+**SemVer-PATCH — `decode_with_correction` no longer panics on a non-`ms1` input with no `'1'` separator (char-boundary fix).**
+
+### Fixed
+
+- `parse_ms1_symbols` reported the observed HRP for a non-`ms1` string by slicing `lower[..len-1]`. With no `'1'` separator, `len-1` can land inside a multi-byte char → panic ("byte index N is not a char boundary"). Minimized reproducer: a single `0xaa` byte (→ U+FFFD via `String::from_utf8_lossy`). Now slices at `rfind('1')` (`'1'` is ASCII, so always a char boundary; no Unicode char's UTF-8 bytes contain `0x31`), and uses the whole string as the observed HRP when there is no separator. Only `decode_with_correction` reached the raw slice — `decode`/`inspect` were length-gated / codex32-validated first — so `ms repair` and the indel oracle inherited the panic.
+- Leak-neutral: the `WrongHrp.got` echo vector is the byte-identical WITH-`'1'` path; bounding that echo is the separate `ms-codec-error-display-echoes-input` FOLLOWUP.
+
+Found by stress-Cycle-C fuzzing (`fuzz/fuzz_targets/ms1_decode.rs`), now the regression gate (re-enabled in the `fuzz-smoke.yml` smoke matrix). 2 regression cells in `decode.rs`. No API/wire change. ms-cli exact pin → `=0.4.3` (ms-cli version unchanged). Resolves `decode-with-correction-panics-on-non-char-boundary-hrp-slice`. Plan + mini-R0: `design/PLAN_decode_with_correction_char_boundary_fix.md`, `design/agent-reports/decode-char-boundary-fix-mini-r0-round1-review.md`. **crates.io publish + toolkit pin bump pending user authorization.**
+
 ## ms-codec [0.4.2] — 2026-06-10
 
 **SemVer-PATCH — accept all-uppercase ms1 per BIP-173 (the QR alphanumeric form); fixes a combine-side secret-leak guard bypass.**

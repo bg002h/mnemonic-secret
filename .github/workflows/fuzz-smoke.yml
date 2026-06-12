@@ -75,13 +75,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # NOTE: `ms1_decode` is intentionally HELD OUT of the daily smoke
-        # until FOLLOWUP `decode-with-correction-panics-on-non-char-boundary-hrp-slice`
-        # is fixed — that target finds the known panic within ~85 execs, and a
-        # standing-red cron would mask future regressions. It stays in the
-        # `build` compile gate above (all 3 targets are built every push); it
-        # rejoins this matrix as the regression gate the moment the fix lands.
         target:
+          - ms1_decode
           - ms1_combine
           - ms1_no_secret_leak
     steps:

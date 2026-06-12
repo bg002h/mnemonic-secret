@@ -460,7 +460,7 @@ dependencies = [
 
 [[package]]
 name = "ms-codec"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "bip39",
  "codex32",

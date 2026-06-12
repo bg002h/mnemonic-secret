@@ -4,6 +4,14 @@ All notable changes to the `ms-codec` crate are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] — 2026-06-12
+
+**PATCH — `decode_with_correction` no longer panics on a non-`ms1` input with no `'1'` separator (char-boundary fix).**
+
+- `parse_ms1_symbols` sliced `lower[..len-1]` when reporting the observed HRP for a non-`ms1` string. With no `'1'` separator the index `len-1` can land inside a multi-byte char, panicking ("byte index N is not a char boundary"). Reproducer: a single `0xaa` byte (→ the 3-byte U+FFFD via `String::from_utf8_lossy`). The slice is now `lower[..rfind('1')]` (`'1'` is ASCII, always a char boundary), with the whole string as the observed HRP when there is no separator. `decode` and `inspect` were never affected (length-gated / codex32-validated first); only `decode_with_correction` reached the raw slice — so `ms repair` / the indel oracle inherited the panic.
+- Leak-neutral: the `WrongHrp.got` echo vector is the unchanged WITH-`'1'` path (byte-identical); bounding that echo is the separate `ms-codec-error-display-echoes-input` FOLLOWUP. No API/wire change.
+- Found by stress-Cycle-C fuzzing (`fuzz/fuzz_targets/ms1_decode.rs`), which re-finds it instantly and is now the regression gate. Resolves `decode-with-correction-panics-on-non-char-boundary-hrp-slice`. 2 regression cells in `decode.rs`. Mini-R0 GREEN (`design/agent-reports/decode-char-boundary-fix-mini-r0-round1-review.md`). ms-cli exact pin → `=0.4.3` (ms-cli version unchanged).
+
 ## [0.4.2] — 2026-06-10
 
 **PATCH — accept all-uppercase ms1 per BIP-173; combine secret-leak guard restored.**
