@@ -151,14 +151,20 @@ fn parse_ms1_symbols(s: &str) -> Result<Vec<u8>> {
         // multi-byte content elsewhere. When there is NO separator, the whole
         // (malformed) string is the observed HRP; never slice at `len-1`,
         // which can land inside a multi-byte char and panic (found by
-        // stress-Cycle-C fuzzing on a no-`'1'` lossy-UTF8 input). Leak-neutral:
-        // the WrongHrp.got echo vector is the unchanged WITH-`'1'` path;
-        // bounding it is the separate `ms-codec-error-display-echoes-input`
-        // FOLLOWUP's job.
-        let got = match lower.rfind('1') {
-            Some(i) => lower[..i].to_string(),
-            None => lower.clone(),
+        // stress-Cycle-C fuzzing on a no-`'1'` lossy-UTF8 input).
+        //
+        // SECRET-LEAK BOUND (ms-codec-error-display-echoes-input, 0.4.4): a
+        // data-char→`'1'` mutation can stretch the "observed HRP" into a long
+        // secret prefix. Cap the stored `got` to the first 4 CHARS (not bytes —
+        // multibyte chars like "ñ"/"é"/"😀" would re-introduce the v0.4.3 panic
+        // on a byte slice). 4 < the 8-char leak window and still carries the
+        // "you typed mk1/lnbc not ms1" diagnostic. Construction-time bound so
+        // downstream re-echoers (ms-cli, toolkit) inherit it for free.
+        let observed = match lower.rfind('1') {
+            Some(i) => &lower[..i],
+            None => &lower,
         };
+        let got = observed.chars().take(4).collect::<String>();
         return Err(Error::WrongHrp { got });
     }
     let rest = &lower[HRP_PREFIX.len()..];
@@ -387,13 +393,14 @@ mod tests {
         ];
         for s in &cases {
             // Must return cleanly, never panic. No `'1'` ⇒ WrongHrp, with the
-            // whole (lowercased) input echoed as the observed HRP.
+            // observed HRP CAPPED to the first 4 chars (the 0.4.4
+            // secret-leak bound; char-counted so multibyte cases don't panic).
             match decode_with_correction(s) {
                 Err(Error::WrongHrp { got }) => {
                     assert_eq!(
                         got,
-                        s.to_ascii_lowercase(),
-                        "got echoes the whole no-separator input"
+                        s.chars().take(4).collect::<String>().to_ascii_lowercase(),
+                        "got is the first 4 chars of the no-separator input (capped)"
                     );
                 }
                 other => panic!("expected WrongHrp for {s:?}, got {other:?}"),

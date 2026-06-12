@@ -4,7 +4,17 @@
 use std::fmt;
 
 /// ms-codec error type.
-#[derive(Debug)]
+///
+/// `Debug` is hand-implemented (NOT derived) so that neither `Display` nor
+/// `Debug` of this type can echo ≥8 contiguous chars of secret input
+/// (`ms-codec-error-display-echoes-input`, 0.4.4). A derived `Debug` would
+/// print every field — including the raw input carried by the inner
+/// `codex32::Error` (`InvalidChecksum`/`MismatchedHrp`/`MismatchedId`) and the
+/// `WrongHrp.got` HRP — so it is replaced by a delegation to the sanitized
+/// `Display`. This is load-bearing for downstream `#[derive(Debug)]` wrappers
+/// (toolkit `ToolkitError`/`CliError`) whose `{:?}` transitively renders this
+/// type via panics / `expect` / logging. Replacing the derive is NOT a SemVer
+/// break (the `Debug` IMPL is preserved; its exact output is not contractual).
 #[non_exhaustive]
 pub enum Error {
     /// Upstream codex32 parse / checksum failure (delegated from rust-codex32).
@@ -115,7 +125,36 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Codex32(e) => write!(f, "codex32 parse error: {:?}", e),
+            // SECRET-LEAK BOUND (ms-codec-error-display-echoes-input, 0.4.4):
+            // codex32-0.1.0's `Error` is `derive(Debug)`-only (NO `Display`), so
+            // a manual variant match is mandatory. Exactly 3 of its 16 variants
+            // carry the raw input string and MUST be intercepted EXPLICITLY (no
+            // generic `{:?}` fallback for them, so a future codex32 bump can't
+            // silently route a new leaky variant through):
+            //   * `InvalidChecksum { checksum, string }` — `string` is the FULL
+            //     input; `checksum` is a `&'static "short"/"long"` (safe).
+            //   * `MismatchedHrp(String, String)` — both dropped.
+            //   * `MismatchedId(String, String)` — both dropped.
+            // (MismatchedHrp/Id are provenance-bounded SAFE for ms1 — from
+            // `interpolate_at` on valid Codex32String, hrp="ms"/id=4 chars — but
+            // dropped for robustness.) The other 13 carry only
+            // `&'static str`/`usize`/`char`/`Case`/`Fe`/`field::Error` (all
+            // ≤1 echoed char < the 8-char window) and are rendered structurally
+            // via `{:?}` on the inner error AFTER the 3 leaky arms are peeled off.
+            Error::Codex32(e) => match e {
+                codex32::Error::InvalidChecksum { checksum, .. } => {
+                    write!(f, "invalid {checksum} checksum (input withheld)")
+                }
+                codex32::Error::MismatchedHrp(..) => {
+                    write!(f, "mismatched HRP across shares")
+                }
+                codex32::Error::MismatchedId(..) => {
+                    write!(f, "mismatched ID across shares")
+                }
+                // Safe variants only reach here (the 3 leaky ones are peeled off
+                // above), so `{:?}` of the inner error echoes no secret window.
+                safe => write!(f, "codex32 parse error: {safe:?}"),
+            },
             Error::MnemUnknownLanguage(code) => {
                 write!(f, "unknown mnem wordlist-language code: {0}", code)
             }
@@ -188,6 +227,17 @@ impl fmt::Display for Error {
     }
 }
 
+impl fmt::Debug for Error {
+    /// Hand-rolled to match `Display`'s sanitization — see the type doc.
+    /// Delegates to the (non-echoing) `Display` so the leaky inner
+    /// `codex32::Error` String fields and the (already construction-bounded)
+    /// `WrongHrp.got` can never reach a derived field dump. Wrapped as
+    /// `Error("…")` so the output still reads as a debug value.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Error(\"{self}\")")
+    }
+}
+
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         // codex32::Error doesn't impl std::error::Error in v0.1.0; chain stops here.
@@ -203,3 +253,131 @@ impl From<codex32::Error> for Error {
 
 /// Result alias for ms-codec.
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+mod no_echo_tests {
+    //! Red-first leak tests for the `ms-codec-error-display-echoes-input` fix
+    //! (0.4.4). Neither `Display` NOR `Debug` of `ms_codec::Error` may contain
+    //! any ≥8-char contiguous window of secret input, for ALL reachable inputs.
+    //! These tests construct/trigger the three leaky surfaces (codex32
+    //! `InvalidChecksum`/`MismatchedHrp`/`MismatchedId` + `WrongHrp`) and assert
+    //! the rendered strings carry no 8-char window of the secret.
+    use super::*;
+    use crate::{decode, decode_with_correction};
+
+    /// The contiguous-window length the fuzz oracle scans (8 chars = 40 bits
+    /// over the 32-symbol codex32 alphabet). Mirror it here.
+    const WINDOW: usize = 8;
+
+    /// Does `haystack` contain any ≥WINDOW-char contiguous window of `needle`?
+    fn contains_window(haystack: &str, needle: &str) -> Option<String> {
+        let n: Vec<char> = needle.chars().collect();
+        if n.len() < WINDOW {
+            return None;
+        }
+        for w in n.windows(WINDOW) {
+            let win: String = w.iter().collect();
+            if haystack.contains(&win) {
+                return Some(win);
+            }
+        }
+        None
+    }
+
+    /// Assert neither Display nor Debug of `e` carries an 8-char window of
+    /// `secret`.
+    fn assert_no_leak(e: &Error, secret: &str, label: &str) {
+        let display = format!("{e}");
+        let debug = format!("{e:?}");
+        if let Some(hit) = contains_window(&display, secret) {
+            panic!(
+                "{label}: Display leaked an {WINDOW}-char window of the secret: \
+                 hit={hit:?}\n  rendered: {display:?}"
+            );
+        }
+        if let Some(hit) = contains_window(&debug, secret) {
+            panic!(
+                "{label}: Debug leaked an {WINDOW}-char window of the secret: \
+                 hit={hit:?}\n  rendered: {debug:?}"
+            );
+        }
+    }
+
+    /// A 50-char codex32-alphabet "secret" data-part for the constructed cases.
+    const SECRET_50: &str = "qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3";
+
+    /// (1) `Codex32(InvalidChecksum)` reached via a real `decode` — take a
+    /// valid 50-char ms1 string and flip one data char so the checksum fails.
+    /// codex32-0.1.0's `InvalidChecksum.string` carries the FULL input, so
+    /// pre-fix this leaks the whole secret data-part.
+    #[test]
+    fn codex32_invalid_checksum_from_decode_does_not_leak() {
+        // Verified-valid 50-char ms1 vector (decodes OK at HEAD).
+        let valid = "ms10entrsqgqqc83yukgh23xkvmp59xf2eldpk4cdrq2y4h82yz";
+        assert!(decode(valid).is_ok(), "fixture must decode: {:?}", decode(valid));
+        let mut chars: Vec<char> = valid.chars().collect();
+        // Flip a data char (well past the `ms10entrs` prefix) → checksum fails.
+        let i = 14;
+        chars[i] = if chars[i] == 'q' { 'p' } else { 'q' };
+        let flipped: String = chars.iter().collect();
+        let e = decode(&flipped).unwrap_err();
+        // Must be the leaky Codex32(InvalidChecksum) arm.
+        assert!(
+            matches!(e, Error::Codex32(codex32::Error::InvalidChecksum { .. })),
+            "expected Codex32(InvalidChecksum), got {e:?}"
+        );
+        // The secret is the data-part of the flipped string (after `ms1`).
+        let secret = flipped.strip_prefix("ms1").unwrap();
+        assert_no_leak(&e, secret, "codex32_invalid_checksum_from_decode");
+    }
+
+    /// (1b) `Codex32(InvalidChecksum)` constructed directly with a 50-char
+    /// secret string — the construction-side red-first cell.
+    #[test]
+    fn codex32_invalid_checksum_constructed_does_not_leak() {
+        let e = Error::Codex32(codex32::Error::InvalidChecksum {
+            checksum: "short",
+            string: format!("ms1{SECRET_50}"),
+        });
+        assert_no_leak(&e, SECRET_50, "codex32_invalid_checksum_constructed");
+    }
+
+    /// (2) `WrongHrp` reached via a real `decode_with_correction` of a
+    /// no-separator 50-char secret-shaped input — pre-fix the whole input
+    /// rides in `got` (this is the path `parse_ms1_symbols` reaches directly;
+    /// `decode`/`inspect` length/codex32-validate first and route a
+    /// codex32-alphabet 50-char string to the checksum path instead).
+    #[test]
+    fn wrong_hrp_no_separator_does_not_leak() {
+        // 50 codex32-alphabet chars, NO `'1'` separator → the whole string is
+        // the observed HRP at the construction site (capped to 4 by the fix).
+        let secret = "qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3";
+        assert!(!secret.contains('1'), "fixture must have no '1' separator");
+        let e = decode_with_correction(secret).unwrap_err();
+        assert!(
+            matches!(e, Error::WrongHrp { .. }),
+            "expected WrongHrp, got {e:?}"
+        );
+        assert_no_leak(&e, secret, "wrong_hrp_no_separator");
+    }
+
+    /// (3) `Codex32(MismatchedHrp)` constructed directly with secret strings.
+    #[test]
+    fn codex32_mismatched_hrp_does_not_leak() {
+        let e = Error::Codex32(codex32::Error::MismatchedHrp(
+            SECRET_50.to_string(),
+            SECRET_50.to_string(),
+        ));
+        assert_no_leak(&e, SECRET_50, "codex32_mismatched_hrp");
+    }
+
+    /// (4) `Codex32(MismatchedId)` constructed directly with secret strings.
+    #[test]
+    fn codex32_mismatched_id_does_not_leak() {
+        let e = Error::Codex32(codex32::Error::MismatchedId(
+            SECRET_50.to_string(),
+            SECRET_50.to_string(),
+        ));
+        assert_no_leak(&e, SECRET_50, "codex32_mismatched_id");
+    }
+}

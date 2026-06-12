@@ -15,24 +15,22 @@
 //! WINDOW = 8 chars: 40 bits over the 32-symbol codex32 alphabet — false-
 //! positive odds per error string are negligible (R0 [M3]).
 //!
-//! ============================ EXCLUSION SET ============================
-//! (R0 [C1], load-bearing) Two `ms_codec::Error` variants are KNOWN echo paths
-//! and are SKIPPED by the scan:
-//!   * `Error::Codex32(_)`   — Display is `"codex32 parse error: {:?}"`
-//!     (error.rs:118) and codex32-0.1.0's `InvalidChecksum`/`MismatchedHrp`/
-//!     `MismatchedId` carry the FULL input string, so any checksum-failing
-//!     share echoes its whole (secret) data-part.
-//!   * `Error::WrongHrp { .. }` — Display echoes the observed HRP
-//!     (error.rs:122); a data-char→`1` mutation shifts the bech32 separator so
-//!     the parsed "HRP" can contain a long secret prefix.
-//! These are tracked by FOLLOWUP `ms-codec-error-display-echoes-input`
-//! (mnemonic-secret repo; companion in mnemonic-toolkit linking v0.53.4's
-//! friendly-mapper withholding). The exclusion set SHRINKS when that FOLLOWUP
-//! lands: deleting an exclusion turns the oracle into the permanent regression
-//! gate guarding the fix. Of the 16 `ms_codec::Error` variants, only these two
-//! can emit a ≥8-char contiguous input echo (every other variant carries at
-//! most a `[u8; 4]` tag = 4 chars, or a single char/byte — below the window),
-//! so the two-variant exclusion is provably minimal (R0 round-2/round-3).
+//! ========================== NO EXCLUSIONS =============================
+//! Originally (stress-Cycle-C, R0 [C1]) two `ms_codec::Error` variants were
+//! KNOWN echo paths and skipped: `Error::Codex32(_)` (Display `{:?}`-wrapped
+//! codex32-0.1.0's `InvalidChecksum`/`MismatchedHrp`/`MismatchedId`, each
+//! carrying the FULL input string) and `Error::WrongHrp { .. }` (the observed
+//! HRP, which a data-char→`1` shift could stretch into a secret prefix).
+//!
+//! FOLLOWUP `ms-codec-error-display-echoes-input` (ms-codec 0.4.4) closed both
+//! at the source: the Codex32 Display/Debug now drops the 3 leaky variants'
+//! String fields, and `WrongHrp.got` is bounded to 4 chars AT CONSTRUCTION
+//! (< the 8-char window). The exclusion set therefore SHRANK TO ZERO — the
+//! oracle now scans EVERY error variant and is the permanent regression gate
+//! guarding that fix. Of the 16 `ms_codec::Error` variants, none can now emit
+//! a ≥8-char contiguous input echo (every variant carries at most a `[u8; 4]`
+//! tag = 4 chars, a bounded 4-char HRP, or a single char/byte — all below the
+//! window).
 //! ======================================================================
 #![no_main]
 
@@ -63,23 +61,6 @@ const SHARES: [&str; 3] = [
     "ms122hy2zdmaya4rgf7c95asrmfrrm9zhejjzcayfpjrej9kns",
 ];
 
-/// Should the scan skip this error? `true` for the two KNOWN echo paths tracked
-/// by FOLLOWUP `ms-codec-error-display-echoes-input`. Delete an arm here when
-/// the FOLLOWUP fixes that variant's Display/Debug — the oracle then guards the
-/// fix forever.
-fn is_known_echo(e: &Error) -> bool {
-    matches!(
-        e,
-        // FOLLOWUP ms-codec-error-display-echoes-input: codex32 Debug-wraps the
-        // full input string (InvalidChecksum/MismatchedHrp/MismatchedId).
-        Error::Codex32(_)
-        // FOLLOWUP ms-codec-error-display-echoes-input: WrongHrp.got echoes the
-        // observed HRP, which a data-char→`1` shift can stretch into a secret
-        // prefix.
-        | Error::WrongHrp { .. }
-    )
-}
-
 /// The secret data-part of a share: the chars after the `ms1` HRP (the codex32
 /// data+checksum symbols). These are the windows the scan hunts for.
 fn data_part(share: &str) -> &str {
@@ -106,9 +87,11 @@ fn contains_window(haystack: &str, needle: &str) -> Option<String> {
 /// Scan a rendered error message for a secret-window leak. Panics (the leak
 /// finding) on a hit against a NON-excluded variant.
 fn scan_for_leak(e: &Error, surface: &str, rendered: &str) {
-    if is_known_echo(e) {
-        return; // known echo path — see EXCLUSION SET in the module docs.
-    }
+    // No exclusions: as of ms-codec 0.4.4 the `Codex32(_)` and `WrongHrp{..}`
+    // paths are sanitized at the source (codex32 String fields dropped from
+    // Display/Debug; `WrongHrp.got` bounded to 4 chars at construction), so the
+    // oracle now guards them too — this is the permanent regression gate for
+    // FOLLOWUP `ms-codec-error-display-echoes-input`.
     for (i, share) in SHARES.iter().enumerate() {
         let secret = data_part(share);
         if let Some(hit) = contains_window(rendered, secret) {

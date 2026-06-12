@@ -4,6 +4,21 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-codec [0.4.4] — 2026-06-12
+
+**SemVer-PATCH (SECURITY) — `ms_codec::Error` no longer echoes secret input in `Display` or `Debug`.**
+
+### Fixed
+
+- ms1 strings are SECRET-BEARING (BIP-39 entropy / BIP-32 seed / xpriv). Three error-rendering paths previously embedded the raw input, leaking secret material into any log / panic / `{:?}`:
+  - `Error::Codex32(_)` rendered `{:?}` of the inner `codex32::Error`, whose `InvalidChecksum { string }` carries the FULL input and `MismatchedHrp(..)` / `MismatchedId(..)` carry the share strings. A single bit-flip of a valid ms1 share → `InvalidChecksum` → the whole secret rode in the message. The `Display`/`Debug` Codex32 arm is now a manual variant match: the three input-bearing variants are intercepted explicitly and rendered structurally only (`"invalid {short|long} checksum (input withheld)"`, `"mismatched HRP across shares"`, `"mismatched ID across shares"`); the other 13 codex32 variants carry only `&'static str` / `usize` / `char` / `Case` / `Fe` / `field::Error` (≤1 echoed char) and are rendered with their safe fields.
+  - `Error::WrongHrp { got }` echoed the observed HRP; a data-char→`'1'` mutation could stretch that "HRP" into a long secret prefix. `got` is now CAPPED to the first 4 chars AT CONSTRUCTION (char-counted, multibyte-safe), at all three build sites (`decode.rs`, `envelope.rs` ×2). 4 < the 8-char leak window and still carries the "you typed mk1/lnbc not ms1" diagnostic. **JSON-consumer note:** because the cap is on the stored field, the ms-cli error-envelope `details.got` value now shows at most 4 chars (it previously echoed the full observed HRP); any downstream that pinned the full `got` should expect the shortened value.
+  - `#[derive(Debug)]` on `Error` (which would dump every field, including the leaky ones) is replaced by a hand-rolled `Debug` that delegates to the sanitized `Display`. This is load-bearing for downstream `#[derive(Debug)]` wrappers (toolkit `ToolkitError` / `CliError`) whose `{:?}` transitively renders this type. Not a SemVer break — the `Debug` impl is preserved; its exact output is not contractual.
+- The stress-Cycle-C `ms1_no_secret_leak` fuzz oracle previously EXCLUDED `Codex32(_)` and `WrongHrp{..}` because they leaked; the exclusion is now DELETED and the oracle scans every variant — it is the permanent regression gate for this fix (90s bring-up run clean).
+- **ms-cli note:** `friendly_codex32` keeps the HRP / ID strings of `MismatchedHrp` / `MismatchedId` by design — those are provenance-bounded (HRP = `"ms"`, id = 4 chars, drawn from `interpolate_at` on already-valid `Codex32String`, never the data-part), out of this cycle's `ms_codec::Error` scope.
+
+5 red-first leak cells in `ms-codec/src/error.rs` (each asserts neither `Display` nor `Debug` carries an 8-char window of the secret); the leak-enshrining test in `decode.rs` is updated to assert the 4-char cap. No API / wire / signature change. ms-cli exact pin → `=0.4.4` (ms-cli version unchanged). Resolves `ms-codec-error-display-echoes-input` (+ its toolkit companion). Brainstorm + 2 R0 rounds: `design/BRAINSTORM_error_display_no_echo.md`, `design/agent-reports/error-no-echo-r0-round{1,2}-review.md`. **crates.io publish + toolkit pin bump pending user authorization.**
+
 ## ms-codec [0.4.3] — 2026-06-12
 
 **SemVer-PATCH — `decode_with_correction` no longer panics on a non-`ms1` input with no `'1'` separator (char-boundary fix).**

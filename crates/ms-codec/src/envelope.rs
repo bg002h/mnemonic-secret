@@ -60,9 +60,12 @@ pub(crate) struct WireFields<'s> {
 /// contain the fixed wire prefix (defensive only; unreachable for inputs that
 /// passed BIP-93 parsing).
 pub(crate) fn extract_wire_fields(s: &str) -> Result<WireFields<'_>> {
-    let sep = s
-        .rfind(SEPARATOR)
-        .ok_or_else(|| Error::WrongHrp { got: s.to_string() })?;
+    let sep = s.rfind(SEPARATOR).ok_or_else(|| Error::WrongHrp {
+        // Cap to 4 chars at construction (ms-codec-error-display-echoes-input,
+        // 0.4.4): a separator-less secret string would otherwise ride whole in
+        // `got`. char-counted (multibyte-safe); 4 < the 8-char leak window.
+        got: s.chars().take(4).collect::<String>(),
+    })?;
     // The fixed wire prefix after the separator is 7 chars (threshold + 4-char
     // id + share-index) + 13-char short checksum = 20. Any v0.1-shaped string
     // therefore needs at least sep + 20 bytes.
@@ -119,7 +122,9 @@ pub(crate) fn discriminate(c: &Codex32String) -> Result<(Tag, Payload)> {
     // Wire-invariant checks (SPEC §4 rules 2, 3, 4).
     if fields.hrp != HRP {
         return Err(Error::WrongHrp {
-            got: fields.hrp.to_string(),
+            // Cap to 4 chars at construction (ms-codec-error-display-echoes-input,
+            // 0.4.4); char-counted (multibyte-safe). 4 < the 8-char leak window.
+            got: fields.hrp.chars().take(4).collect::<String>(),
         });
     }
     // Threshold-field dispatch (SPEC_ms_v0_2_kofn §1): '0' → v0.1 single-string
