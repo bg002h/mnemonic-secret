@@ -1,1 +1,9 @@
 /target
+
+# cargo-fuzz transient output (ms phase, Cycle C). The fuzz workspace's
+# corpus/ and Cargo.lock ARE committed; build/artifacts/coverage are not.
+# (The root `/target` above does NOT cover the nested fuzz/target, so it is
+# listed explicitly here.)
+fuzz/target/
+fuzz/artifacts/
+fuzz/coverage/
