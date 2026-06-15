@@ -290,3 +290,67 @@ mod tests {
         assert!(!s.contains("language"));
     }
 }
+
+/// Same canonical display-grouping vectors as the toolkit + the other siblings
+/// (copy is checksum-pinned in CI). Proves ms-cli's render/strip match
+/// byte-for-byte. SPEC §8. Bin-crate unit test (ms-cli is bin-only).
+#[cfg(test)]
+mod conformance {
+    use super::{render_grouped, strip_display_separators};
+
+    fn decode(f: &str) -> String {
+        if f == "<empty>" {
+            return String::new();
+        }
+        f.replace("<sp>", " ")
+            .replace("<tab>", "\t")
+            .replace("<lf>", "\n")
+            .replace("<cr>", "\r")
+    }
+
+    fn sep(k: &str) -> char {
+        match k {
+            "space" => ' ',
+            "hyphen" => '-',
+            "comma" => ',',
+            "none" => ' ',
+            o => panic!("unknown separator keyword: {o}"),
+        }
+    }
+
+    #[test]
+    fn conformance_vectors_pass() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../design/display-grouping-vectors.tsv"
+        );
+        let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let mut lines = text.lines();
+        assert_eq!(
+            lines.next().expect("header"),
+            "op\tinput\tgroup_size\tseparator\texpected\tnote",
+            "vector header drift"
+        );
+        let mut n = 0usize;
+        for (i, line) in lines.enumerate() {
+            if line.is_empty() {
+                continue;
+            }
+            let c: Vec<&str> = line.split('\t').collect();
+            assert_eq!(c.len(), 6, "row {} not 6 fields: {line:?}", i + 2);
+            let (op, input, gs, s, exp, note) =
+                (c[0], decode(c[1]), c[2], c[3], decode(c[4]), c[5]);
+            let gs: usize = gs
+                .parse()
+                .unwrap_or_else(|_| panic!("row {}: bad group_size", i + 2));
+            let got = match op {
+                "render" => render_grouped(&input, gs, sep(s)),
+                "strip" => strip_display_separators(&input),
+                o => panic!("row {}: unknown op {o:?}", i + 2),
+            };
+            assert_eq!(got, exp, "row {} ({note})", i + 2);
+            n += 1;
+        }
+        assert!(n >= 20, "expected >=20 rows, got {n}");
+    }
+}
