@@ -33,11 +33,14 @@ fn stdout_of(args: &[&str]) -> String {
 
 #[test]
 fn english_phrase_text_unchanged() {
+    // mstring-grouping P2: encode text is now print-once, default space/5
+    // (was `<ms1>\n\n<chunked>`). Assert single line + space-stripped == canonical.
     let s = stdout_of(&["encode", "--phrase", ENGLISH_12]);
+    assert!(!s.contains("\n\n"), "print-once: no blank line; got {s:?}");
+    assert_eq!(s.lines().count(), 1, "single line; got {s:?}");
     assert_eq!(
-        s,
-        "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f\n\n\
-         ms10e ntrsq qqqqq qqqqq qqqqq qqqqq qqqqq qqcj9 sxraq 34v7f\n"
+        s.replace(' ', ""),
+        "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f\n"
     );
 }
 
@@ -54,13 +57,13 @@ fn english_phrase_json_unchanged() {
 fn japanese_phrase_text_unchanged() {
     let ja = japanese_12_word();
     let s = stdout_of(&["encode", "--language", "japanese", "--phrase", &ja]);
-    // mnem (0x02) ms1, 51-char first line; chunked second line.
-    // 51-char ms1 → 11 chunks; line-wrap at 10 chunks/line puts the 11th
-    // (`l`) on its own line.
+    // mnem (0x02) ms1, 51 chars. Print-once single line (the legacy wrap@10
+    // that put the 11th group `l` on its own line is gone).
+    assert!(!s.contains("\n\n"), "print-once: no blank line; got {s:?}");
+    assert_eq!(s.lines().count(), 1, "single line; got {s:?}");
     assert_eq!(
-        s,
-        "ms10entrsqgq6h2at4w46h2at4w46h2at4w46k0mt2va9nwh4ql\n\n\
-         ms10e ntrsq gq6h2 at4w4 6h2at 4w46h 2at4w 46k0m t2va9 nwh4q\nl\n"
+        s.replace(' ', ""),
+        "ms10entrsqgq6h2at4w46h2at4w46h2at4w46k0mt2va9nwh4ql\n"
     );
 }
 
@@ -78,10 +81,11 @@ fn japanese_phrase_json_unchanged() {
 fn hex_text_unchanged() {
     let hex = "ab".repeat(16);
     let s = stdout_of(&["encode", "--hex", &hex]);
+    assert!(!s.contains("\n\n"), "print-once: no blank line; got {s:?}");
+    assert_eq!(s.lines().count(), 1, "single line; got {s:?}");
     assert_eq!(
-        s,
-        "ms10entrsqz46h2at4w46h2at4w46h2at4w4sna8r2pfm392lu\n\n\
-         ms10e ntrsq z46h2 at4w4 6h2at 4w46h 2at4w 4sna8 r2pfm 392lu\n"
+        s.replace(' ', ""),
+        "ms10entrsqz46h2at4w46h2at4w46h2at4w4sna8r2pfm392lu\n"
     );
 }
 

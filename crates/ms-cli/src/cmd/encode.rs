@@ -13,7 +13,7 @@ use serde_json::to_string;
 
 use crate::advisory::{OutputClass, emit_output_class_advisory};
 use crate::error::{CliError, Result};
-use crate::format::{chunked, EncodeJson};
+use crate::format::{render_grouped, EncodeJson};
 use crate::language::CliLanguage;
 use crate::parse::{read_input, read_phrase_input};
 
@@ -41,6 +41,15 @@ pub struct EncodeArgs {
     /// Suppress the stderr engraving card (for tooling).
     #[arg(long)]
     pub no_engraving_card: bool,
+
+    /// Insert a separator every N characters in the emitted ms1 string
+    /// (0 = unbroken). SPEC §3. Display only; --json stays unbroken.
+    #[arg(long, default_value_t = 5)]
+    pub group_size: u16,
+
+    /// Separator: space|hyphen|comma (keyword) or the literal " "|-|, . SPEC §5.
+    #[arg(long, default_value = "space", value_parser = crate::format::parse_separator)]
+    pub separator: char,
 
     /// Emit a single JSON object on stdout instead of multi-line text.
     #[arg(long)]
@@ -144,7 +153,14 @@ pub fn run(mut args: EncodeArgs) -> Result<u8> {
     if args.json {
         emit_json(&ms1, language_for_card, word_count, &entropy[..])?;
     } else {
-        emit_text(&ms1, language_for_card, word_count, args.no_engraving_card)?;
+        emit_text(
+            &ms1,
+            language_for_card,
+            word_count,
+            args.no_engraving_card,
+            args.group_size as usize,
+            args.separator,
+        )?;
     }
     emit_output_class_advisory(OutputClass::PrivateKeyMaterial, &mut std::io::stderr().lock());
     Ok(0)
@@ -194,11 +210,11 @@ fn emit_text(
     language: Option<&str>,
     word_count: usize,
     no_engraving_card: bool,
+    group_size: usize,
+    separator: char,
 ) -> Result<()> {
-    // Multi-line stdout: ms1 + blank + chunked form (SPEC Q6).
-    println!("{}", ms1);
-    println!();
-    println!("{}", chunked(ms1));
+    // Print-once stdout: the ms1 in the flag-controlled grouped form (SPEC §6).
+    println!("{}", render_grouped(ms1, group_size, separator));
 
     if !no_engraving_card {
         let mut stderr = std::io::stderr().lock();

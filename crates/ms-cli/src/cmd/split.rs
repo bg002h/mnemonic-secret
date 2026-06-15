@@ -17,7 +17,7 @@ use zeroize::Zeroizing;
 use crate::advisory::{OutputClass, emit_output_class_advisory};
 use crate::cmd::encode::resolve_secret_payload;
 use crate::error::{CliError, Result};
-use crate::format::{SplitJson, chunked};
+use crate::format::{SplitJson, render_grouped};
 use crate::language::CliLanguage;
 
 /// `ms split` arguments.
@@ -46,6 +46,15 @@ pub struct SplitArgs {
     /// Total number of shares N to produce (K ≤ N ≤ 31).
     #[arg(short = 'n', long = "shares")]
     pub n: usize,
+
+    /// Insert a separator every N characters in each emitted share string
+    /// (0 = unbroken). SPEC §3. Display only; --json stays unbroken.
+    #[arg(long, default_value_t = 5)]
+    pub group_size: u16,
+
+    /// Separator: space|hyphen|comma (keyword) or the literal " "|-|, . SPEC §5.
+    #[arg(long, default_value = "space", value_parser = crate::format::parse_separator)]
+    pub separator: char,
 
     /// Emit a single JSON object on stdout instead of multi-line text.
     #[arg(long)]
@@ -87,7 +96,7 @@ pub fn run(mut args: SplitArgs) -> Result<u8> {
     if args.json {
         emit_json(&shares, args.k, args.n, &id, kind, language)?;
     } else {
-        emit_text(&shares);
+        emit_text(&shares, args.group_size as usize, args.separator);
     }
 
     // The N-share SET is secret-equivalent (any K reconstruct the secret).
@@ -141,24 +150,20 @@ fn emit_json(
     Ok(())
 }
 
-/// Text form: each share on its own line, followed by a blank line and the same
-/// share in 5-char engraving-chunk grouping (one chunked block per share,
-/// separated by blank lines).
-fn emit_text(shares: &[String]) {
+/// Text form (print-once, SPEC §6 + §15 C1/C2): stdout carries the N share
+/// strings one per line in the flag-controlled grouped form (machine-pipeable
+/// into `ms combine -`); all human labels ("share i of n") move to stderr
+/// (mirrors the engraving-card panel). Emit ALL stdout shares first, then the
+/// stderr labels.
+fn emit_text(shares: &[String], group_size: usize, separator: char) {
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
-    // First: the bare share strings, one per line (machine-pipeable into
-    // `ms combine`).
     for share in shares {
-        let _ = writeln!(out, "{share}");
+        let _ = writeln!(out, "{}", render_grouped(share, group_size, separator));
     }
-    let _ = writeln!(out);
-    // Then: the engraving grouping for each share.
-    for (i, share) in shares.iter().enumerate() {
-        let _ = writeln!(out, "share {} of {}:", i + 1, shares.len());
-        let _ = writeln!(out, "{}", chunked(share));
-        if i + 1 < shares.len() {
-            let _ = writeln!(out);
-        }
+    let stderr = std::io::stderr();
+    let mut err = stderr.lock();
+    for (i, _share) in shares.iter().enumerate() {
+        let _ = writeln!(err, "share {} of {}:", i + 1, shares.len());
     }
 }

@@ -6,9 +6,10 @@ use predicates::prelude::*;
 #[test]
 fn encode_24_word_abandon_art() {
     let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
+    // `--group-size 0` keeps the exact unbroken prefix (default is now space/5).
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["encode", "--phrase", phrase])
+        .args(["encode", "--phrase", phrase, "--group-size", "0"])
         .assert()
         .success()
         .stdout(predicate::str::starts_with("ms10entrsqqqq"))

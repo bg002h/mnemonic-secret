@@ -13,6 +13,8 @@ fn encode_no_engraving_card_suppresses_engraving_block() {
             "--phrase",
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
             "--no-engraving-card",
+            "--group-size",
+            "0",
         ])
         .assert()
         .success()

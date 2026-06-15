@@ -28,17 +28,18 @@ fn share_header(s: &str) -> (char, char, String) {
 
 #[test]
 fn split_english_phrase_emits_n_shares_text() {
+    // `--group-size 0` keeps shares unbroken so the bare-share parse holds
+    // (default is now space/5; labels moved to stderr — mstring-grouping P2).
     let out = Command::cargo_bin("ms")
         .unwrap()
-        .args(["split", "--phrase", ENGLISH_12, "-k", "2", "-n", "3"])
+        .args(["split", "--phrase", ENGLISH_12, "-k", "2", "-n", "3", "--group-size", "0"])
         .assert()
         .success()
         .get_output()
         .stdout
         .clone();
     let s = String::from_utf8(out).unwrap();
-    // First token of each non-empty line is a share string; collect the ms1
-    // strings (lines that start with "ms1" and have no spaces).
+    // Each non-empty stdout line is a bare share string (no labels on stdout).
     let shares: Vec<&str> = s
         .lines()
         .filter(|l| l.starts_with("ms1") && !l.contains(' '))
