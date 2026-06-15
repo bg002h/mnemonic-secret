@@ -46,10 +46,43 @@ pub struct CombineArgs {
     pub json: bool,
 }
 
+/// Read the share strings: positional `args` minus a leading `-`, which means
+/// "read one share per line from stdin" (parallel to `ms split | ms combine -`
+/// and mk-cli's `read_mk1_strings`). Each share (positional OR stdin line) is
+/// stripped of mstring display separators (SPEC §3.2 / §15 C1+C3) so a grouped
+/// or unbroken card both re-ingest. Shares are secret-equivalent → Zeroizing.
+fn read_shares(args: &[String]) -> Result<Zeroizing<Vec<String>>> {
+    let mut out: Vec<String> = Vec::with_capacity(args.len());
+    let mut consumed_stdin = false;
+    for a in args {
+        if a == "-" && !consumed_stdin {
+            consumed_stdin = true;
+            let buf = crate::parse::read_stdin()?;
+            for line in buf.lines() {
+                let s = crate::format::strip_display_separators(line);
+                if !s.is_empty() {
+                    out.push(s);
+                }
+            }
+        } else if a == "-" {
+            // Already consumed stdin; ignore additional `-` markers.
+        } else {
+            out.push(crate::format::strip_display_separators(a));
+        }
+    }
+    if out.is_empty() {
+        return Err(CliError::BadInput(
+            "expected at least one share (positional or via stdin with '-')".into(),
+        ));
+    }
+    Ok(Zeroizing::new(out))
+}
+
 /// Run `ms combine`. Writes the recovered secret to stdout per the `--to` form.
 pub fn run(mut args: CombineArgs) -> Result<u8> {
-    // The share strings themselves are secret-equivalent — wrap them.
-    let shares: Zeroizing<Vec<String>> = Zeroizing::new(std::mem::take(&mut args.shares));
+    // The share strings themselves are secret-equivalent — wrap them. `-` reads
+    // one share per line from stdin; display separators are stripped per share.
+    let shares: Zeroizing<Vec<String>> = read_shares(&std::mem::take(&mut args.shares))?;
 
     // Recover the secret. combine_shares surfaces the §2 error taxonomy
     // (SecretShareSuppliedToCombine / Codex32(ThresholdNotPassed/Mismatched*/

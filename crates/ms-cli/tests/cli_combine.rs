@@ -40,6 +40,48 @@ fn split_shares(source_args: &[&str], k: &str, n: &str) -> Vec<String> {
         .collect()
 }
 
+/// Insert a comma every 5 chars (a separator neither ms-codec nor the legacy
+/// `strip_whitespace` removed — genuinely exercises `strip_display_separators`).
+fn comma5(s: &str) -> String {
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && i % 5 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+#[test]
+fn combine_accepts_comma_grouped_positional_shares() {
+    // mstring-grouping P2 (SPEC §15 C3): grouped positional shares re-ingest.
+    let shares = split_shares(&["--phrase", ENGLISH_12], "2", "3");
+    let g0 = comma5(&shares[0]);
+    let g2 = comma5(&shares[2]);
+    Command::cargo_bin("ms")
+        .unwrap()
+        .args(["combine", &g0, &g2])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(ENGLISH_12));
+}
+
+#[test]
+fn combine_dash_stdin_round_trips() {
+    // mstring-grouping P2 (SPEC §15 C1): `ms combine -` reads one share per line
+    // from stdin; comma-grouped lines strip + re-ingest.
+    let shares = split_shares(&["--phrase", ENGLISH_12], "2", "3");
+    let stdin = format!("{}\n{}\n", comma5(&shares[0]), comma5(&shares[1]));
+    Command::cargo_bin("ms")
+        .unwrap()
+        .args(["combine", "-"])
+        .write_stdin(stdin)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(ENGLISH_12));
+}
+
 #[test]
 fn combine_english_round_trip_to_phrase() {
     let shares = split_shares(&["--phrase", ENGLISH_12], "2", "3");
