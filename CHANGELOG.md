@@ -4,6 +4,27 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.8.0] — 2026-06-15
+
+**SemVer-MINOR — standardized mstring display-grouping on `ms encode` + `ms split`; default text output is now space/5 print-once (was print-twice + wrap@10). Part of the cross-constellation `display-grouping-render-strip-v1` cycle (P2).**
+
+### Added
+
+- **`ms encode --group-size <u16>`** (default `5`, `0` = unbroken) + **`--separator <space|hyphen|comma>`** (keyword or literal `" "|-|,`, default `space`) — insert a separator every N characters in the emitted ms1 text. SPEC §3/§5. Same two flags on **`ms split`** (applied to each share). The default `ms encode` text output is now **single line, space/5, print-once** (previously `<ms1>\n\n<chunked-form>` with a wrap@10 second block) — a default-output change, hence MINOR. `--json` ALWAYS carries the canonical **unbroken** string.
+- **`ms split` print-once:** stdout carries the N share strings one per line in the flag-controlled grouped form (pipe-friendly into `ms combine -`); the human labels ("share i of n") move to **stderr**.
+- **`ms combine -`→stdin:** `ms combine` gains multiline share intake from stdin (one share per line; parallel to `mk`'s `read_mk1_strings`), so `ms split | ms combine -` round-trips.
+- **Separator-stripping intake everywhere:** `ms decode`/`inspect`/`repair`/`encode --hex` (via `read_input`) and `ms combine` (positional + stdin) now strip ALL whitespace + `-` + `,` (SPEC §3.2) so a grouped or unbroken card both re-ingest. (ms-codec's decode does not tolerate separators; the legacy `strip_whitespace` handled whitespace only — the net-new coverage is `-`/`,`.)
+- Conformance vectors `design/display-grouping-vectors.tsv` (byte-identical copy of the toolkit canonical) + `.sha256`, CI-pinned (`sha256sum -c` in the clippy job) + a bin-crate driver test over every row.
+
+### Removed / Changed
+
+- **The doubling-dedup heuristic in `parse.rs::strip_whitespace` is decommissioned** — it existed to absorb the print-twice `<ms1>\n\n<chunked>` stdout piped into a decoder; print-once everywhere makes the doubling unreachable. `strip_whitespace` now plain-strips display separators (no dedup).
+- `format.rs::chunked` (5/space/wrap@10) is deleted; replaced by `render_grouped` (single line, configurable separator).
+
+### Notes
+
+stdout text was never a declared-stable interface and `--json` is unaffected. **`ms-codec` is UNCHANGED** (the pure fns are ms-cli-local — ms-cli is bin-only; conformance test is a bin-crate `#[cfg(test)]`). The `ms-codec` exact pin stays `=0.4.4`. Cross-repo lockstep (toolkit collapse + manuals; `mnemonic-gui` schema-mirror flags + separator dropdown) lands in later phases; FOLLOWUP `display-grouping-render-strip-v1`.
+
 ## ms-codec [0.4.4] — 2026-06-12
 
 **SemVer-PATCH (SECURITY) — `ms_codec::Error` no longer echoes secret input in `Display` or `Debug`.**
