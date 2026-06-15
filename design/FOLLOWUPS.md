@@ -57,6 +57,17 @@ Single source of truth for items that surfaced during a review or implementation
 
 ## Open items
 
+### `display-grouping-render-strip-v1` — standardized mstring display-grouping (`ms` CLI flags + intake strip; companion)
+
+- **Surfaced:** 2026-06-15, the cross-constellation **mstring display-grouping** cycle (P2 = mnemonic-secret). User-requested standardization of `ms1`/`mk1`/`md1` display output across all four CLIs (`mnemonic`/`md`/`ms`/`mk`).
+- **Where:** `crates/ms-cli/src/format.rs` (`render_grouped`, `strip_display_separators`, `is_display_separator`, `parse_separator` — kept LOCAL to ms-cli, bin-only; `chunked` deleted); `cmd/encode.rs` + `cmd/split.rs` (`--group-size`/`--separator`); `cmd/combine.rs` (`-`→stdin `read_shares`); `parse.rs::strip_whitespace` (now strips `-`/`,` too; doubling-dedup heuristic removed); canonical vectors `design/display-grouping-vectors.tsv` (+ `.sha256`, CI-pinned in the clippy job).
+- **What (SHIPPED this cycle, ms-cli 0.8.0):** `ms encode` + `ms split` gain `--group-size <u16>` (default 5, `0`=unbroken) + `--separator <space|hyphen|comma>` (default space); text output is now **space/5 print-once** (the old `<ms1>\n\n<chunked>` print-twice + wrap@10 are gone). `ms split` emits shares one-per-line on stdout with labels→stderr. `--json` stays UNBROKEN. Every ms1-intake surface (decode/inspect/repair/encode-`--hex` via `read_input`; `ms combine` positional + `-`→stdin) strips display separators (whitespace + `-` + `,`). The doubling-dedup heuristic is decommissioned (emit is print-once). **ms-codec UNCHANGED** (fns are ms-cli-local). Drift control = copy-with-checksum conformance vectors (canonical TSV authored in the toolkit; byte-identical copy + `.sha256` here; CI `sha256sum -c` + a bin-crate driver test).
+- **Note:** ms-codec's decode does NOT tolerate display separators (no md-style "D11"); the legacy `strip_whitespace` handled whitespace only → the net-new strip coverage is `-`/`,` + the structural uniformity.
+- **Why deferred / residual:** P4 (toolkit) pin-bumps + collapses `format.rs` + regenerates goldens + updates both manuals; P5 (`mnemonic-gui`) `schema_mirror` flags + separator keyword dropdown. The canonical-vector checksum is a lagging drift gate; the leading control is the paired-PR discipline.
+- **Status:** open (P2 shipped; P3–P5 pending).
+- **Tier:** `cross-repo`.
+- **Companion:** mnemonic-toolkit `design/SPEC_mstring_display_grouping.md` (canonical spec) + `design/FOLLOWUPS.md` (`display-grouping-render-strip-v1`, filed in P4) + descriptor-mnemonic `design/FOLLOWUPS.md` (`display-grouping-render-strip-v1`, P1).
+
 ### `ms-codec-no-ci-workflow` — add CI (test + clippy + fmt) for both crates + a one-time fmt normalization
 
 - **Surfaced:** 2026-06-01, ms `mnem` v0.2 cycle (Phase 0 spike + every phase gate).
