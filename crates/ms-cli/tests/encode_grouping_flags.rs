@@ -2,7 +2,6 @@
 //! Default = space/5 print-once; `--group-size 0` unbroken; `--separator`.
 
 use assert_cmd::Command;
-use predicates::prelude::*;
 
 const Z12: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 /// Canonical unbroken ms1 for the 12-word all-zeros phrase (wire canary).
