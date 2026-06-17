@@ -134,6 +134,17 @@ Single source of truth for items that surfaced during a review or implementation
 - **Tier:** `cross-repo`
 - **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md` — same `secret-memory-hygiene-cycle-b` short-id (primary tracker entry). md / mk repos do NOT receive a companion entry this cycle (xpub-only material per Cycle A `OOS-md-mk` class).
 
+### `mlock-g4-a-page-count-assert-flake` — `g4_a_pin_and_zeroize_compose_without_panic` over-asserts `page_count == 1` on a non-page-aligned 64-byte Vec (byte-shared via g6)
+
+- **Surfaced:** 2026-06-17, observed flaking during the toolkit's D1-B (actions-major) master CI re-run. The test does `let mut v: Vec<u8> = vec![0xAAu8; 64];` then `assert_eq!(pin.page_count, 1, "64-byte buf pins exactly one page")` — the plain (non-page-aligned) 64-byte `Vec` can straddle a page boundary under the parallel runner → `page_count == 2` → rare failure. **Production is correct** (pinning 2 pages is fine; `round_to_pages` in `mlock.rs` is right); only the test's `== 1` assertion is over-strict and incidental to the test's actual purpose (pin + `zeroize()` + drop compose *without panic*).
+- **Where:** `crates/ms-cli/src/mlock.rs:429-434` (assert at `:434`) — byte-identical to the toolkit's `crates/mnemonic-toolkit/src/mlock.rs:424-433` (synced via the SPEC §6 G6 invariant). `mlock.rs` is the same git blob across `ms-cli-v0.7.0`/`v0.8.0`/master, so there is zero file-drift between those refs.
+- **What (the minimal fix, when it IS done):** **delete the single `assert_eq!(pin.page_count, 1, …)` line** in BOTH repos identically (−1 synced line). Coverage is not lost: the toolkit's resolved `mlock-g1-1-test-page-alignment-luck` (page-aligned `alloc_zeroed`, in the unsynced `tests/mlock_unit.rs`) already pins the deterministic `page_count == 1` contract; g4_a's unique value is the zeroize-compose, preserved by the deletion. NOT relax-to-`1..=2` (trivially-true low-value assertion) and NOT page-align-the-buffer (largest synced delta, duplicates g1_1).
+- **Why deferred (architect consult, opus, 2026-06-17 — VERDICT: leave tracked):** g4_a lives INSIDE the synced `mlock.rs`, which the g6 invariant byte-compares against the FROZEN pinned tag (`ms-cli-v0.7.0`, from the toolkit's `scripts/install.sh`). Any non-comment byte change forces editing both repos + **publishing a new public ms-cli tag** (v0.7.0 is immutable) + re-pinning the toolkit — an outward-facing, irreversible action that moves a deliberately-frozen anchor, disproportionate to a rare cosmetic flake. A standalone v0.7.1 backport would also NOT discharge the toolkit's `mlock-rs-fmt-exempt` (it wouldn't be 1.95.0-formatted) — worst of both worlds.
+- **Trigger to fix:** fold the one-line deletion into both repos the **next time the ms-cli g6 pin is bumped for an independent reason** (ideally the 1.95.0-formatted tag that also discharges `mlock-rs-fmt-exempt`), so marginal cost is ~zero. Until then leave it tracked; the rare flake costs only an occasional CI re-run.
+- **Status:** open
+- **Tier:** `cross-repo`
+- **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md::mlock-g4-a-page-count-assert-flake` (primary, with the full g6/cost analysis + architect verdict).
+
 ### `ms-codec-payload-zeroize-public-api` — widen `Payload::Entr(Vec<u8>)` to `Payload::Entr(Zeroizing<Vec<u8>>)` (breaking)
 
 - **Surfaced:** 2026-05-13, v0.9.0 Cycle A Phase 3 hygiene-matrix R1 (Opus, finding C-1). SPEC §3 `OOS-public-payload` class.
