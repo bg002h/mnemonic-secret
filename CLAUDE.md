@@ -19,6 +19,8 @@ This file is auto-loaded by Claude Code when starting a session in this reposito
 
 ## Workflow conventions
 
+- **Default to ultracode (multi-agent workflow orchestration).** Standing user directive (2026-06-17), project-wide across the m-format constellation and the seedhammer fork — does NOT require the per-turn `ultracode` keyword. For any *substantial* task (research, design, implementation, review — anything beyond a conversational answer or a trivial mechanical edit), author and run a **Workflow** by default: decompose, fan out parallel subagents, **adversarially verify** findings before relying on them, and prefer exhaustiveness over token thrift; chain several workflows for multi-phase work. Token cost is not a constraint. Plain Q&A and trivial one-line edits still run solo. Composes with — does not replace — the R0 gate.
+
 The user established this workflow on md1 v0.6 / v0.7 and applied it consistently to mk1 v0.1 and now ms1. The full convention is recorded in the user's auto-memory; the load-bearing parts:
 
 1. **Per-phase opus review.** After each phase commit, dispatch a `superpowers:code-reviewer` (or equivalent) subagent with `model: opus` to verify the work.
