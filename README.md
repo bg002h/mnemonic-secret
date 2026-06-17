@@ -69,4 +69,7 @@ ms1 v0.1 does NOT carry the BIP-39 wordlist language on the wire. A user whose o
 
 ## License
 
-MIT License. See [LICENSE](LICENSE).
+Dual-licensed, at your option, under either the [MIT License](LICENSE) or the
+[Unlicense](UNLICENSE) public-domain dedication — SPDX `MIT OR Unlicense`. Use
+the Unlicense for maximal freedom, or MIT where a public-domain dedication
+isn't accepted.
