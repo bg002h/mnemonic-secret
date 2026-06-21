@@ -4,6 +4,24 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.9.0] — 2026-06-21
+
+**SemVer-MINOR — non-English BIP-39 wordlist correctness + advisory/hygiene (constellation bug-hunt cycle-8).**
+
+### Fixed
+
+- **`ms derive` / `ms verify` no longer PANIC (`unreachable!`) on a valid non-English (mnem) ms1** (H4/H5). Both commands previously rebuilt the BIP-39 mnemonic from the `--language` flag (English by default), so a non-English seed either panicked or produced a WRONG fingerprint. They now decode using the **wire wordlist-language byte** carried by the ms1 payload (shared `payload_entropy_and_language` helper), so the derived master fingerprint / xpub matches the seed's actual language.
+- **`CliError`'s `Debug` is hand-rolled** so a secret ms1 can no longer ride out via the inner `codex32::Error` `{:?}` rendering (L5). Mirrors the ms-codec [0.4.4] secret-withholding discipline at the CLI error-envelope layer.
+
+### Changed
+
+- **`--language` is now advisory for a mnem ms1.** When the flag disagrees with the wire wordlist-language byte, the commands emit a `note:` (stderr) and proceed with the **wire** language rather than honoring the flag. `verify --language` is `Option`-ized so the default no longer fabricates a spurious disagreement `note:`.
+- **`ms combine --to entropy` emits a non-English-wordlist advisory** (stderr) — the recovered entropy is correct; the language byte is re-encode metadata, so the advisory flags that a downstream re-encode must restore the language (L26).
+
+### Notes
+
+`ms-codec` is **UNCHANGED**; the `ms-codec` exact pin stays `=0.5.0`. The wire-language fixes are ms-cli-local (decode-and-derive routing + error `Debug`). Part of the constellation bug-hunt program; companions tracked per-finding (H4/H5/L5/L26).
+
 ## ms-cli [0.8.1] — 2026-06-21
 
 **SemVer-PATCH — dependency bump to `ms-codec =0.5.0`; inherits the cross-share polynomial-consistency check in `combine_shares`. Constellation bug-hunt cycle-4 (M6), ms-cli leg.**
