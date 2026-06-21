@@ -12,7 +12,6 @@ use bitcoin::NetworkKind;
 use bitcoin::bip32::{DerivationPath, Xpriv, Xpub};
 use bitcoin::secp256k1::Secp256k1;
 use clap::Args;
-use ms_codec::Payload;
 use zeroize::Zeroizing;
 
 use crate::advisory::{OutputClass, emit_output_class_advisory, secret_in_argv_warning};
@@ -162,30 +161,48 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
         ));
     }
 
+    // (cli_lang, defaulted) is the INPUT resolved from --language; it governs the
+    // hex/--phrase arms (no wire byte) and is the helper input for the ms1 arm.
+    // The label sites below read `effective_lang`/`effective_lang_defaulted`,
+    // NOT this pair — for a mnem ms1 the WIRE language byte wins.
     let (cli_lang, defaulted) = match args.language {
         Some(l) => (l, false),
         None => (CliLanguage::English, true),
     };
     let lang: bip39::Language = cli_lang.into();
 
-    // Resolve the mnemonic (the seed source). ms1/hex → entropy → mnemonic;
-    // --phrase → parse the phrase directly.
-    let mnemonic: Mnemonic = if let Some(h) = &hex_arg {
-        let hex_str = Zeroizing::new(read_input(Some(h.as_str()))?);
-        let entropy = Zeroizing::new(parse_hex_entropy(&hex_str)?);
-        Mnemonic::from_entropy_in(lang, &entropy[..]).map_err(CliError::Bip39)?
-    } else if let Some(p) = &phrase_arg {
-        let phrase = read_phrase_input(Some(p.as_str()))?;
-        Mnemonic::parse_in(lang, phrase.as_str()).map_err(CliError::Bip39)?
-    } else {
-        let ms1 = Zeroizing::new(read_input(args.ms1.as_deref())?);
-        let (_tag, payload) = ms_codec::decode(&ms1)?;
-        let entropy: Zeroizing<Vec<u8>> = match payload {
-            Payload::Entr(b) => Zeroizing::new(b),
-            _ => unreachable!("ms-codec v0.1 decodes only Payload::Entr"),
+    // Resolve the mnemonic (the seed source) + the EFFECTIVE wordlist language.
+    // ms1 → decode → helper (wire byte authoritative for mnem); hex/--phrase →
+    // entropy/phrase under `cli_lang` (no wire byte). All three arms yield one
+    // consistent `(effective_lang, effective_lang_defaulted)` for the labels.
+    let (mnemonic, effective_lang, effective_lang_defaulted): (Mnemonic, CliLanguage, bool) =
+        if let Some(h) = &hex_arg {
+            let hex_str = Zeroizing::new(read_input(Some(h.as_str()))?);
+            let entropy = Zeroizing::new(parse_hex_entropy(&hex_str)?);
+            let m = Mnemonic::from_entropy_in(lang, &entropy[..]).map_err(CliError::Bip39)?;
+            (m, cli_lang, defaulted)
+        } else if let Some(p) = &phrase_arg {
+            let phrase = read_phrase_input(Some(p.as_str()))?;
+            let m = Mnemonic::parse_in(lang, phrase.as_str()).map_err(CliError::Bip39)?;
+            (m, cli_lang, defaulted)
+        } else {
+            let ms1 = Zeroizing::new(read_input(args.ms1.as_deref())?);
+            let (_tag, payload) = ms_codec::decode(&ms1)?;
+            // H4: the WIRE language byte is authoritative for Payload::Mnem; a
+            // --language-default fix would derive the WRONG fingerprint for a
+            // non-English seed. The helper carries the disagreement note + the
+            // #[non_exhaustive] guard.
+            let (entropy, eff_lang, eff_defaulted): (Zeroizing<Vec<u8>>, CliLanguage, bool) =
+                crate::cmd::payload_lang::payload_entropy_and_language(
+                    payload,
+                    cli_lang,
+                    defaulted,
+                    &mut stderr,
+                );
+            let m = Mnemonic::from_entropy_in(eff_lang.into(), &entropy[..])
+                .map_err(CliError::Bip39)?;
+            (m, eff_lang, eff_defaulted)
         };
-        Mnemonic::from_entropy_in(lang, &entropy[..]).map_err(CliError::Bip39)?
-    };
 
     // BIP-39 passphrase (stdin or inline). C1: stdin via the byte-preserving
     // reader (NOT read_input, which strips/dedups whitespace and would mangle a
@@ -228,8 +245,8 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
             network: args.network.as_str(),
             account_path: account.as_ref().map(|(p, _)| p.clone()),
             account_xpub: account.as_ref().map(|(_, x)| x.clone()),
-            language: cli_lang.as_str(),
-            language_defaulted: defaulted,
+            language: effective_lang.as_str(),
+            language_defaulted: effective_lang_defaulted,
         };
         let s = serde_json::to_string(&dj)
             .map_err(|e| CliError::BadInput(format!("json serialization: {e}")))?;
@@ -241,14 +258,19 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
             writeln!(stdout, "account_path:        {path}").ok();
             writeln!(stdout, "account_xpub:        {xpub}").ok();
         }
-        if defaulted {
-            writeln!(stdout, "language:            {} (DEFAULT)", cli_lang.as_str()).ok();
+        if effective_lang_defaulted {
+            writeln!(
+                stdout,
+                "language:            {} (DEFAULT)",
+                effective_lang.as_str()
+            )
+            .ok();
             let _ = writeln!(
                 stderr,
                 "note: --language defaulted to english; the master fingerprint and xpub depend on the wordlist language (record it alongside the backup)"
             );
         } else {
-            writeln!(stdout, "language:            {}", cli_lang.as_str()).ok();
+            writeln!(stdout, "language:            {}", effective_lang.as_str()).ok();
         }
     }
     // WatchOnly: ms derive emits only public key material (master fingerprint +

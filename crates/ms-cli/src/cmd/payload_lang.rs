@@ -32,9 +32,6 @@ use crate::language::CliLanguage;
 ///
 /// `payload` is consumed by value; the moved entropy `Vec` is immediately
 /// re-wrapped in `Zeroizing` (scrub-on-drop).
-// P1: no non-test consumer wired yet (derive/verify consume it in P2/P3).
-// The `#[allow(dead_code)]` is removed in P2 once `derive` calls it.
-#[allow(dead_code)]
 pub(crate) fn payload_entropy_and_language(
     payload: Payload,
     cli_lang: CliLanguage,
