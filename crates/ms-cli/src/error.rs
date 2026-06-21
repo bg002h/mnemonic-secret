@@ -9,7 +9,13 @@ use crate::bip39_friendly::friendly_bip39;
 use crate::codex32_friendly::friendly_codex32;
 
 /// All CLI failure modes. `exit_code()` maps each to the SPEC §6 table.
-#[derive(Debug)]
+///
+/// L5: `Debug` is hand-rolled (NOT derived) — `Codex32(codex32::Error)` carries
+/// the raw inner error, and `codex32::Error::InvalidChecksum { string }` echoes
+/// the full input ms1 (secret-equivalent). A derived Debug would leak it on any
+/// future `{:?}`/`unwrap`/`expect`/`panic`. The impl below delegates to the
+/// sanitized `kind()`+`message()` (`Codex32` → `friendly_codex32`, which drops
+/// `InvalidChecksum.string`).
 #[non_exhaustive]
 pub enum CliError {
     /// User-input error: bad hex, missing args, runtime input failure.
@@ -112,6 +118,17 @@ impl CliError {
             })),
             _ => None,
         }
+    }
+}
+
+impl std::fmt::Debug for CliError {
+    /// Hand-rolled (NOT derived) so Debug NEVER prints the raw inner error.
+    /// `codex32::Error::InvalidChecksum` carries the secret ms1 `string`; the
+    /// derived Debug would leak it. `kind()` is a stable non-secret discriminant;
+    /// `message()` is sanitized (Codex32 → `friendly_codex32`, which drops
+    /// `InvalidChecksum.string`).
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CliError::{} {{ {} }}", self.kind(), self.message())
     }
 }
 
@@ -394,6 +411,42 @@ mod tests {
         assert_eq!(e.kind(), "BadInput");
         assert_eq!(e.exit_code(), 1);
         assert!(e.message().contains("k <= n <= 31"));
+    }
+
+    // ── L5 — CliError Debug must NOT echo the secret ms1 string ──
+
+    #[test]
+    fn debug_does_not_echo_codex32_invalid_checksum_secret() {
+        // codex32::Error::InvalidChecksum.string carries the full input ms1
+        // (secret-equivalent). The derived Debug would leak it; the hand-rolled
+        // Debug delegates to the sanitized kind()+message().
+        let e = CliError::Codex32(codex32::Error::InvalidChecksum {
+            checksum: "long",
+            string: "ms1secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".into(),
+        });
+        let dbg = format!("{:?}", e);
+        assert!(
+            !dbg.contains("ms1secret_"),
+            "Debug leaked the secret string: {dbg}"
+        );
+        assert!(dbg.contains("Codex32"), "Debug keeps the sanitized kind: {dbg}");
+        assert!(!dbg.is_empty(), "Debug stays informative: {dbg}");
+        // Display is already sanitized (pin).
+        assert!(
+            !format!("{}", e).contains("ms1secret_"),
+            "Display must not leak the secret"
+        );
+    }
+
+    #[test]
+    fn debug_non_invalid_checksum_arm_no_input_echo() {
+        // M-4 forward-looking hardening: a non-InvalidChecksum codex32 arm also
+        // must not echo input through Debug. InvalidChar carries only a single
+        // structural char, never the full secret.
+        let e = CliError::Codex32(codex32::Error::InvalidChar('!'));
+        let dbg = format!("{:?}", e);
+        assert!(dbg.contains("Codex32"), "sanitized kind present: {dbg}");
+        assert!(!dbg.is_empty());
     }
 
     #[test]
