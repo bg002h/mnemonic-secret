@@ -107,8 +107,20 @@ pub fn run(mut args: CombineArgs) -> Result<u8> {
     };
 
     match args.to {
+        // --to phrase re-renders the words in-language → no loss → no advisory.
         CombineTo::Phrase => emit_phrase(&entropy, language, kind, args.json)?,
-        CombineTo::Entropy => emit_entropy(&entropy, kind, args.json)?,
+        // L26: --to entropy DROPS the wordlist language → advisory (stderr-only,
+        // exit 0; non-English only). The hex itself is correct + unchanged.
+        CombineTo::Entropy => {
+            emit_entropy(&entropy, kind, args.json)?;
+            crate::advisory::non_english_seed_advisory(
+                &mut std::io::stderr().lock(),
+                language,
+                "raw entropy",
+            );
+        }
+        // --to ms1 re-encodes the mnem payload (carries the language byte) → no
+        // loss → no advisory.
         CombineTo::Ms1 => emit_ms1(&payload, &entropy, kind, args.json)?,
     }
 

@@ -9,6 +9,31 @@
 
 use std::io::Write;
 
+use crate::language::CliLanguage;
+
+/// Stderr advisory when a non-English mnem secret is emitted as a
+/// language-dropping form (raw entropy). English → no advisory (English
+/// self-recovers as the universal default). Ported from mnemonic-toolkit
+/// `non_english_seed_advisory` (toolkit `language.rs`); uses
+/// `CliLanguage::as_str()` (kebab) — byte-equivalent to toolkit `human_name()`
+/// except Chinese word-order (cosmetic, ungated). `form` names the
+/// language-dropping output (e.g. "raw entropy"). Writes directly to stderr,
+/// matching the existing `*_warning` idiom (toolkit returns `Option<String>`;
+/// behavior is identical — English → no output).
+pub fn non_english_seed_advisory<W: Write>(stderr: &mut W, lang: CliLanguage, form: &str) {
+    if lang == CliLanguage::English {
+        return;
+    }
+    let name = lang.as_str();
+    let _ = writeln!(
+        stderr,
+        "warning: encoding a {name} BIP-39 seed as {form} — it carries only the \
+         entropy, not the wordlist language. Record \"{name}\" alongside the backup: \
+         recovering the entropy with English-defaulted software derives a DIFFERENT \
+         seed and a DIFFERENT wallet."
+    );
+}
+
 /// Emit a stderr advisory when a secret arrives inline on argv.
 pub fn secret_in_argv_warning<W: Write>(stderr: &mut W, flag: &str, alternative: &str) {
     let _ = writeln!(
