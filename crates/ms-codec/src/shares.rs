@@ -176,8 +176,15 @@ pub fn encode_shares(
 /// 3. `shares.len() >= k` (the first share's threshold) else surface
 ///    `ThresholdNotPassed`;
 /// 4. distinct share indices else `RepeatedIndex` (codex32's own check is lazy);
-/// 5. `interpolate_at(&parsed, Fe::S)` recovers the secret-at-S (surfaces
-///    `Mismatched{Hrp,Id,Threshold,Length}` on inconsistent inputs).
+/// 5. recover the secret-at-S from EXACTLY the first `k` shares (which define
+///    the polynomial) via `interpolate_at(&parsed[..k], Fe::S)` (surfaces
+///    `Mismatched{Hrp,Id,Threshold,Length}` on a header-inconsistent k-set),
+///    then verify every EXTRA supplied share lies on that same polynomial
+///    (`interpolate_at(k_set, idx)` re-derived value must equal the supplied
+///    share) → `InconsistentShareSet` on any mismatch. (M6 — codex32 K-of-N
+///    carries no digest share; a same-id but cross-polynomial set previously
+///    combined to a SILENT WRONG secret. A valid exactly-k or n>k all-consistent
+///    combine is bit-identical to the prior all-shares interpolation.)
 ///
 /// Returns **`(Tag::ENTR, …)`** always: the recovered secret-at-S carries the
 /// share-set's RANDOM `id` (NOT a type tag); the payload KIND is the prefix byte

@@ -4,6 +4,30 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.8.1] — 2026-06-21
+
+**SemVer-PATCH — dependency bump to `ms-codec =0.5.0`; inherits the cross-share polynomial-consistency check in `combine_shares`. Constellation bug-hunt cycle-4 (M6), ms-cli leg.**
+
+### Fixed
+
+- An inconsistent (same-id, mixed-polynomial) share set now surfaces an explicit `InconsistentShareSet` → **exit-2 `FormatViolation`** arm with an accurate message, rather than falling through the `other =>` wildcard to `BadInput` / exit 1. Inherits the actual reject from `ms-codec [0.5.0]` via the exact-pin bump. Companion: `ms-codec [0.5.0]`.
+
+## ms-codec [0.5.0] — 2026-06-21
+
+**SemVer-MINOR — FUNDS-SAFETY: `combine_shares` rejects a same-id mixed-polynomial share set that previously returned a SILENT WRONG secret. Beyond-BIP-93 defense-in-depth. Constellation bug-hunt cycle-4 (M6).**
+
+### Added
+
+- New `Error::InconsistentShareSet` (additive → MINOR).
+
+### Fixed
+
+- codex32 K-of-N Shamir recovery carries no digest share, and `combine_shares` previously interpolated the secret over ALL supplied shares with no truncate-to-`k` and no cross-share consistency check — so a same-id (same hrp / id / threshold / length) but DIFFERENT-polynomial share set combined to a SILENT WRONG secret with no error. `combine_shares` now recovers the secret from EXACTLY the first `k` shares (which define the polynomial), then verifies every EXTRA supplied share lies on that same polynomial (re-derived `interpolate_at(k_set, idx)` must equal the supplied share) → `Error::InconsistentShareSet` on any mismatch.
+
+### Notes
+
+A valid exactly-`k` combine is **bit-identical** to the prior all-shares interpolation (`k == n` → empty membership loop), and a valid `n > k` all-consistent combine recovers the same secret (every extra lies on the curve). The irreducible limit — an exactly-`k` mixed pair is undetectable, since any `k` points define a polynomial — is noted in-test. Companion: `ms-cli [0.8.1]` (inherits via the exact-pin bump).
+
 ## ms-cli [0.8.0] — 2026-06-15
 
 **SemVer-MINOR — standardized mstring display-grouping on `ms encode` + `ms split`; default text output is now space/5 print-once (was print-twice + wrap@10). Part of the cross-constellation `display-grouping-render-strip-v1` cycle (P2).**

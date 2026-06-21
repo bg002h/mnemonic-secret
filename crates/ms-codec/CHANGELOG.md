@@ -4,6 +4,18 @@ All notable changes to the `ms-codec` crate are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-06-21
+
+**MINOR (FUNDS-SAFETY) — `combine_shares` rejects a same-id mixed-polynomial share set that previously returned a SILENT WRONG secret. Beyond-BIP-93 defense-in-depth. Constellation bug-hunt cycle-4 (M6).**
+
+codex32 K-of-N Shamir recovery carries no digest share, and `combine_shares` previously interpolated the secret over ALL supplied shares with no truncate-to-`k` and no cross-share consistency check — so a same-id (same hrp / id / threshold / length) but DIFFERENT-polynomial share set combined to a SILENT WRONG secret with no error.
+
+- `combine_shares` now recovers the secret from EXACTLY the first `k` shares (which define the polynomial), then verifies every EXTRA supplied share lies on that same polynomial (re-derived `interpolate_at(k_set, idx)` must equal the supplied share) → new `Error::InconsistentShareSet` on any mismatch.
+- A valid exactly-`k` combine is **bit-identical** to the prior all-shares interpolation (`k == n` → empty membership loop); a valid `n > k` all-consistent combine recovers the same secret. The irreducible limit (an exactly-`k` mixed pair is undetectable — any `k` points define a polynomial) is noted in-test.
+- New unit variant `Error::InconsistentShareSet` + its compile-forced arm in the exhaustive (no `_ =>`) manual `Display` impl (additive → MINOR).
+
+ms-cli adds an explicit `InconsistentShareSet` → exit-2 `FormatViolation` arm. ms-cli exact pin → `=0.5.0`. **crates.io publish + downstream pin bumps pending user authorization.**
+
 ## [0.4.4] — 2026-06-12
 
 **PATCH (SECURITY) — `ms_codec::Error` no longer echoes secret input in `Display` or `Debug`.**
