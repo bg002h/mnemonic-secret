@@ -120,6 +120,13 @@ pub enum Error {
     /// The secret-at-S is the recovery target, never a combine input; codex32's
     /// `interpolate_at` would short-circuit on it and bypass validation (C1).
     SecretShareSuppliedToCombine,
+    /// `combine_shares` was handed a same-id (same hrp/id/threshold/length) but
+    /// cross-polynomial share set: the first `k` shares define one polynomial,
+    /// but at least one EXTRA supplied share does not lie on it. Beyond-BIP-93
+    /// defense-in-depth (codex32 K-of-N carries no digest share) — without this
+    /// check the combine would silently return a WRONG secret. The supplied
+    /// shares are not all from the same split.
+    InconsistentShareSet,
 }
 
 impl fmt::Display for Error {
@@ -222,6 +229,11 @@ impl fmt::Display for Error {
                 f,
                 "the secret share (index 's') cannot be supplied to combine; \
                  supply only distributed shares (the secret is the recovery target)"
+            ),
+            Error::InconsistentShareSet => write!(
+                f,
+                "one or more shares are not from the same split; the supplied \
+                 shares do not all lie on a single Shamir polynomial"
             ),
         }
     }

@@ -227,6 +227,20 @@ impl From<ms_codec::Error> for CliError {
                     .to_string(),
                 details: None,
             },
+            // A same-id (same hrp/id/threshold/length) but cross-polynomial set
+            // was supplied to `combine` — at least one over-threshold share does
+            // not lie on the polynomial the first k define. A funds-safety /
+            // format violation (exit 2): combining it would yield a SILENT WRONG
+            // secret. Routed explicitly so it does NOT fall through to the
+            // `other =>` BadInput (exit 1) wildcard below.
+            ms_codec::Error::InconsistentShareSet => CliError::FormatViolation {
+                underlying_kind: "InconsistentShareSet",
+                message: "one or more shares are not from the same split; the \
+                          supplied shares do not all lie on a single Shamir \
+                          polynomial"
+                    .to_string(),
+                details: None,
+            },
             // Bad `-k` / `-n` arguments to `ms split` — user-input errors
             // (exit 1, the BadInput class). There is no exit-64 `CliError`
             // variant (clap parse-level 64s never reach `From<ms_codec::Error>`);
@@ -353,6 +367,17 @@ mod tests {
         assert_eq!(e.kind(), "SecretShareSuppliedToCombine");
         assert_eq!(e.exit_code(), 2);
         assert!(e.message().contains("secret share"));
+    }
+
+    #[test]
+    fn inconsistent_share_set_maps_to_format_violation_exit_2() {
+        // M6: a same-id cross-polynomial set must surface as an exit-2 format/
+        // funds-safety violation — NOT fall through the wildcard to BadInput
+        // (exit 1).
+        let e: CliError = ms_codec::Error::InconsistentShareSet.into();
+        assert_eq!(e.kind(), "InconsistentShareSet");
+        assert_eq!(e.exit_code(), 2);
+        assert!(e.message().contains("same split"));
     }
 
     #[test]

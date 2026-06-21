@@ -258,9 +258,36 @@ pub fn combine_shares(shares: &[String]) -> Result<(Tag, Payload)> {
         }
     }
 
-    // 5. Recover the secret-at-S. Surfaces Mismatched{Hrp,Id,Threshold,Length}
-    //    via Error::Codex32 on inconsistent inputs.
-    let secret = Codex32String::interpolate_at(&parsed, Fe::S).map_err(Error::Codex32)?;
+    // 5. Recover the secret-at-S from EXACTLY k shares, then verify every
+    //    EXTRA supplied share lies on that same polynomial (M6 — beyond-BIP-93
+    //    defense-in-depth: codex32 K-of-N carries no digest share, so a same-id
+    //    [same hrp/id/threshold/length] but cross-polynomial set would otherwise
+    //    interpolate to a SILENT WRONG secret). The first k shares define the
+    //    polynomial; recovery surfaces Mismatched{Hrp,Id,Threshold,Length} via
+    //    Error::Codex32 on a header-inconsistent k-set, exactly as before.
+    //
+    //    Hard invariant (BRAINSTORM §6.0): a valid exactly-k combine is
+    //    bit-identical to the prior `interpolate_at(&parsed, Fe::S)` (k == n →
+    //    k_set == parsed, empty membership loop), and a valid n>k all-consistent
+    //    combine recovers the same secret (every extra lies on the curve).
+    let k_set = &parsed[..k];
+    let secret = Codex32String::interpolate_at(k_set, Fe::S).map_err(Error::Codex32)?;
+
+    // For each EXTRA supplied share, re-derive the polynomial's value at that
+    // share's index from the k-set and require it to equal the supplied share
+    // (full canonical lowercased Codex32String compare — header fields are
+    // already cross-checked by interpolate_at; this adds the polynomial/data
+    // dimension). The share-index char comes from the already-extracted `fields`
+    // (codex32's `Parts::share_index` is private); reuse the same `Fe::from_char`
+    // conversion as the distinct-index check above. Any mismatch ⇒ the set is
+    // not all from one split.
+    for j in k..parsed.len() {
+        let idx = Fe::from_char(fields[j].1 as char).map_err(Error::Codex32)?;
+        let derived = Codex32String::interpolate_at(k_set, idx).map_err(Error::Codex32)?;
+        if derived != parsed[j] {
+            return Err(Error::InconsistentShareSet);
+        }
+    }
 
     // Payload KIND is the recovered prefix byte; the id is random → discard it
     // and always return Tag::ENTR (the kind lives in the Payload, NOT the tag).
@@ -594,6 +621,121 @@ mod tests {
         assert!(
             matches!(dispatch_payload(&good), Ok(Payload::Entr(_))),
             "standard Entr length must Ok"
+        );
+    }
+
+    // --- M6: cross-share polynomial-consistency check in combine_shares ---
+    //
+    // Beyond-BIP-93 defense-in-depth (BRAINSTORM §6.0): codex32 K-of-N has no
+    // digest share, so combining a same-id (same hrp/id/threshold/length) but
+    // DIFFERENT-polynomial share set silently returns a WRONG secret. The check
+    // truncates to the first k shares (which define the polynomial), recovers
+    // the secret from them, then verifies every EXTRA supplied share lies on
+    // that polynomial. Valid combines (exactly-k, or n>k all-consistent) MUST
+    // stay bit-identical.
+
+    /// Build a valid-checksum 2-of-`n` distributed share set carrying a STANDARD
+    /// 16-byte Entr secret, with a CALLER-FIXED `id` and a caller-chosen secret
+    /// entropy byte (→ a distinct Shamir polynomial). Two sets with the same
+    /// `id` but different `secret_byte` are same-id-but-inconsistent: their
+    /// shares pairwise lie on DIFFERENT polynomials. Mirrors `encode_shares`'
+    /// codex32 construction (deterministic filler, no CSPRNG → reproducible).
+    fn same_id_2_of_n(id: &str, secret_byte: u8, filler_byte: u8, n: usize) -> Vec<String> {
+        let k = 2usize;
+        // wire payload = [RESERVED_PREFIX] || 16-byte entropy (a STANDARD length,
+        // so a clean combine recovers a valid Entr payload).
+        let mut bytes = vec![RESERVED_PREFIX];
+        bytes.extend(std::iter::repeat(secret_byte).take(16));
+        let secret_s = Codex32String::from_seed(HRP, k, id, Fe::S, &bytes[..]).unwrap();
+        let pool = non_s_index_pool();
+        let mut defining = vec![secret_s];
+        for pidx in pool.iter().take(k - 1) {
+            let filler = vec![filler_byte; bytes.len()];
+            defining.push(Codex32String::from_seed(HRP, k, id, *pidx, &filler[..]).unwrap());
+        }
+        let mut out = Vec::new();
+        for s in defining.iter().skip(1) {
+            out.push(s.to_string());
+        }
+        for pidx in pool.iter().take(n).skip(k - 1) {
+            out.push(Codex32String::interpolate_at(&defining, *pidx).unwrap().to_string());
+        }
+        out
+    }
+
+    #[test]
+    fn combine_inconsistent_same_id_set_rejected() {
+        // Two DIFFERENT secrets A, B split 2-of-3 with the SAME id/threshold/
+        // length. Supply an over-threshold (n>k) same-id set [A1, A2, B3]:
+        // distinct indices, same header, but B3 is NOT on A's polynomial. RED
+        // today: combine interpolates over all three and returns a WRONG
+        // (garbage) secret with no error. Post-fix: the membership check derives
+        // A's value at B3's index from {A1,A2} and finds it ≠ B3 →
+        // Error::InconsistentShareSet. (BRAINSTORM §6.5 test #1, n>k extras form.)
+        //
+        // NOTE the spec's documented irreducible limit (§6.2 edge cases): an
+        // EXACTLY-k mixed pair [A1, B2] is NOT detectable — any k points define
+        // *a* polynomial, so there is no extra share to cross-check. M6 closes
+        // only the detectable case (any over-threshold set not all-on-one-curve).
+        let set_a = same_id_2_of_n("aaaa", 0x11, 0x22, 3);
+        let set_b = same_id_2_of_n("aaaa", 0x33, 0x44, 3);
+        // A's first two distributed shares (the consistent k-set) + B's third.
+        let mixed = vec![set_a[0].clone(), set_a[1].clone(), set_b[2].clone()];
+        let res = combine_shares(&mixed);
+        assert!(
+            matches!(res, Err(Error::InconsistentShareSet)),
+            "expected InconsistentShareSet for a same-id mixed-polynomial set, got {res:?}"
+        );
+    }
+
+    #[test]
+    fn combine_valid_exactly_k_unchanged() {
+        // Positive control (BRAINSTORM §6.0 hard invariant): a clean 2-of-3,
+        // supply exactly k=2 consistent shares → recovers the correct secret A,
+        // byte-identical to the current behavior. MUST stay GREEN.
+        let p = Payload::Entr(vec![0xCDu8; 16]);
+        let shares = encode_shares(Tag::ENTR, Threshold::new(2).unwrap(), 3, &p).unwrap();
+        let (tag, recovered) = combine_shares(&shares[..2]).unwrap();
+        assert_eq!(tag, Tag::ENTR);
+        assert_eq!(recovered, p, "exactly-k combine must recover the exact payload");
+    }
+
+    #[test]
+    fn combine_valid_n_gt_k_all_consistent() {
+        // Positive control: supply all 3 consistent shares of A (n > k) → the
+        // extra share passes the membership check → recovers A unchanged. MUST
+        // stay GREEN (no regression on the over-supplied legitimate case).
+        let p = Payload::Entr(vec![0xCDu8; 16]);
+        let shares = encode_shares(Tag::ENTR, Threshold::new(2).unwrap(), 3, &p).unwrap();
+        let (tag, recovered) = combine_shares(&shares).unwrap();
+        assert_eq!(tag, Tag::ENTR);
+        assert_eq!(recovered, p, "n>k all-consistent combine must recover the exact payload");
+    }
+
+    #[test]
+    fn combine_inconsistent_extra_share_rejected() {
+        // 2 consistent A-shares (the k-set) + a consistent A-extra + a same-id
+        // B-extra, with the INCONSISTENT extra in a NON-terminal position
+        // [A1, A2, B3, A4]: the first k recover A and the membership loop must
+        // catch the B-share even though it is not the last extra. RED today
+        // (combine interpolates over all 4 → garbage). Post-fix:
+        // Error::InconsistentShareSet.
+        // id chars must be in the codex32 (bech32) alphabet — 'b'/'i'/'o'/'1'
+        // are excluded, so use 'cqcq'.
+        let set_a = same_id_2_of_n("cqcq", 0x55, 0x66, 4);
+        let set_b = same_id_2_of_n("cqcq", 0x77, 0x88, 4);
+        // k-set [A1, A2] (pool indices 0,1) + B's index-2 share (inconsistent,
+        // a non-terminal extra) + A's index-3 share (consistent, terminal).
+        let mixed = vec![
+            set_a[0].clone(),
+            set_a[1].clone(),
+            set_b[2].clone(),
+            set_a[3].clone(),
+        ];
+        let res = combine_shares(&mixed);
+        assert!(
+            matches!(res, Err(Error::InconsistentShareSet)),
+            "expected InconsistentShareSet for a consistent-k + inconsistent-extra set, got {res:?}"
         );
     }
 }
