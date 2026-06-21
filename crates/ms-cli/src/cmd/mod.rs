@@ -7,6 +7,7 @@ pub mod derive;
 pub mod encode;
 pub mod gui_schema;
 pub mod inspect;
+pub mod payload_lang;
 pub mod repair;
 pub mod split;
 pub mod vectors;
