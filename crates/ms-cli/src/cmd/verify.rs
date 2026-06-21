@@ -7,7 +7,6 @@
 
 use bip39::{Language, Mnemonic};
 use clap::Args;
-use ms_codec::Payload;
 use serde_json::to_string;
 
 use crate::error::{CliError, Result};
@@ -26,9 +25,11 @@ pub struct VerifyArgs {
     #[arg(long)]
     pub phrase: Option<String>,
 
-    /// BIP-39 wordlist for --phrase. Default `english`.
-    #[arg(long, default_value = "english")]
-    pub language: CliLanguage,
+    /// BIP-39 wordlist for --phrase. For a mnem ms1 the wire language byte is
+    /// authoritative; --language is advisory-only (a disagreement prints a
+    /// stderr note). Omitted ⇒ english default for entr cards.
+    #[arg(long)]
+    pub language: Option<CliLanguage>,
 
     /// Emit success JSON on stdout (mirrors the §5 schema-versioned form).
     #[arg(long)]
@@ -54,14 +55,28 @@ pub fn run(mut args: VerifyArgs) -> Result<u8> {
     }
     let ms1: Zeroizing<String> = Zeroizing::new(read_input(args.ms1.as_deref())?);
 
+    // --language is advisory-only for a mnem ms1 (the wire byte wins). Option
+    // type ⇒ omission is distinguishable from explicit `--language english`, so a
+    // bare verify of a non-English card emits NO spurious disagreement note.
+    let (cli_lang, defaulted) = match args.language {
+        Some(l) => (l, false),
+        None => (CliLanguage::English, true),
+    };
+
     // Step 2: decode the ms1 string. On failure, dispatch per §6.1.1 — phrase
-    // is NEVER parsed in this branch.
-    let decoded = ms_codec::decode(&ms1);
-    let entropy: Zeroizing<Vec<u8>> = match decoded {
-        Ok((_tag, Payload::Entr(b))) => Zeroizing::new(b),
-        // ms_codec::Payload is #[non_exhaustive]; v0.2+ may add variants.
-        // v0.1 ms-codec only decodes to Payload::Entr; defensive arm only.
-        Ok((_, _)) => unreachable!("ms-codec v0.1 only decodes to Payload::Entr"),
+    // is NEVER parsed in this branch. The two `Err` arms (exit-3 future-format +
+    // generic) are preserved verbatim; ONLY the `Ok((tag,payload))` arm is routed
+    // through the helper, which honors the WIRE language byte for Payload::Mnem
+    // (H5) and carries the #[non_exhaustive] guard + disagreement note.
+    let mut stderr = std::io::stderr().lock();
+    let (entropy_recovered, effective_lang, _effective_lang_defaulted): (
+        Zeroizing<Vec<u8>>,
+        CliLanguage,
+        bool,
+    ) = match ms_codec::decode(&ms1) {
+        Ok((_tag, payload)) => crate::cmd::payload_lang::payload_entropy_and_language(
+            payload, cli_lang, defaulted, &mut stderr,
+        ),
         Err(ms_codec::Error::ReservedTagNotEmittedInV01 { got }) => {
             // Exit 3 path: print the success-shaped "valid future format" message.
             // emit_future_format always returns Err(FutureFormat), so propagate
@@ -71,6 +86,10 @@ pub fn run(mut args: VerifyArgs) -> Result<u8> {
         }
         Err(e) => return Err(e.into()),
     };
+    drop(stderr);
+    // Typed rebind = the `lint_zeroize_discipline` evidence anchor for verify's
+    // entropy local (every_canonical_zeroize_row_has_evidence_anchor).
+    let entropy: Zeroizing<Vec<u8>> = entropy_recovered;
 
     // Step 3: parse --phrase if present.
     let phrase_supplied: Option<Zeroizing<String>> = match phrase_arg.as_ref() {
@@ -83,7 +102,12 @@ pub fn run(mut args: VerifyArgs) -> Result<u8> {
     // FOLLOWUP `rust-bip39-mnemonic-zeroize-upstream`. Lifetimes are bounded
     // here: supplied_mnemonic + derived_mnemonic both drop at end of arm.
     if let Some(supplied) = phrase_supplied {
-        let lang: Language = args.language.into();
+        // H5: both the supplied phrase and the derived mnemonic are parsed/built
+        // under the EFFECTIVE (wire) language — verify's job is "does this phrase
+        // reproduce this card?", and the card's language is ground truth. A
+        // different-language phrase fails `parse_in` (Bip39) or mismatches
+        // (VerifyPhraseMismatch) — a true negative, never a false GREEN.
+        let lang: Language = effective_lang.into();
         let supplied_mnemonic = Mnemonic::parse_in(lang, supplied.as_str())?;
         let derived_mnemonic = Mnemonic::from_entropy_in(lang, &entropy[..])
             .expect("ms-codec validates entropy length");
@@ -92,7 +116,7 @@ pub fn run(mut args: VerifyArgs) -> Result<u8> {
         let supplied_str: Zeroizing<String> = Zeroizing::new(supplied_mnemonic.to_string());
         let derived_str: Zeroizing<String> = Zeroizing::new(derived_mnemonic.to_string());
         if *supplied_str == *derived_str {
-            emit_round_trip_ok(&derived_mnemonic, args.language.as_str(), args.json)?;
+            emit_round_trip_ok(&derived_mnemonic, effective_lang.as_str(), args.json)?;
             return Ok(0);
         } else {
             return Err(CliError::VerifyPhraseMismatch);
