@@ -145,8 +145,12 @@ fn emit_json(
         kind: kind.to_string(),
         language,
     };
-    let s = to_string(&json).map_err(|e| CliError::BadInput(format!("json serialization: {e}")))?;
-    println!("{s}");
+    // cycle-15 Lane M (slug #8, defense-in-depth): the serialized JSON carries
+    // the secret share strings — scrub the buffer on drop.
+    let s: Zeroizing<String> = Zeroizing::new(
+        to_string(&json).map_err(|e| CliError::BadInput(format!("json serialization: {e}")))?,
+    );
+    println!("{}", *s);
     Ok(())
 }
 

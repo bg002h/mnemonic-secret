@@ -167,7 +167,11 @@ fn emit_future_format(tag: &[u8; 4], json: bool) -> Result<()> {
 }
 
 fn emit_round_trip_ok(_mnemonic: &Mnemonic, language: &str, json: bool) -> Result<()> {
-    let word_count = _mnemonic.to_string().split_whitespace().count();
+    use zeroize::Zeroizing;
+    // cycle-15 Lane M (slug #9): the phrase materialized for the word count is
+    // the full secret mnemonic — scrub the temp on drop.
+    let wc_src: Zeroizing<String> = Zeroizing::new(_mnemonic.to_string());
+    let word_count = wc_src.split_whitespace().count();
     if json {
         let j = VerifySuccessJson {
             schema_version: "1",

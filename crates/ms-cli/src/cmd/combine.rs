@@ -153,9 +153,12 @@ fn emit_phrase(
             language: Some(language.as_str()),
             word_count: Some(word_count),
         };
-        let s =
-            to_string(&json).map_err(|e| CliError::BadInput(format!("json serialization: {e}")))?;
-        println!("{s}");
+        // cycle-15 Lane M (slug #8, defense-in-depth): scrub the serialized
+        // secret-bearing JSON buffer on drop.
+        let s: Zeroizing<String> = Zeroizing::new(
+            to_string(&json).map_err(|e| CliError::BadInput(format!("json serialization: {e}")))?,
+        );
+        println!("{}", *s);
     } else {
         println!("entropy: {}", hex::encode(entropy));
         println!("phrase: {}", *phrase);
@@ -177,9 +180,12 @@ fn emit_entropy(entropy: &[u8], kind: &'static str, json: bool) -> Result<()> {
             language: None,
             word_count: None,
         };
-        let s =
-            to_string(&json).map_err(|e| CliError::BadInput(format!("json serialization: {e}")))?;
-        println!("{s}");
+        // cycle-15 Lane M (slug #8, defense-in-depth): scrub the serialized
+        // secret-bearing JSON buffer on drop.
+        let s: Zeroizing<String> = Zeroizing::new(
+            to_string(&json).map_err(|e| CliError::BadInput(format!("json serialization: {e}")))?,
+        );
+        println!("{}", *s);
     } else {
         println!("{}", hex::encode(entropy));
     }
@@ -199,9 +205,12 @@ fn emit_ms1(payload: &Payload, entropy: &[u8], kind: &'static str, json: bool) -
             language: None,
             word_count: None,
         };
-        let s =
-            to_string(&json).map_err(|e| CliError::BadInput(format!("json serialization: {e}")))?;
-        println!("{s}");
+        // cycle-15 Lane M (slug #8, defense-in-depth): scrub the serialized
+        // secret-bearing JSON buffer on drop.
+        let s: Zeroizing<String> = Zeroizing::new(
+            to_string(&json).map_err(|e| CliError::BadInput(format!("json serialization: {e}")))?,
+        );
+        println!("{}", *s);
     } else {
         println!("{ms1}");
     }

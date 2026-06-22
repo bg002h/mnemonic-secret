@@ -199,9 +199,12 @@ fn emit_json(ms1: &str, language: Option<&str>, word_count: usize, entropy: &[u8
         word_count,
         entropy_hex: hex::encode(entropy),
     };
-    let s =
-        to_string(&json).map_err(|e| CliError::BadInput(format!("json serialization: {}", e)))?;
-    println!("{}", s);
+    // cycle-15 Lane M (slug #8, defense-in-depth): scrub the serialized
+    // entropy-bearing JSON buffer on drop.
+    let s: zeroize::Zeroizing<String> = zeroize::Zeroizing::new(
+        to_string(&json).map_err(|e| CliError::BadInput(format!("json serialization: {}", e)))?,
+    );
+    println!("{}", *s);
     Ok(())
 }
 

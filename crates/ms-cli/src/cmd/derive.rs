@@ -217,6 +217,12 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
     let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(passphrase.as_str()));
     let _seed_pin = crate::mlock::pin_pages_for(&seed[..]);
     let secp = Secp256k1::new();
+    // cycle-15 Lane M (slug #7, PARTIAL — upstream-blocked): `bitcoin::bip32::Xpriv`
+    // has NO `Zeroize`/`Drop` (rust-bitcoin), so `master`/`acct_xpriv` below are
+    // bare secrets we cannot scrub in-repo (tracked: `rust-bitcoin-xpriv-zeroize-
+    // upstream`). Mitigation = lifetime-min: `master` is consumed only to take the
+    // fingerprint + the single account derive, and `acct_xpriv` is dropped at the
+    // end of the `if let` block once its xpub is taken (the `seed` IS zeroized).
     let master = Xpriv::new_master(args.network.kind(), &seed[..])
         .map_err(|e| CliError::BadInput(format!("master derive: {e}")))?;
     let master_fp = master.fingerprint(&secp);

@@ -11,6 +11,7 @@ use ms_codec::consts::{
 };
 use ms_codec::{InspectKind, InspectReport};
 use serde_json::to_string;
+use zeroize::Zeroizing;
 
 use crate::error::Result;
 use crate::format::{InspectJson, InspectReportJson};
@@ -30,7 +31,9 @@ pub struct InspectArgs {
 /// Run `ms inspect`. Lenient: returns a report even when the string would fail
 /// decoder rules. If BIP-93 parse itself fails, treats the error per §6.
 pub fn run(args: InspectArgs) -> Result<u8> {
-    let ms1 = read_input(args.ms1.as_deref())?;
+    // cycle-15 Lane M (slug #5): the ms1 intake IS secret material (BIP-39
+    // entropy) — scrub it on drop. `inspect()` borrows `&str` (Deref).
+    let ms1: Zeroizing<String> = Zeroizing::new(read_input(args.ms1.as_deref())?);
     let report = ms_codec::inspect(&ms1)?; // §2.3.1: failures return CliError::Codex32 here.
 
     // A threshold ∈ 2..=9 string is one share of a K-of-N share-set — a
@@ -252,7 +255,10 @@ fn emit_json(report: &InspectReport, would_decode: bool, reasons: &[&'static str
         would_decode,
         failure_reasons: reasons.to_vec(),
     };
-    let s = to_string(&json).expect("inspect json always serializes");
-    println!("{}", s);
+    // cycle-15 Lane M (slug #8, defense-in-depth): the serialized JSON carries
+    // `payload_bytes_hex` (the entropy) — scrub the buffer on drop.
+    let s: Zeroizing<String> =
+        Zeroizing::new(to_string(&json).expect("inspect json always serializes"));
+    println!("{}", *s);
     Ok(())
 }

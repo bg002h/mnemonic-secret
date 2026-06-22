@@ -37,6 +37,7 @@
 use clap::Args;
 use ms_codec::CorrectionDetail;
 use serde::Serialize;
+use zeroize::Zeroizing;
 
 use crate::advisory::{OutputClass, emit_output_class_advisory};
 use crate::error::{CliError, Result};
@@ -59,11 +60,17 @@ pub struct RepairArgs {
 
 /// Per-input repair report. Mirrors toolkit's `RepairDetail` shape so
 /// JSON output is byte-identical to `mnemonic repair --json`.
-#[derive(Debug, Clone)]
+///
+/// cycle-15 Lane M (slug #6, RULE Z-DEBUG): `original_chunk`/`corrected_chunk`
+/// are decodable secret ms1 strings, held as `Zeroizing<String>` (scrub-on-
+/// drop). The `#[derive(Debug)]` is DROPPED (no `{:?}` consumer exists) because
+/// a derived `Debug` over a `Zeroizing<String>` forwards to `String::fmt` and
+/// would LEAK the secret chunk. `Clone` is kept.
+#[derive(Clone)]
 struct RepairDetail {
     chunk_index: usize,
-    original_chunk: String,
-    corrected_chunk: String,
+    original_chunk: Zeroizing<String>,
+    corrected_chunk: Zeroizing<String>,
     /// `(position, was, now)` — `position` is 0-indexed into the data-part
     /// (chars after the `ms` HRP + `1` separator).
     corrected_positions: Vec<(usize, char, char)>,
@@ -72,7 +79,8 @@ struct RepairDetail {
 /// Run `ms repair`.
 pub fn run(args: RepairArgs) -> Result<u8> {
     // `read_input` handles the `-` stdin sentinel (single line / trimmed).
-    let original = read_input(Some(args.ms1.as_str()))?;
+    // cycle-15 Lane M (slug #6): the ms1 intake IS secret material — scrub on drop.
+    let original: Zeroizing<String> = Zeroizing::new(read_input(Some(args.ms1.as_str()))?);
 
     // `decode_with_correction` performs BCH correction internally; HRP /
     // length / BCH-uncorrectable rejections surface as `ms_codec::Error`
@@ -80,8 +88,9 @@ pub fn run(args: RepairArgs) -> Result<u8> {
     // in error.rs (`TooManyErrors` → `FormatViolation` → exit 2 per D26).
     let (_tag, _payload, corrections) = ms_codec::decode_with_correction(&original)?;
 
+    // The corrected ms1 is itself a valid decodable secret — hold it as Zeroizing.
     let (corrected_chunk, corrected_positions) =
-        reconstruct_corrected(&original, &corrections);
+        reconstruct_corrected(original.as_str(), &corrections);
 
     // ms1 is single-chunk → exactly one RepairDetail with `chunk_index = 0`.
     let report = RepairDetail {
@@ -91,13 +100,16 @@ pub fn run(args: RepairArgs) -> Result<u8> {
         corrected_positions,
     };
 
-    let corrected_chunks = vec![corrected_chunk];
+    // The serialized corrected chunk is stdout-bound (OOS-10 stdout-leak), but
+    // hold the in-memory vec as Zeroizing too (defense-in-depth, slug #6/#8).
+    let corrected_chunks: Zeroizing<Vec<String>> =
+        Zeroizing::new(vec![(*corrected_chunk).clone()]);
     let reports = vec![report];
 
     if args.json {
-        emit_json(&corrected_chunks, &reports)?;
+        emit_json(corrected_chunks.as_slice(), &reports)?;
     } else {
-        emit_text(&corrected_chunks, &reports)?;
+        emit_text(corrected_chunks.as_slice(), &reports)?;
     }
 
     // D9: emit sensitive-secret stderr advisory (always — even pass-through
@@ -118,7 +130,7 @@ pub fn run(args: RepairArgs) -> Result<u8> {
 fn reconstruct_corrected(
     original: &str,
     corrections: &[CorrectionDetail],
-) -> (String, Vec<(usize, char, char)>) {
+) -> (Zeroizing<String>, Vec<(usize, char, char)>) {
     // ms1 HRP + separator = "ms1" (3 chars). The data-part begins at byte
     // offset 3 in the lowercased input. `decode_with_correction` already
     // validated the HRP; this `rfind('1')` is a sanity check matching
@@ -143,7 +155,8 @@ fn reconstruct_corrected(
         corrected_positions.push((c.position, c.was, c.now));
     }
 
-    let mut out = String::with_capacity(prefix.len() + 1 + data_chars.len());
+    let mut out: Zeroizing<String> =
+        Zeroizing::new(String::with_capacity(prefix.len() + 1 + data_chars.len()));
     out.push_str(&prefix.to_ascii_lowercase());
     out.push('1');
     for c in &data_chars {
@@ -222,8 +235,8 @@ fn emit_json(corrected_chunks: &[String], reports: &[RepairDetail]) -> Result<()
             .filter(|r| !r.corrected_positions.is_empty())
             .map(|r| RepairJsonDetail {
                 chunk_index: r.chunk_index,
-                original_chunk: &r.original_chunk,
-                corrected_chunk: &r.corrected_chunk,
+                original_chunk: r.original_chunk.as_str(),
+                corrected_chunk: r.corrected_chunk.as_str(),
                 corrected_positions: r
                     .corrected_positions
                     .iter()
@@ -236,8 +249,12 @@ fn emit_json(corrected_chunks: &[String], reports: &[RepairDetail]) -> Result<()
             })
             .collect(),
     };
-    let body = serde_json::to_string(&envelope)
-        .map_err(|e| CliError::BadInput(format!("repair JSON serialize: {e}")))?;
-    println!("{body}");
+    // cycle-15 Lane M (slug #8, defense-in-depth): the serialized envelope
+    // carries the corrected secret ms1 — scrub the buffer on drop.
+    let body: Zeroizing<String> = Zeroizing::new(
+        serde_json::to_string(&envelope)
+            .map_err(|e| CliError::BadInput(format!("repair JSON serialize: {e}")))?,
+    );
+    println!("{}", *body);
     Ok(())
 }

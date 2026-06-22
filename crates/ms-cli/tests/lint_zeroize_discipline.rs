@@ -83,10 +83,32 @@ const ZEROIZE_ROWS: &[ZeroizeRow] = &[
         source_file: "src/cmd/verify.rs",
         evidence: &["let entropy: Zeroizing<Vec<u8>>"],
     },
+    // cycle-15 Lane M (slug #9, Minor-3): RE-POINT (not append) this existing
+    // row. It previously anchored on `let derived_str: Zeroizing<String>` at
+    // verify.rs:117 (inside run()), which is GREEN regardless of whether the
+    // `emit_round_trip_ok` `to_string()` word-count temp at :170 is wrapped —
+    // a FALSE-GREEN. Re-anchor on the `emit_round_trip_ok` word-count site so
+    // the row actually guards :170.
     ZeroizeRow {
-        label: "cmd/verify success-log derived_mnemonic.to_string() wrapped",
+        label: "cmd/verify emit_round_trip_ok word-count temp wrapped (slug #9)",
         source_file: "src/cmd/verify.rs",
-        evidence: &["let derived_str: Zeroizing<String>"],
+        evidence: &["let wc_src: Zeroizing<String>"],
+    },
+    // ---- cycle-15 Lane M: ms-cli intake/report sites ----
+    ZeroizeRow {
+        label: "cmd/inspect ms1 intake wrapped (slug #5)",
+        source_file: "src/cmd/inspect.rs",
+        evidence: &["Zeroizing::new(read_input("],
+    },
+    ZeroizeRow {
+        label: "cmd/repair ms1 intake wrapped (slug #6)",
+        source_file: "src/cmd/repair.rs",
+        evidence: &["Zeroizing::new(read_input("],
+    },
+    ZeroizeRow {
+        label: "cmd/repair RepairDetail chunk fields are Zeroizing<String> (slug #6)",
+        source_file: "src/cmd/repair.rs",
+        evidence: &["original_chunk: Zeroizing<String>"],
     },
 ];
 
@@ -98,8 +120,27 @@ fn crate_root() -> &'static Path {
 fn canonical_list_has_expected_row_count() {
     let n = ZEROIZE_ROWS.len();
     assert_eq!(
-        n, 10,
-        "ZEROIZE_ROWS row count = {n}; expected 10 (survey §1 ms-cli table, post-R1 C-2 fold)."
+        n, 13,
+        "ZEROIZE_ROWS row count = {n}; expected 13 (survey §1 ms-cli table, post-R1 C-2 fold + cycle-15 Lane M: inspect-intake/repair-intake/repair-chunk-field rows; the verify row was re-pointed not added)."
+    );
+}
+
+/// cycle-15 Lane M (slug #6, RULE Z-DEBUG) — NEGATIVE anchor. Once
+/// `RepairDetail`'s `original_chunk`/`corrected_chunk` are `Zeroizing<String>`,
+/// a derived `Debug` would forward to `String::fmt` and LEAK the secret chunk.
+/// `RepairDetail` has no `{:?}` consumer, so the cleanest fix is to drop the
+/// `Debug` derive entirely. This guards that it stays dropped.
+#[test]
+fn repair_detail_does_not_derive_debug() {
+    let src = fs::read_to_string(crate_root().join("src/cmd/repair.rs"))
+        .expect("read src/cmd/repair.rs");
+    // The struct definition line must not derive Debug.
+    assert!(
+        !src.contains("#[derive(Debug, Clone)]\nstruct RepairDetail")
+            && !src.contains("#[derive(Debug, Clone)]\npub struct RepairDetail")
+            && !src.contains("#[derive(Clone, Debug)]\nstruct RepairDetail"),
+        "RepairDetail still derives Debug — its Zeroizing<String> chunk fields would \
+         leak via the derived Debug (RULE Z-DEBUG). Drop the Debug derive (keep Clone)."
     );
 }
 

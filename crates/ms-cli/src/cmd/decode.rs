@@ -130,8 +130,11 @@ fn emit_json(
         word_count,
         language_defaulted,
     };
-    let s = to_string(&json).expect("decode json serialization always succeeds");
-    println!("{}", s);
+    // cycle-15 Lane M (slug #8, defense-in-depth): the serialized JSON carries
+    // the entropy hex + phrase — scrub the buffer on drop.
+    let s: zeroize::Zeroizing<String> =
+        zeroize::Zeroizing::new(to_string(&json).expect("decode json serialization always succeeds"));
+    println!("{}", *s);
     Ok(())
 }
 
