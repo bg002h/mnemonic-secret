@@ -4,6 +4,26 @@ All notable changes to the `ms-codec` crate are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-06-21
+
+**MINOR (secret-memory-hygiene) — `InspectReport` redacts + scrubs the decoded entropy; `decode()` theater-clone removed. Wire format UNCHANGED. Cycle-15 Lane M.**
+
+`ms-codec` is the BIP-39-entropy codec, so its secret-hygiene bar is first-class. This release closes the public-API entropy-exposure leg and the decode-path scrub theater.
+
+### Changed (breaking, public API → MINOR)
+
+- **`InspectReport.payload_bytes`: `Vec<u8>` → `Zeroizing<Vec<u8>>`** (scrub-on-drop). `Deref<Target=Vec<u8>>` keeps read-only consumers (`.len()`, `hex::encode(&field)`) source-compatible; binding the field by value or relying on its derived `Debug` is the breaking change.
+- **`InspectReport`'s `Debug` is hand-rolled, no longer derived** — renders `payload_bytes` as `[REDACTED; N bytes]` and surfaces all structural fields verbatim. RULE Z-DEBUG: a `Zeroizing<Vec<u8>>`'s own derived `Debug` forwards to `Vec` and would leak the raw bytes, so the hand-roll is mandatory (mirrors the `Error` no-echo `Debug`).
+
+### Fixed
+
+- **`decode()` no longer allocates an extra un-scrubbed entropy copy.** The prior `Zeroizing::new(data)` + deref-clone into `Payload` scrubbed only the moved-from buffer while the live `Payload` received a fresh bare clone — an EXTRA un-scrubbed copy, with the lint reading false-GREEN. The bytes now move straight into `Payload` (strictly fewer copies); the lint drops the theater row and adds a negative-anchor test.
+
+### Notes
+
+- **Wire format / `Payload` shape byte-identical** (new `wire_format_invariant_cycle15m` test pins `ms1` encode/decode over the full entr+mnem vector set). Downstream `mnemonic-toolkit` (consumes `Payload`/`decode()`, NOT `inspect()`) is a recompile-only `0.5`→`0.6` pin bump — no source change forced.
+- **Share-string leg deferred (PARTIAL).** `Codex32String` / `Vec<String>` across the share spine are `String`-backed foreign types in the dormant `codex32-0.1.0` (no `Drop`/`Zeroize`); enumerated + lifetime-min-commented but not wrapped in-repo (bound to the codex32 vendor/fork decision). Reachable `Vec<u8>` share buffers stay `Zeroizing`.
+
 ## [0.5.0] — 2026-06-21
 
 **MINOR (FUNDS-SAFETY) — `combine_shares` rejects a same-id mixed-polynomial share set that previously returned a SILENT WRONG secret. Beyond-BIP-93 defense-in-depth. Constellation bug-hunt cycle-4 (M6).**

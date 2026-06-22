@@ -170,7 +170,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **What:** These paths are primarily STDOUT-LEAK: the values go to stdout by design (that is the command's purpose). Wrapping the intermediate `String` before flush is theoretically possible but adds machinery for zero practical benefit — the entropy and phrase land on stdout one syscall later. Optional future cycle could apply Zeroizing for pattern-consistency reasons.
 - **Why deferred:** No practical benefit; values are emitted to stdout by design.
 - **BROADENED (2026-06-21 keymat sweep):** the same class extends beyond decode's intermediate `String` to ALL `--json` emit structs and their secret-bearing owned fields across encode/combine/split/inspect — enumerated in its own first-class entry `ms-cli-json-output-structs-bare-secret-strings` (below). This entry remains the decode-intermediate-`String` leg; the new slug carries the per-struct/per-field surface.
-- **Status:** `open`
+- **Status:** `resolved (ms-cli 0.10.0)` — cycle-15 Lane M: `decode.rs`'s `emit_json` serialized output `String` is now wrapped in `Zeroizing` (the decode-intermediate leg this entry tracked is closed as part of the broader `ms-cli-json-output-structs-bare-secret-strings` fix). `emit_text` prints the already-`Zeroizing`-wrapped `phrase` directly (no new bare intermediate).
 - **Tier:** `v1+`
 
 ### `rust-codex32-zeroize-upstream` — `codex32::Codex32String` internal payload buffer has no `Zeroize`
@@ -415,7 +415,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **What:** `InspectReport` is the one PUBLIC codec API surface that hands back un-wrapped raw entropy: it derives `Debug` over a bare `pub payload_bytes: Vec<u8>`, so any `{:?}` / `expect` / log of the report (or a wrapper deriving Debug over it) dumps the full seed, and the `Vec<u8>` lives un-scrubbed until drop.
 - **Fix direction:** stop deriving `Debug` over the raw bytes (hand-roll `Debug` to redact `payload_bytes`, mirroring the `ms-codec-error-display-echoes-input` precedent) and/or hold the field as `Zeroizing<Vec<u8>>` — both at the public-API boundary, so callers inherit redaction + scrub.
 - **Severity:** **High** (codec-library leak-to-Debug of root entropy + bare buffer; both escalation triggers fire — the single public codec entry point returning raw secret bytes in a Debug-printable, non-scrubbing container).
-- **Status:** `open`
+- **Status:** `resolved (ms-codec 0.6.0)` — cycle-15 Lane M, Design A: `payload_bytes: Zeroizing<Vec<u8>>` + hand-rolled redacting `Debug` (`[REDACTED; N bytes]`); marquee Debug-redaction RED test. `PartialEq` left underived; `Deref` keeps readers green.
 - **Tier:** secret-hygiene.
 - **Companion:** part of the constellation-wide "derived-output + codec-library-internal secret-`String`/`Vec` not zeroized" pattern surfaced by the 2026-06-21 secret-keymat sweep — siblings in `mnemonic-toolkit` (bip85 / electrum / seedqr derived-output) and `mnemonic-gui` (run-holders); toolkit cycle-14 / L22 closed the clap-arg/handler-field leg, this is the codec/output leg.
 
@@ -427,7 +427,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **What:** The scrub pattern is `let scrubbed: Zeroizing<Vec<u8>> = Zeroizing::new(data); let p = Payload::Entr((*scrubbed).clone());` — the `.clone()` allocates a FRESH bare `Vec<u8>` that becomes the live public payload (never scrubbed); the `Zeroizing` only scrubs the already-moved-from `data`. Net effect is an EXTRA un-scrubbed heap copy, not a removed one, and the lint anchors on `let scrubbed: Zeroizing<Vec<u8>>` so it reads GREEN while the clone defeats the intent.
 - **Fix direction:** drop the redundant `.clone()` — move the (already de-Zeroized) bytes straight into the public `Payload` (the public boundary is bare-by-design per `ms-codec-payload-zeroize-public-api`, so the honest move is strictly fewer copies than the clone), and tighten the lint so it cannot read GREEN on a clone-into-bare-`Vec`.
 - **Severity:** **Med** (entropy-in-bare-buffer in the codec library; a zeroize that visibly does the opposite of its stated purpose is worse than honest caller-wrap, and the lint gives false assurance).
-- **Status:** `open`
+- **Status:** `resolved (ms-codec 0.6.0)` — cycle-15 Lane M: the deref-clone is removed (bytes move straight into `Payload`); the theater lint row is dropped and replaced by a negative-anchor test (`decode_has_no_clone_into_bare_vec`).
 - **Tier:** secret-hygiene.
 - **Companion:** part of the constellation-wide "derived-output + codec-library-internal secret-`String`/`Vec` not zeroized" pattern surfaced by the 2026-06-21 secret-keymat sweep — siblings in `mnemonic-toolkit` (bip85 / electrum / seedqr derived-output) and `mnemonic-gui` (run-holders); toolkit cycle-14 / L22 closed the clap-arg/handler-field leg, this is the codec/output leg.
 
@@ -439,7 +439,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **What:** `Codex32String` is a newtype over `String` (codex32-0.1.0) with NO Drop/Zeroize, so every share string and the secret-at-S string is held bare and dropped un-scrubbed. Each is secret-equivalent (any share leaks partial secret; `secret_s` / the recovered `secret` leak everything). Only the recovered-`secret` binding is currently tracked (`[obs]`); the `parsed` input vectors, `secret_s`, and the clone copies are the same class but un-enumerated.
 - **Fix direction:** root cause is the dormant-upstream `rust-codex32-zeroize-upstream` (a `Drop`/`Zeroize` on `Codex32String`) — so the realistic close path is the vendor/fork decision in `codex32-upstream-dormant-vendor-vs-accept-decision`; meanwhile minimize lifetimes and (where cheap) hold the `Vec<u8>`-shaped intermediates in `Zeroizing`. This entry's job is to give that vendor/fork decision the full secret surface (all ~7 bindings, not just one).
 - **Severity:** **Med** (codec-library secret material in bare `String`-backed buffers; **arguably High** for `secret_s` and the recovered `secret`, which are total-leak-equivalent).
-- **Status:** `open`
+- **Status:** `open` — **PARTIAL (cycle-15 Lane M):** enumerated; reachable `Vec<u8>` intermediates wrapped (`filler`, recovered-secret wire bytes); lifetime-min comments on the `defining`/`distributed`/`parsed` vectors + `secret_s`. The `Codex32String`/`String` legs are bound to the codex32 vendor/fork decision (`rust-codex32-zeroize-upstream` + `codex32-upstream-dormant-vendor-vs-accept-decision`) — root cause external, NOT closed this cycle (no false GREEN).
 - **Tier:** secret-hygiene (root cause `external`, upstream-blocked via `rust-codex32-zeroize-upstream`).
 - **Companion:** part of the constellation-wide "derived-output + codec-library-internal secret-`String`/`Vec` not zeroized" pattern surfaced by the 2026-06-21 secret-keymat sweep — siblings in `mnemonic-toolkit` (bip85 / electrum / seedqr derived-output) and `mnemonic-gui` (run-holders); toolkit cycle-14 / L22 closed the clap-arg/handler-field leg, this is the codec/output leg. Roots in `rust-codex32-zeroize-upstream` + `codex32-upstream-dormant-vendor-vs-accept-decision`.
 
@@ -451,7 +451,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **What:** `ms inspect` is the ONLY ms1-intake command that holds its input in a bare `String` (contrast decode.rs / verify.rs / derive.rs / repair.rs, all `Zeroizing`-wrapped); it also carries the bare `payload_bytes` from finding #1, and prints the full entropy hex on stdout while holding it un-scrubbed.
 - **Fix direction:** wrap the `read_input` result in `Zeroizing<String>` to match the sibling intake commands (and let finding #1's `InspectReport` redaction/scrub cover the report bytes).
 - **Severity:** **Med** (CLI intake of seed-secret-equivalent material in a bare buffer; the lone asymmetry vs every sibling intake — not enumerated in the zeroize lint's rows).
-- **Status:** `open`
+- **Status:** `resolved (ms-cli 0.10.0)` — cycle-15 Lane M: `inspect.rs` ms1 intake → `Zeroizing<String>`; lint row added; `InspectReport.payload_bytes` redaction/scrub covered by #1.
 - **Tier:** secret-hygiene.
 - **Companion:** part of the constellation-wide "derived-output + codec-library-internal secret-`String`/`Vec` not zeroized" pattern surfaced by the 2026-06-21 secret-keymat sweep — toolkit cycle-14 / L22 closed the clap-arg/handler-field leg; this is the CLI-intake/output leg.
 
@@ -463,7 +463,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **What:** `ms repair`'s ms1 input is held bare, cloned into `RepairDetail.original_chunk`/`corrected_chunk` (both bare `String`), and the corrected ms1 — itself a valid, decodable secret string — is collected into `corrected_chunks: Vec<String>`; the whole path carries seed-secret-equivalent material in multiple un-scrubbed buffers.
 - **Fix direction:** wrap the `read_input` result + the corrected-chunk vector in `Zeroizing`, and hold `RepairDetail`'s chunk fields as `Zeroizing<String>` (or scrub on the build→emit→drop boundary).
 - **Severity:** **Med** (CLI carries seed-secret-equivalent ms1 strings across multiple bare copies; repair re-emits a fully-valid recoverable ms1 — not in the zeroize lint's rows).
-- **Status:** `open`
+- **Status:** `resolved (ms-cli 0.10.0)` — cycle-15 Lane M: ms1 intake + corrected-chunks vector → `Zeroizing`; `RepairDetail` chunk fields → `Zeroizing<String>` and its `#[derive(Debug)]` DROPPED (RULE Z-DEBUG; no `{:?}` consumer); negative-anchor test `repair_detail_does_not_derive_debug` + intake/chunk-field lint rows.
 - **Tier:** secret-hygiene.
 - **Companion:** part of the constellation-wide "derived-output + codec-library-internal secret-`String`/`Vec` not zeroized" pattern surfaced by the 2026-06-21 secret-keymat sweep — toolkit cycle-14 / L22 closed the clap-arg/handler-field leg; this is the CLI-intake/output leg.
 
@@ -475,9 +475,21 @@ Single source of truth for items that surfaced during a review or implementation
 - **What:** The seed is scrubbed+pinned, but the derived `master` and `acct_xpriv` `Xpriv` values hold the root/account PRIVATE keys and have no Drop/Zeroize (rust-bitcoin), so they sit bare until scope-end — same third-party-blocked class as the tracked `rust-bip39-mnemonic-zeroize-upstream`, but for `Xpriv` (and untracked). `ms derive` is the only place an actual xpriv is materialized.
 - **Fix direction:** upstream-blocked (rust-bitcoin `Xpriv` has no Zeroize) — minimize the `Xpriv` lifetimes and scrub the underlying secret bytes where reachable; file/track the rust-bitcoin `Xpriv` zeroize gap as the analogue of `rust-bip39-mnemonic-zeroize-upstream`.
 - **Severity:** **Med** (live root private key in a bare third-party type; defense-in-depth, upstream-blocked).
-- **Status:** `open`
+- **Status:** `open` — **PARTIAL (cycle-15 Lane M):** lifetime-min + bare-secret code comment landed in `derive.rs`; the seed stays `Zeroizing` + mlock-pinned. Cannot fully close — root cause is the rust-bitcoin `Xpriv`-has-no-`Zeroize` gap, now tracked as `rust-bitcoin-xpriv-zeroize-upstream` (filed this cycle).
 - **Tier:** secret-hygiene (root cause `external`, rust-bitcoin upstream).
 - **Companion:** part of the constellation-wide "derived-output + codec-library-internal secret-`String`/`Vec` not zeroized" pattern surfaced by the 2026-06-21 secret-keymat sweep — siblings in `mnemonic-toolkit` (bip85 / electrum / seedqr derived-output) and `mnemonic-gui` (run-holders); toolkit cycle-14 / L22 closed the clap-arg/handler-field leg, this is the derived-output leg.
+
+### `rust-bitcoin-xpriv-zeroize-upstream` — `bitcoin::bip32::Xpriv` has no `Zeroize`/`Drop` (root/account private key held bare)
+
+- **Surfaced:** 2026-06-21, cycle-15 Lane M (filed while landing the `ms-cli-derive-xpriv-master-not-zeroized` PARTIAL). The `Xpriv` analogue of `rust-bip39-mnemonic-zeroize-upstream`. Audited against `mnemonic-secret origin/master` @ `6f9f60b`.
+- **Secret type / gap class:** master/account `bitcoin::bip32::Xpriv` (private key derived from seed) / class 1 (bare third-party type, upstream-blocked).
+- **Where:** Upstream crate `bitcoin = "0.32"` (rust-bitcoin). Affects `crates/ms-cli/src/cmd/derive.rs:220` (`Xpriv::new_master` → `master`), `:232-233` (`master.derive_priv` → `acct_xpriv`). `Xpriv` exposes its `private_key`/`chain_code` and implements no `Zeroize`/`Drop`, so the derived private keys sit un-scrubbed until scope-end.
+- **What:** `ms derive` is the only place an actual xpriv is materialized. The source seed IS `Zeroizing<[u8;64]>` + mlock-pinned, but the derived `master`/`acct_xpriv` cannot be scrubbed in-repo because rust-bitcoin's `Xpriv` has no zeroizing surface.
+- **Fix direction:** upstream — add a `Zeroize`/`ZeroizeOnDrop` impl (or a zeroizing newtype wrapper) to rust-bitcoin's `Xpriv`. Until then, in-repo mitigation is lifetime-min only (landed in `ms-cli 0.10.0`).
+- **Severity:** **Med** (live root private key in a bare third-party type; defense-in-depth, upstream-blocked).
+- **Status:** `open` (upstream-blocked — cannot fully close in-repo).
+- **Tier:** secret-hygiene (root cause `external`, rust-bitcoin upstream).
+- **Companion:** the `Xpriv` analogue of `rust-bip39-mnemonic-zeroize-upstream`; the in-repo leg is `ms-cli-derive-xpriv-master-not-zeroized` (PARTIAL, cycle-15 Lane M).
 
 ### `ms-cli-json-output-structs-bare-secret-strings` — all `--json` emit structs carry secret hex/phrase/shares/ms1 in bare owned `String`s
 
@@ -487,7 +499,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **What:** Every `--json` emit struct holds secret material (hex entropy, full phrase, full share set, ms1) as bare owned `String`/`Vec<String>` fields, plus the serialized output `String`; none are `Zeroizing`. Short-lived (build → serialize → drop) but plaintext-secret in un-scrubbed heap until drop.
 - **Fix direction:** hold the secret-bearing fields (and the serialized output `String`) in `Zeroizing` (or scrub on the build→serialize→drop boundary) — consistent with the broader decode-emit treatment in `ms-cli-decode-emit-zeroize-intermediate`.
 - **Severity:** **Low** (STDOUT-LEAK-adjacent — the data goes to stdout by design one syscall later; defense-in-depth only).
-- **Status:** `open`
+- **Status:** `resolved (ms-cli 0.10.0)` — cycle-15 Lane M: the serialized secret-bearing output `String` is wrapped in `Zeroizing` before `println!` across encode/decode/combine/split/inspect/repair. (verify/share/derive JSON carry no private material — word counts / xpub / fingerprint — left bare.) The parent decode-intermediate leg `ms-cli-decode-emit-zeroize-intermediate` is now covered.
 - **Tier:** secret-hygiene (defense-in-depth; broadens `ms-cli-decode-emit-zeroize-intermediate`).
 - **Companion:** part of the constellation-wide "derived-output + codec-library-internal secret-`String`/`Vec` not zeroized" pattern surfaced by the 2026-06-21 secret-keymat sweep — toolkit cycle-14 / L22 closed the clap-arg/handler-field leg; this is the CLI-output leg.
 
@@ -499,7 +511,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **What:** `emit_round_trip_ok` calls `_mnemonic.to_string()` to count words — a bare temporary `String` holding the FULL phrase, not `Zeroizing`-wrapped, dropped un-scrubbed. One un-wrapped full-phrase temp slips past the otherwise-thorough verify zeroize discipline.
 - **Fix direction:** wrap the `to_string()` temp in `Zeroizing` (or count words off the already-wrapped `derived_str` rather than re-materializing).
 - **Severity:** **Low** (a single short-lived phrase temp on the success path; defense-in-depth).
-- **Status:** `open`
+- **Status:** `resolved (ms-cli 0.10.0)` — cycle-15 Lane M: `emit_round_trip_ok` counts words off a `Zeroizing<String>` temp (`wc_src`); the existing FALSE-GREEN verify lint row (anchored `derived_str` at `:117`) is RE-POINTED to the `emit_round_trip_ok` site so it actually guards the former `:170` leak.
 - **Tier:** secret-hygiene (defense-in-depth).
 - **Companion:** part of the constellation-wide "derived-output + codec-library-internal secret-`String`/`Vec` not zeroized" pattern surfaced by the 2026-06-21 secret-keymat sweep — toolkit cycle-14 / L22 closed the clap-arg/handler-field leg; this is the CLI-output leg.
 

@@ -4,6 +4,41 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-codec [0.6.0] — 2026-06-21
+
+**SemVer-MINOR — secret-memory-hygiene: `InspectReport` redacts + scrubs the entropy; `decode()` theater-clone removed (cycle-15 Lane M).**
+
+### Changed (breaking, public API)
+
+- **`InspectReport.payload_bytes` is now `Zeroizing<Vec<u8>>`** (was bare `Vec<u8>`) — scrub-on-drop. Read-only consumers (`.len()`, `hex::encode(&field)`) are unaffected (`Deref<Target=Vec<u8>>`); code that bound the field by value or relied on the derived `Debug` is a breaking change ⇒ MINOR.
+- **`InspectReport`'s `Debug` is hand-rolled (no longer derived)** to redact `payload_bytes` as `[REDACTED; N bytes]` (RULE Z-DEBUG: `Zeroizing`'s own derived `Debug` is non-redacting). All structural fields stay visible.
+
+### Fixed
+
+- **`decode()` no longer allocates an extra un-scrubbed entropy copy.** The old `Zeroizing::new(data)` + deref-clone into `Payload` only scrubbed the moved-from buffer while the live `Payload` got a fresh bare copy — net theater. The bytes now move straight into `Payload` (strictly fewer copies).
+
+### Notes
+
+- **Wire format UNCHANGED.** `ms1` encode/decode bytes + the `Payload` / `decode()` `(Tag, Payload)` shape are byte-identical (guarded by a new wire-invariant test) — downstream `mnemonic-toolkit` is a recompile-only pin bump.
+- The codex32 share-string leg (`Codex32String` / `String`-backed, dormant upstream, no `Drop`) is **enumerated and deferred** (FOLLOWUP `ms-codec-share-strings-not-zeroized-encode-and-combine` stays `open`, bound to the codex32 vendor/fork decision). The reachable `Vec<u8>` share buffers stay `Zeroizing`.
+
+## ms-cli [0.10.0] — 2026-06-21
+
+**SemVer-MINOR — secret-memory-hygiene: intake/report/output zeroize + `RepairDetail` Debug-drop; re-pins `ms-codec =0.6.0` (cycle-15 Lane M).**
+
+### Fixed
+
+- **`ms inspect` / `ms repair` wrap their ms1 intake in `Zeroizing<String>`** (inspect was the lone unwrapped intake command).
+- **`RepairDetail`'s chunk fields are `Zeroizing<String>`, and its `#[derive(Debug)]` is DROPPED** (no `{:?}` consumer; a derived `Debug` over the wrapped secret chunks would leak — RULE Z-DEBUG). `Clone` kept.
+- **`ms verify`'s `emit_round_trip_ok` counts words off a `Zeroizing<String>` temp** instead of a bare `_mnemonic.to_string()`.
+- **`--json` emit buffers carrying secret material (entropy hex / phrase / shares / ms1) are scrubbed on drop** (encode / decode / combine / split / inspect / repair) — defense-in-depth.
+
+### Notes
+
+- **`--help` / clap surface UNCHANGED** (zeroize is user-invisible) — no manual / GUI schema-mirror update.
+- **`--json` wire shapes UNCHANGED** (the `Zeroizing` wraps are in-memory only).
+- **`ms derive`'s `Xpriv` master/account remain bare** — `bitcoin::bip32::Xpriv` has no `Zeroize` (rust-bitcoin upstream); PARTIAL: lifetime-min + comment, tracked by the new `rust-bitcoin-xpriv-zeroize-upstream` FOLLOWUP. The source seed is already `Zeroizing` + mlock-pinned.
+
 ## ms-cli [0.9.0] — 2026-06-21
 
 **SemVer-MINOR — non-English BIP-39 wordlist correctness + advisory/hygiene (constellation bug-hunt cycle-8).**
