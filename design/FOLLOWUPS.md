@@ -13,7 +13,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **This repo's verified findings (3):**
   - **[IMPORTANT] ✓ RESOLVED (ms-codec v0.4.1, 2026-06-10)** `combine-no-length-validation-panic` — promoted to its own entry below; the Entr arm of `dispatch_payload` now `validate()`s (parity with the Mnem arm).
   - **[obs]** `pr2-exposure-claim-verified-sound` — PR#2's padding bug requires reconstructing a share via Codex32String::from_seed from decomposed data+metadata. combine_shares never does this — it parses shares via from_string (shares.rs:184), recove (`crates/ms-codec/src/shares.rs:180-243; crates/ms-codec/tests/codex32_upstream_recovery_regression.rs; crates/ms-codec/tests/spike_kofn.rs:187; crates/ms-codec/src/shares.rs:418`)
-  - **[obs]** `recovered-secret-string-not-zeroized` — combine_shares binds `let secret = Codex32String::interpolate_at(...)` (shares.rs:236); Codex32String is a newtype over String (codex32-0.1.0 lib.rs:102 `pub struct Codex32String(String)`) with no Dro (`crates/ms-codec/src/shares.rs:236-242; codex32-0.1.0 lib.rs:102; crates/ms-codec/tests/lint_zeroize_discipline.rs:62-69`)
+  - **[obs]** `recovered-secret-string-not-zeroized` — combine_shares binds `let secret = Codex32String::interpolate_at(...)` (shares.rs:236); Codex32String is a newtype over String (codex32-0.1.0 lib.rs:102 `pub struct Codex32String(String)`) with no Dro (`crates/ms-codec/src/shares.rs:236-242; codex32-0.1.0 lib.rs:102; crates/ms-codec/tests/lint_zeroize_discipline.rs:62-69`). **BROADENED (2026-06-21 keymat sweep):** the recovered `secret` is only ONE of ~7 secret-equivalent bare `Codex32String`/`Vec<Codex32String>`/`Vec<String>` bindings across the share spine (encode + combine); the full per-binding surface — incl. the `secret_s` full-secret-at-S in `encode_shares` and the input-share `parsed` vectors in `combine_shares` — is now enumerated in its own first-class entry `ms-codec-share-strings-not-zeroized-encode-and-combine` (below).
 - **Status:** open (backlog index; individual items dispositioned in the report). 1 of 3 resolved (`combine-no-length-validation-panic`, ms-codec v0.4.1); the two `[obs]` items remain.
 - **Tier:** audit-backlog.
 
@@ -169,6 +169,7 @@ Single source of truth for items that surfaced during a review or implementation
 - **Where:** `crates/ms-cli/src/cmd/decode.rs:67-94` — the `emit_json` / `emit_text` paths.
 - **What:** These paths are primarily STDOUT-LEAK: the values go to stdout by design (that is the command's purpose). Wrapping the intermediate `String` before flush is theoretically possible but adds machinery for zero practical benefit — the entropy and phrase land on stdout one syscall later. Optional future cycle could apply Zeroizing for pattern-consistency reasons.
 - **Why deferred:** No practical benefit; values are emitted to stdout by design.
+- **BROADENED (2026-06-21 keymat sweep):** the same class extends beyond decode's intermediate `String` to ALL `--json` emit structs and their secret-bearing owned fields across encode/combine/split/inspect — enumerated in its own first-class entry `ms-cli-json-output-structs-bare-secret-strings` (below). This entry remains the decode-intermediate-`String` leg; the new slug carries the per-struct/per-field surface.
 - **Status:** `open`
 - **Tier:** `v1+`
 
@@ -405,6 +406,102 @@ Single source of truth for items that surfaced during a review or implementation
 - **Companion:** `mnemonic-toolkit/design/FOLLOWUPS.md` entry `ms-kofn-json-wire-shape-ungated` (toolkit-side mirror); generalization tracked at toolkit `schema-mirror-flag-name-vs-wire-shape-conceptual-clarification`.
 - **Status:** `open` (standing-posture / paired-PR tracking — fires no automated gate by design).
 - **Tier:** `cross-repo`
+
+### `ms-codec-inspect-report-payload-bytes-bare-and-debug` — public `inspect()` returns raw entropy in a `#[derive(Debug)]` struct with a bare `Vec<u8>` field
+
+- **Surfaced:** 2026-06-21, secret-key-material hygiene sweep (`mnemonic-toolkit/design/agent-reports/sweep-keymat-mnemonic-secret.md`, finding #1, headline). Audited against `origin/master` @ `e80ea3b`.
+- **Secret type / gap class:** raw BIP-39 entropy `Vec<u8>` / class 1 (bare buffer) + class 2 (Debug leak).
+- **Where:** `crates/ms-codec/src/inspect.rs:34` (`#[derive(Debug, Clone)]`), `:36-56` (`pub struct InspectReport`), `:48` (`pub payload_bytes: Vec<u8>`), `:80-103` (populated from the decoded payload). Verified vs current `origin/master`.
+- **What:** `InspectReport` is the one PUBLIC codec API surface that hands back un-wrapped raw entropy: it derives `Debug` over a bare `pub payload_bytes: Vec<u8>`, so any `{:?}` / `expect` / log of the report (or a wrapper deriving Debug over it) dumps the full seed, and the `Vec<u8>` lives un-scrubbed until drop.
+- **Fix direction:** stop deriving `Debug` over the raw bytes (hand-roll `Debug` to redact `payload_bytes`, mirroring the `ms-codec-error-display-echoes-input` precedent) and/or hold the field as `Zeroizing<Vec<u8>>` — both at the public-API boundary, so callers inherit redaction + scrub.
+- **Severity:** **High** (codec-library leak-to-Debug of root entropy + bare buffer; both escalation triggers fire — the single public codec entry point returning raw secret bytes in a Debug-printable, non-scrubbing container).
+- **Status:** `open`
+- **Tier:** secret-hygiene.
+- **Companion:** part of the constellation-wide "derived-output + codec-library-internal secret-`String`/`Vec` not zeroized" pattern surfaced by the 2026-06-21 secret-keymat sweep — siblings in `mnemonic-toolkit` (bip85 / electrum / seedqr derived-output) and `mnemonic-gui` (run-holders); toolkit cycle-14 / L22 closed the clap-arg/handler-field leg, this is the codec/output leg.
+
+### `ms-codec-decode-scrub-defeated-by-clone-into-bare-vec` — `decode()` "scrub" `.clone()`s the entropy into a fresh bare `Vec`, adding an un-scrubbed copy
+
+- **Surfaced:** 2026-06-21, secret-key-material hygiene sweep (`mnemonic-toolkit/design/agent-reports/sweep-keymat-mnemonic-secret.md`, finding #2). Audited against `origin/master` @ `e80ea3b`.
+- **Secret type / gap class:** entropy `Vec<u8>` / class 1 (bare buffer) + class 6 (intermediate not effectively scrubbed).
+- **Where:** `crates/ms-codec/src/decode.rs:82-83` (Entr arm) and `:89-90` (Mnem arm). Verified vs current `origin/master`.
+- **What:** The scrub pattern is `let scrubbed: Zeroizing<Vec<u8>> = Zeroizing::new(data); let p = Payload::Entr((*scrubbed).clone());` — the `.clone()` allocates a FRESH bare `Vec<u8>` that becomes the live public payload (never scrubbed); the `Zeroizing` only scrubs the already-moved-from `data`. Net effect is an EXTRA un-scrubbed heap copy, not a removed one, and the lint anchors on `let scrubbed: Zeroizing<Vec<u8>>` so it reads GREEN while the clone defeats the intent.
+- **Fix direction:** drop the redundant `.clone()` — move the (already de-Zeroized) bytes straight into the public `Payload` (the public boundary is bare-by-design per `ms-codec-payload-zeroize-public-api`, so the honest move is strictly fewer copies than the clone), and tighten the lint so it cannot read GREEN on a clone-into-bare-`Vec`.
+- **Severity:** **Med** (entropy-in-bare-buffer in the codec library; a zeroize that visibly does the opposite of its stated purpose is worse than honest caller-wrap, and the lint gives false assurance).
+- **Status:** `open`
+- **Tier:** secret-hygiene.
+- **Companion:** part of the constellation-wide "derived-output + codec-library-internal secret-`String`/`Vec` not zeroized" pattern surfaced by the 2026-06-21 secret-keymat sweep — siblings in `mnemonic-toolkit` (bip85 / electrum / seedqr derived-output) and `mnemonic-gui` (run-holders); toolkit cycle-14 / L22 closed the clap-arg/handler-field leg, this is the codec/output leg.
+
+### `ms-codec-share-strings-not-zeroized-encode-and-combine` — codex32 share strings + the secret-at-S held in bare `String`-backed types across the whole share spine
+
+- **Surfaced:** 2026-06-21, secret-key-material hygiene sweep (`mnemonic-toolkit/design/agent-reports/sweep-keymat-mnemonic-secret.md`, finding #3). Audited against `origin/master` @ `e80ea3b`. Broadens the tracked `[obs] recovered-secret-string-not-zeroized` (audit-2026-06-10-backlog) from the single recovered-`secret` binding to the full per-binding surface.
+- **Secret type / gap class:** codex32 share strings + the full secret-at-S / class 1 (bare buffer) + class 4 (`String`-backed copies escaping).
+- **Where:** `encode_shares`: `secret_s: Codex32String` (`shares.rs:130`, the FULL secret at index S), `defining: Vec<Codex32String>` (`:136`), `distributed: Vec<String>` (`:148`), `single` (`:115`). `combine_shares`: `parsed: Vec<Codex32String>` x2 (`:195,210`, every INPUT share), `secret: Codex32String` (`:281`, the recovered full secret), plus the `.clone()` copies `from_string(s.clone())` (`:197`) and `c.to_string().to_ascii_lowercase()` (`:213`). Verified vs current `origin/master`.
+- **What:** `Codex32String` is a newtype over `String` (codex32-0.1.0) with NO Drop/Zeroize, so every share string and the secret-at-S string is held bare and dropped un-scrubbed. Each is secret-equivalent (any share leaks partial secret; `secret_s` / the recovered `secret` leak everything). Only the recovered-`secret` binding is currently tracked (`[obs]`); the `parsed` input vectors, `secret_s`, and the clone copies are the same class but un-enumerated.
+- **Fix direction:** root cause is the dormant-upstream `rust-codex32-zeroize-upstream` (a `Drop`/`Zeroize` on `Codex32String`) — so the realistic close path is the vendor/fork decision in `codex32-upstream-dormant-vendor-vs-accept-decision`; meanwhile minimize lifetimes and (where cheap) hold the `Vec<u8>`-shaped intermediates in `Zeroizing`. This entry's job is to give that vendor/fork decision the full secret surface (all ~7 bindings, not just one).
+- **Severity:** **Med** (codec-library secret material in bare `String`-backed buffers; **arguably High** for `secret_s` and the recovered `secret`, which are total-leak-equivalent).
+- **Status:** `open`
+- **Tier:** secret-hygiene (root cause `external`, upstream-blocked via `rust-codex32-zeroize-upstream`).
+- **Companion:** part of the constellation-wide "derived-output + codec-library-internal secret-`String`/`Vec` not zeroized" pattern surfaced by the 2026-06-21 secret-keymat sweep — siblings in `mnemonic-toolkit` (bip85 / electrum / seedqr derived-output) and `mnemonic-gui` (run-holders); toolkit cycle-14 / L22 closed the clap-arg/handler-field leg, this is the codec/output leg. Roots in `rust-codex32-zeroize-upstream` + `codex32-upstream-dormant-vendor-vs-accept-decision`.
+
+### `ms-cli-inspect-intake-and-entropy-not-zeroized` — `ms inspect` is the lone ms1-intake command that does NOT wrap its input in `Zeroizing`
+
+- **Surfaced:** 2026-06-21, secret-key-material hygiene sweep (`mnemonic-toolkit/design/agent-reports/sweep-keymat-mnemonic-secret.md`, finding #5). Audited against `origin/master` @ `e80ea3b`.
+- **Secret type / gap class:** ms1 string (seed-secret-equivalent) + raw entropy / class 1 (bare buffer).
+- **Where:** `crates/ms-cli/src/cmd/inspect.rs:33` (`let ms1 = read_input(...)` — NOT `Zeroizing`-wrapped), `:34` (`ms_codec::inspect(&ms1)` → bare `InspectReport.payload_bytes` per #1), `:217,247` (`hex::encode(&report.payload_bytes)`). Verified vs current `origin/master`.
+- **What:** `ms inspect` is the ONLY ms1-intake command that holds its input in a bare `String` (contrast decode.rs / verify.rs / derive.rs / repair.rs, all `Zeroizing`-wrapped); it also carries the bare `payload_bytes` from finding #1, and prints the full entropy hex on stdout while holding it un-scrubbed.
+- **Fix direction:** wrap the `read_input` result in `Zeroizing<String>` to match the sibling intake commands (and let finding #1's `InspectReport` redaction/scrub cover the report bytes).
+- **Severity:** **Med** (CLI intake of seed-secret-equivalent material in a bare buffer; the lone asymmetry vs every sibling intake — not enumerated in the zeroize lint's rows).
+- **Status:** `open`
+- **Tier:** secret-hygiene.
+- **Companion:** part of the constellation-wide "derived-output + codec-library-internal secret-`String`/`Vec` not zeroized" pattern surfaced by the 2026-06-21 secret-keymat sweep — toolkit cycle-14 / L22 closed the clap-arg/handler-field leg; this is the CLI-intake/output leg.
+
+### `ms-cli-repair-intake-and-report-strings-not-zeroized` — `ms repair` holds the ms1 input + corrected ms1 + report chunks in bare `String`s
+
+- **Surfaced:** 2026-06-21, secret-key-material hygiene sweep (`mnemonic-toolkit/design/agent-reports/sweep-keymat-mnemonic-secret.md`, finding #6). Audited against `origin/master` @ `e80ea3b`.
+- **Secret type / gap class:** ms1 string (seed-secret-equivalent) / class 1 (bare buffer) + class 4 (copies escaping).
+- **Where:** `crates/ms-cli/src/cmd/repair.rs:75` (`let original = read_input(...)` — bare `String`), `:63-70` (`struct RepairDetail { original_chunk: String, corrected_chunk: String }`, fields `:65-66`), `:89` (`original.clone()`), `:90,94` (`corrected_chunk.clone()` + `vec![corrected_chunk]`). Verified vs current `origin/master`.
+- **What:** `ms repair`'s ms1 input is held bare, cloned into `RepairDetail.original_chunk`/`corrected_chunk` (both bare `String`), and the corrected ms1 — itself a valid, decodable secret string — is collected into `corrected_chunks: Vec<String>`; the whole path carries seed-secret-equivalent material in multiple un-scrubbed buffers.
+- **Fix direction:** wrap the `read_input` result + the corrected-chunk vector in `Zeroizing`, and hold `RepairDetail`'s chunk fields as `Zeroizing<String>` (or scrub on the build→emit→drop boundary).
+- **Severity:** **Med** (CLI carries seed-secret-equivalent ms1 strings across multiple bare copies; repair re-emits a fully-valid recoverable ms1 — not in the zeroize lint's rows).
+- **Status:** `open`
+- **Tier:** secret-hygiene.
+- **Companion:** part of the constellation-wide "derived-output + codec-library-internal secret-`String`/`Vec` not zeroized" pattern surfaced by the 2026-06-21 secret-keymat sweep — toolkit cycle-14 / L22 closed the clap-arg/handler-field leg; this is the CLI-intake/output leg.
+
+### `ms-cli-derive-xpriv-master-not-zeroized` — derived master/account `Xpriv` (root private key) held in a bare rust-bitcoin type
+
+- **Surfaced:** 2026-06-21, secret-key-material hygiene sweep (`mnemonic-toolkit/design/agent-reports/sweep-keymat-mnemonic-secret.md`, finding #7). Audited against `origin/master` @ `e80ea3b`.
+- **Secret type / gap class:** master/account `bitcoin::bip32::Xpriv` (private key derived from seed) / class 1 (bare third-party type, upstream-blocked).
+- **Where:** `crates/ms-cli/src/cmd/derive.rs:220` (`Xpriv::new_master(...)` → `master`), `:232-233` (`master.derive_priv(...)` → `acct_xpriv`); the source seed at `:217-218` IS `Zeroizing<[u8; 64]>` + mlock-pinned (good). (Report cited `:203` / `:215-217` / `:200-201` — verified-current lines are `:220` / `:232-233` / `:217-218`; the cycle-8 derive rewrite shifted them ~17 lines.) Verified vs current `origin/master`.
+- **What:** The seed is scrubbed+pinned, but the derived `master` and `acct_xpriv` `Xpriv` values hold the root/account PRIVATE keys and have no Drop/Zeroize (rust-bitcoin), so they sit bare until scope-end — same third-party-blocked class as the tracked `rust-bip39-mnemonic-zeroize-upstream`, but for `Xpriv` (and untracked). `ms derive` is the only place an actual xpriv is materialized.
+- **Fix direction:** upstream-blocked (rust-bitcoin `Xpriv` has no Zeroize) — minimize the `Xpriv` lifetimes and scrub the underlying secret bytes where reachable; file/track the rust-bitcoin `Xpriv` zeroize gap as the analogue of `rust-bip39-mnemonic-zeroize-upstream`.
+- **Severity:** **Med** (live root private key in a bare third-party type; defense-in-depth, upstream-blocked).
+- **Status:** `open`
+- **Tier:** secret-hygiene (root cause `external`, rust-bitcoin upstream).
+- **Companion:** part of the constellation-wide "derived-output + codec-library-internal secret-`String`/`Vec` not zeroized" pattern surfaced by the 2026-06-21 secret-keymat sweep — siblings in `mnemonic-toolkit` (bip85 / electrum / seedqr derived-output) and `mnemonic-gui` (run-holders); toolkit cycle-14 / L22 closed the clap-arg/handler-field leg, this is the derived-output leg.
+
+### `ms-cli-json-output-structs-bare-secret-strings` — all `--json` emit structs carry secret hex/phrase/shares/ms1 in bare owned `String`s
+
+- **Surfaced:** 2026-06-21, secret-key-material hygiene sweep (`mnemonic-toolkit/design/agent-reports/sweep-keymat-mnemonic-secret.md`, finding #8). Audited against `origin/master` @ `e80ea3b`. Broadens the tracked `ms-cli-decode-emit-zeroize-intermediate` (decode-only) to the per-struct / per-field surface across encode/combine/split/inspect.
+- **Secret type / gap class:** entropy hex / phrase / shares / ms1 in bare `String` / class 1 (bare buffer) + class 4 (copies escaping).
+- **Where:** `crates/ms-cli/src/format.rs` — `EncodeJson.entropy_hex` (`:61`), `DecodeJson.entropy_hex`+`.phrase` (`:100-101`), `CombineJson.entropy_hex`+`.phrase`+`.ms1` (`:86-89`), `SplitJson.shares: Vec<String>` (`:69`), `InspectReportJson.payload_bytes_hex` (`:129`); plus each `emit_json`'s `let s = to_string(&json)` serialized buffer. Verified vs current `origin/master`.
+- **What:** Every `--json` emit struct holds secret material (hex entropy, full phrase, full share set, ms1) as bare owned `String`/`Vec<String>` fields, plus the serialized output `String`; none are `Zeroizing`. Short-lived (build → serialize → drop) but plaintext-secret in un-scrubbed heap until drop.
+- **Fix direction:** hold the secret-bearing fields (and the serialized output `String`) in `Zeroizing` (or scrub on the build→serialize→drop boundary) — consistent with the broader decode-emit treatment in `ms-cli-decode-emit-zeroize-intermediate`.
+- **Severity:** **Low** (STDOUT-LEAK-adjacent — the data goes to stdout by design one syscall later; defense-in-depth only).
+- **Status:** `open`
+- **Tier:** secret-hygiene (defense-in-depth; broadens `ms-cli-decode-emit-zeroize-intermediate`).
+- **Companion:** part of the constellation-wide "derived-output + codec-library-internal secret-`String`/`Vec` not zeroized" pattern surfaced by the 2026-06-21 secret-keymat sweep — toolkit cycle-14 / L22 closed the clap-arg/handler-field leg; this is the CLI-output leg.
+
+### `ms-cli-verify-derived-to-string-temp-not-wrapped` — `emit_round_trip_ok` materializes the full phrase in an un-wrapped `to_string()` temp
+
+- **Surfaced:** 2026-06-21, secret-key-material hygiene sweep (`mnemonic-toolkit/design/agent-reports/sweep-keymat-mnemonic-secret.md`, finding #9, low-confidence). Audited against `origin/master` @ `e80ea3b`.
+- **Secret type / gap class:** BIP-39 phrase `String` / class 1 (bare buffer).
+- **Where:** `crates/ms-cli/src/cmd/verify.rs:170` (`_mnemonic.to_string()` inside `emit_round_trip_ok`, fn at `:169`). (Report cited `:146`; verified-current line is `:170` — the cycle-8 verify changes shifted it.) The main compare path at `:116-118` IS wrapped via `derived_str`/`supplied_str`. Verified vs current `origin/master`.
+- **What:** `emit_round_trip_ok` calls `_mnemonic.to_string()` to count words — a bare temporary `String` holding the FULL phrase, not `Zeroizing`-wrapped, dropped un-scrubbed. One un-wrapped full-phrase temp slips past the otherwise-thorough verify zeroize discipline.
+- **Fix direction:** wrap the `to_string()` temp in `Zeroizing` (or count words off the already-wrapped `derived_str` rather than re-materializing).
+- **Severity:** **Low** (a single short-lived phrase temp on the success path; defense-in-depth).
+- **Status:** `open`
+- **Tier:** secret-hygiene (defense-in-depth).
+- **Companion:** part of the constellation-wide "derived-output + codec-library-internal secret-`String`/`Vec` not zeroized" pattern surfaced by the 2026-06-21 secret-keymat sweep — toolkit cycle-14 / L22 closed the clap-arg/handler-field leg; this is the CLI-output leg.
 
 ---
 
