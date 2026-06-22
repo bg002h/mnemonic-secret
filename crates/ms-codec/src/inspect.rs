@@ -5,6 +5,8 @@ use crate::envelope;
 use crate::error::Result;
 use crate::tag::Tag;
 use codex32::Codex32String;
+use std::fmt;
+use zeroize::Zeroizing;
 
 /// Payload kind as decoded by `inspect()`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,7 +33,14 @@ impl InspectKind {
 /// Structural dump of a parsed ms1 string. `#[non_exhaustive]` per SPEC §10
 /// — v0.2+ may add fields (share-index detail, threshold-layer hints,
 /// derivation metadata).
-#[derive(Debug, Clone)]
+///
+/// `Debug` is **hand-rolled** (not derived) to redact `payload_bytes`
+/// (RULE Z-DEBUG, cycle-15 Lane M): `Zeroizing<Vec<u8>>`'s own derived `Debug`
+/// is non-redacting (forwards to `Vec`), so a derived `Debug` here would leak
+/// the raw entropy bytes. The hand-roll surfaces every *structural* field
+/// verbatim and renders the secret bytes as a length-only `[REDACTED; N]`
+/// placeholder. See the `impl fmt::Debug` below.
+#[derive(Clone)]
 #[non_exhaustive]
 pub struct InspectReport {
     /// Expected "ms" in v0.1.
@@ -44,8 +53,11 @@ pub struct InspectReport {
     pub share_index: char,
     /// 0x00 in v0.1 (reserved); becomes type discriminator in v0.2+.
     pub prefix_byte: u8,
-    /// Payload bytes after the prefix byte.
-    pub payload_bytes: Vec<u8>,
+    /// Payload bytes after the prefix byte. Wrapped in `Zeroizing` so the
+    /// decoded secret entropy is scrubbed on drop (cycle-15 Lane M). The
+    /// hand-rolled `Debug` (below) redacts it; `Deref<Target=Vec<u8>>` keeps
+    /// read-only consumers (`.len()`, `hex::encode(&field)`) unchanged.
+    pub payload_bytes: Zeroizing<Vec<u8>>,
     /// BCH verification result. True if the upstream codex32 parser accepted.
     pub checksum_valid: bool,
     /// Payload kind derived from the prefix byte.
@@ -53,6 +65,29 @@ pub struct InspectReport {
     /// For `kind == Mnem`: the language byte (index into `MNEM_LANGUAGE_NAMES`).
     /// `None` for all other kinds.
     pub language: Option<u8>,
+}
+
+impl fmt::Debug for InspectReport {
+    /// Hand-rolled redacting `Debug` (RULE Z-DEBUG): surfaces every structural
+    /// field verbatim and renders the secret `payload_bytes` as a length-only
+    /// `[REDACTED; N]` placeholder so the raw entropy can never reach a debug
+    /// dump. Mirrors the no-echo precedent on `crate::error::Error` (`error.rs`).
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InspectReport")
+            .field("hrp", &self.hrp)
+            .field("threshold", &self.threshold)
+            .field("tag", &self.tag)
+            .field("share_index", &self.share_index)
+            .field("prefix_byte", &self.prefix_byte)
+            .field(
+                "payload_bytes",
+                &format_args!("[REDACTED; {} bytes]", self.payload_bytes.len()),
+            )
+            .field("checksum_valid", &self.checksum_valid)
+            .field("kind", &self.kind)
+            .field("language", &self.language)
+            .finish()
+    }
 }
 
 /// Inspect an ms1 string. Less strict than `decode()`: returns a report even
@@ -100,7 +135,7 @@ pub fn inspect(s: &str) -> Result<InspectReport> {
         tag,
         share_index: fields.share_index_byte as char,
         prefix_byte,
-        payload_bytes,
+        payload_bytes: Zeroizing::new(payload_bytes),
         checksum_valid: true, // if from_string accepted, BCH was valid
         kind,
         language,
@@ -122,7 +157,11 @@ mod tests {
         assert_eq!(r.tag, Tag::ENTR);
         assert_eq!(r.share_index, 's');
         assert_eq!(r.prefix_byte, 0x00);
-        assert_eq!(r.payload_bytes, entropy);
+        // I-1 (cycle-15 Lane M): `payload_bytes` is now `Zeroizing<Vec<u8>>`,
+        // which has no `PartialEq<Vec<u8>>` (and `Deref` doesn't bridge `==`),
+        // so deref the field rather than deriving `PartialEq` on the secret-
+        // bearing struct.
+        assert_eq!(*r.payload_bytes, entropy);
         assert!(r.checksum_valid);
     }
 

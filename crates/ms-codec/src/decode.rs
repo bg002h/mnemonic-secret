@@ -71,23 +71,25 @@ pub fn decode(s: &str) -> Result<(Tag, Payload)> {
     }
 
     // §4 rule 6: tag must be in the v0.2 accept set (currently {entr}).
-    // SPEC v0.9.0 §1 item 2 — wrap the OWNED entropy buffer in `Zeroizing`
-    // so the intermediate scrub runs on function exit. The public Payload
-    // boundary is unwrapped per SPEC §3 OOS-2; caller wraps — see payload.rs.
-    use zeroize::Zeroizing;
+    // cycle-15 Lane M (slug #2): MOVE the decoded bytes straight into the
+    // public `Payload` rather than cloning out of a throwaway `Zeroizing`
+    // envelope. The prior code wrapped `data` in a Zeroizing envelope and then
+    // deref-cloned it into the live `Payload`, which only scrubbed the
+    // already-moved-from buffer while allocating an EXTRA un-scrubbed heap copy
+    // — net theater. The move is strictly fewer copies and byte-identical wire
+    // behavior (`Payload::Entr(Vec<u8>)` shape is unchanged — bare-by-design per
+    // the deferred public-API slug; callers wrap at their use site, see payload.rs).
     let payload = match *tag.as_bytes() {
         x if x == TAG_ENTR => {
             match payload {
                 Payload::Entr(data) => {
-                    let scrubbed: Zeroizing<Vec<u8>> = Zeroizing::new(data);
-                    let p = Payload::Entr((*scrubbed).clone());
+                    let p = Payload::Entr(data);
                     // §4 rule 10: validate payload length.
                     p.validate()?;
                     p
                 }
                 Payload::Mnem { language, entropy } => {
-                    let scrubbed: Zeroizing<Vec<u8>> = Zeroizing::new(entropy);
-                    let p = Payload::Mnem { language, entropy: (*scrubbed).clone() };
+                    let p = Payload::Mnem { language, entropy };
                     // §4 rule 10: validate (language range + entropy length).
                     p.validate()?;
                     p

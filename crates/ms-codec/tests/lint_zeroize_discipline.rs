@@ -29,11 +29,18 @@ struct ZeroizeRow {
     evidence: &'static [&'static str],
 }
 
-/// Canonical 5-row list: 4 v0.1 survey §1 ms-codec rows + 1 v0.2 K-of-N
+/// Canonical 4-row list: 3 v0.1 survey §1 ms-codec rows + 1 v0.2 K-of-N
 /// shares.rs coverage row.
 /// Per-row evidence anchors tightened post R1 I-4 fold so each row enforces
 /// its specific call-site discipline (not just any Zeroizing reference in
 /// the file).
+///
+/// cycle-15 Lane M (slug #2): the old `decode()` "scrubbed before public emit"
+/// row was THEATER — it anchored on a `let scrubbed: Zeroizing<Vec<u8>>` that
+/// only scrubbed an already-moved-from buffer while a deref-clone allocated a
+/// fresh un-scrubbed copy as the live `Payload`. That row is dropped (4 rows
+/// now); the honest invariant — the clone is GONE — is enforced by the
+/// dedicated negative-anchor test `decode_has_no_clone_into_bare_vec`.
 const ZEROIZE_ROWS: &[ZeroizeRow] = &[
     ZeroizeRow {
         label: "envelope::discriminate() wraps OWNED payload Vec",
@@ -44,11 +51,6 @@ const ZEROIZE_ROWS: &[ZeroizeRow] = &[
         label: "envelope::package() wraps OWNED data Vec",
         source_file: "src/envelope.rs",
         evidence: &["let data: Zeroizing<Vec<u8>>"],
-    },
-    ZeroizeRow {
-        label: "decode() Payload::Entr allocation wraps before public emit",
-        source_file: "src/decode.rs",
-        evidence: &["let scrubbed: Zeroizing<Vec<u8>>"],
     },
     ZeroizeRow {
         label: "payload.rs documents caller-wrap contract",
@@ -77,8 +79,28 @@ fn crate_root() -> &'static Path {
 fn canonical_list_has_expected_row_count() {
     let n = ZEROIZE_ROWS.len();
     assert_eq!(
-        n, 5,
-        "ZEROIZE_ROWS row count = {n}; expected 5 (4 v0.1 survey §1 rows + 1 v0.2 K-of-N shares.rs row)."
+        n, 4,
+        "ZEROIZE_ROWS row count = {n}; expected 4 (3 v0.1 survey §1 rows + 1 v0.2 K-of-N shares.rs row; the theater decode row was dropped in cycle-15 Lane M slug #2)."
+    );
+}
+
+/// cycle-15 Lane M (slug #2) — NEGATIVE anchor. The old decode-path scrub was
+/// theater: a deref-clone copied a fresh un-scrubbed `Vec` out of a throwaway
+/// `Zeroizing` envelope and made THAT the live `Payload`. The fix moves the
+/// bytes straight into `Payload`, so both the clone and the throwaway envelope
+/// must be GONE.
+#[test]
+fn decode_has_no_clone_into_bare_vec() {
+    let src = fs::read_to_string(crate_root().join("src/decode.rs")).expect("read src/decode.rs");
+    assert!(
+        !src.contains("(*scrubbed).clone()"),
+        "decode.rs still contains the theater `(*scrubbed).clone()` — the slug-#2 \
+         move-into-Payload fix is missing or regressed."
+    );
+    assert!(
+        !src.contains("let scrubbed: Zeroizing<Vec<u8>>"),
+        "decode.rs still binds the throwaway `scrubbed` Zeroizing envelope — the \
+         slug-#2 fix removed it; the bytes move straight into `Payload`."
     );
 }
 
