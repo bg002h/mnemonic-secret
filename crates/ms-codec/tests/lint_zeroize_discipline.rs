@@ -69,6 +69,20 @@ const ZEROIZE_ROWS: &[ZeroizeRow] = &[
             "let data: Zeroizing<Vec<u8>> = Zeroizing::new(secret.parts().data())",
         ],
     },
+    // Cycle-B: the vendored `codex32::Codex32String` scrubs its inner secret
+    // String on drop (`zeroize::ZeroizeOnDrop`) + redacting Debug. This is what
+    // makes the share-spine `Codex32String`/`Vec<Codex32String>` bindings in
+    // shares.rs (`secret_s`, `defining`, `parsed`, the recovered `secret`)
+    // auto-drop-scrub WITHOUT a `Zeroizing` wrapper (they own their scrub). The
+    // anchor enforces both the derive AND the redacting Debug stay present.
+    ZeroizeRow {
+        label: "codex32::Codex32String scrubs its inner String on drop (vendored, Cycle-B)",
+        source_file: "src/codex32/mod.rs",
+        evidence: &[
+            "zeroize::ZeroizeOnDrop",
+            "impl fmt::Debug for Codex32String",
+        ],
+    },
 ];
 
 fn crate_root() -> &'static Path {
@@ -79,8 +93,8 @@ fn crate_root() -> &'static Path {
 fn canonical_list_has_expected_row_count() {
     let n = ZEROIZE_ROWS.len();
     assert_eq!(
-        n, 4,
-        "ZEROIZE_ROWS row count = {n}; expected 4 (3 v0.1 survey §1 rows + 1 v0.2 K-of-N shares.rs row; the theater decode row was dropped in cycle-15 Lane M slug #2)."
+        n, 5,
+        "ZEROIZE_ROWS row count = {n}; expected 5 (3 v0.1 survey §1 rows + 1 v0.2 K-of-N shares.rs row + 1 vendored-codex32 Codex32String drop-scrub row, Cycle-B; the theater decode row was dropped in cycle-15 Lane M slug #2)."
     );
 }
 

@@ -1,7 +1,8 @@
 //! `ms-codec` — reference implementation of the **ms1** backup format (HRP `ms`).
 //!
 //! ms1 is a Bitcoin self-custody backup format for BIP-39 entropy, layered atop
-//! BIP-93 codex32 via Andrew Poelstra's `rust-codex32` crate (CC0). Designed for
+//! BIP-93 codex32 — vendored inline from Andrew Poelstra's `rust-codex32` (CC0)
+//! at [`crate::codex32`] (Cycle-B, shape A; see `src/codex32/`). Designed for
 //! steel-plate engraving alongside sibling formats `mk1` (xpubs) and `md1`
 //! (descriptors). Every wire-format decision is judged against "does this make
 //! a steel-plate backup more correct, or less?"

@@ -126,16 +126,19 @@ pub fn encode_shares(
     let id = random_id();
     let pool = non_s_index_pool();
 
-    // cycle-15 Lane M (slug #3, PARTIAL / Q2 HOLD): the secret-bearing
-    // `Codex32String`/`Vec<Codex32String>`/`Vec<String>` bindings below
-    // (`secret_s`, `defining`, `distributed`) are `String`-backed foreign types
-    // in the dormant `codex32-0.1.0` crate with NO Drop/Zeroize — they CANNOT be
-    // wrapped in `Zeroizing` in-repo without vendoring/forking codex32 (out of
-    // scope this cycle; tracked by `rust-codex32-zeroize-upstream` +
-    // `codex32-upstream-dormant-vendor-vs-accept-decision`). What IS scrubbed:
-    // the `Vec<u8>` CSPRNG `filler` below stays `Zeroizing`. Lifetime-min: `secret_s`
-    // is consumed into `defining[0]` immediately (already minimal); the residual
-    // `String` surface is the `defining`/`distributed` vectors, dropped at fn return.
+    // cycle-15 Lane M (slug #3) — RESOLVED in Cycle-B: codex32 is now VENDORED
+    // (crate::codex32, shape A) and `Codex32String` derives `ZeroizeOnDrop`, so
+    // the secret-bearing `Codex32String` bindings below (`secret_s`, `defining`)
+    // auto-scrub their inner String on drop — no `Zeroizing` wrapper, they own
+    // their scrub. The `Vec<u8>` CSPRNG `filler` below also stays `Zeroizing`.
+    // The IRREDUCIBLE residue is `distributed: Vec<String>` — it is the function
+    // RETURN value (the wire form is `String`), so it MUST outlive the function
+    // and cannot be wrapped without changing the public return type. Per the
+    // caller-wrap contract (same discipline as `Payload::Entr(Vec<u8>)`,
+    // documented in payload.rs + enforced by lint_zeroize_discipline), the
+    // CALLER owns the scrub of the returned share strings. The `Codex32String`
+    // SOURCE of each `.to_string()` copy IS drop-scrubbed; only the `String`
+    // copy handed out is the caller's responsibility. (Honest, not papered over.)
     //
     // 1. secret-at-S carries the real payload at index `s`, threshold `k`.
     let secret_s = Codex32String::from_seed(HRP, k_usize, &id, Fe::S, &bytes[..])?;
@@ -309,11 +312,11 @@ pub fn combine_shares(shares: &[String]) -> Result<(Tag, Payload)> {
     // Payload KIND is the recovered prefix byte; the id is random → discard it
     // and always return Tag::ENTR (the kind lives in the Payload, NOT the tag).
     //
-    // cycle-15 Lane M (slug #3, PARTIAL / Q2 HOLD): `parsed`/`k_set` and the
-    // recovered `secret` are `Codex32String` (String-backed, no Drop — see the
-    // upstream-blocked note in `encode_shares`). The recovered secret WIRE BYTES
-    // are scrubbed below via the `Zeroizing<Vec<u8>>` wrap; the `Codex32String`
-    // `parsed` vector is dropped at fn return (lifetime already minimal).
+    // cycle-15 Lane M (slug #3) — RESOLVED in Cycle-B: `parsed`/`k_set` and the
+    // recovered `secret` are `Codex32String`, which now derives `ZeroizeOnDrop`
+    // (vendored codex32, shape A) — each scrubs its inner String when the `Vec`
+    // / binding drops at fn return. The recovered secret WIRE BYTES are also
+    // scrubbed below via the `Zeroizing<Vec<u8>>` wrap (belt-and-suspenders).
     let data: Zeroizing<Vec<u8>> = Zeroizing::new(secret.parts().data());
     let payload = dispatch_payload(&data)?;
     Ok((Tag::ENTR, payload))
