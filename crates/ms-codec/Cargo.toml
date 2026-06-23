@@ -16,7 +16,9 @@ categories = ["cryptography::cryptocurrencies"]
 # codex32 is vendored inline at src/codex32/ (Cycle-B, shape A; CC0-1.0) — no
 # external dep. Re-exported as `ms_codec::codex32::`.
 getrandom = "0.3"
-zeroize = "1.8"
+# `derive` feature: vendored `Codex32String` derives `zeroize::ZeroizeOnDrop`
+# (Cycle-B P2) to scrub its inner secret String on drop.
+zeroize = { version = "1.8", features = ["derive"] }
 
 [dev-dependencies]
 proptest = "1"

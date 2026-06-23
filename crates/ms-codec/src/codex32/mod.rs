@@ -126,12 +126,34 @@ pub enum Case {
 }
 
 /// A codex32 string, containing a valid checksum
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+///
+/// Cycle-B P2 (the ONLY behavioral change vs upstream): the inner secret
+/// `String` is scrubbed on drop via `zeroize::ZeroizeOnDrop`, and `Debug` is
+/// hand-rolled length-only (the upstream derived `Debug` echoed the full secret
+/// — the L22-class footgun). `Clone`/`PartialEq`/`Eq`/`Hash` are RETAINED
+/// (load-bearing: `interpolate_at`'s self-return clone, `combine_shares`'s
+/// `derived != parsed[j]` compare, source-compat). The encoding bodies are
+/// UNTOUCHED.
+#[derive(Clone, PartialEq, Eq, Hash, zeroize::ZeroizeOnDrop)]
 pub struct Codex32String(String);
 
 impl fmt::Display for Codex32String {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(&self.0, f)
+    }
+}
+
+impl fmt::Debug for Codex32String {
+    /// Redacting: NEVER echoes the secret string (the upstream derived `Debug`
+    /// leaked it). Length-only — enough to debug a length/shape bug, nothing of
+    /// the payload. The char-count is non-sensitive (ms1 lengths are a small
+    /// public set).
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Codex32String([REDACTED; {} chars])",
+            self.0.chars().count()
+        )
     }
 }
 
