@@ -9,8 +9,8 @@ use std::str::FromStr;
 
 use bip39::Mnemonic;
 use bitcoin::NetworkKind;
-use bitcoin::bip32::{DerivationPath, Xpriv, Xpub};
-use bitcoin::secp256k1::Secp256k1;
+use bitcoin::bip32::{DerivationPath, Fingerprint, Xpriv, Xpub};
+use bitcoin::secp256k1::{All, Secp256k1};
 use clap::Args;
 use zeroize::Zeroizing;
 
@@ -111,6 +111,90 @@ impl Net {
         match self {
             Net::Mainnet => "mainnet",
             Net::Testnet => "testnet",
+        }
+    }
+}
+
+/// Binary-private, move-only newtype confining a derived `Xpriv` (root/account
+/// PRIVATE key) and BEST-EFFORT byte-scrubbing it on drop. Mirrors the
+/// R0-blessed `ScrubbedXpriv` shipped in
+/// `mnemonic-toolkit/crates/mnemonic-toolkit/src/derive_slot.rs` (v0.70.0).
+///
+/// The inner `Xpriv` NEVER escapes: callers read only the PUBLIC projection
+/// (`xpub` / `fingerprint`) via `&self` accessors, and derive children via the
+/// `&self` `derive_priv` accessor (the parent never moves out; the returned
+/// child `Xpriv` is itself re-wrapped by the caller in a fresh `ScrubbedXpriv`).
+///
+/// SAFETY / best-effort caveat (upstream-blocked, tracked as
+/// `rust-bitcoin-xpriv-zeroize-upstream`): `bitcoin::bip32::Xpriv` is
+/// `#[derive(Copy)]` (and so is its `SecretKey`), so the compiler may have
+/// spilled transient bit-copies out of this newtype's reach;
+/// `SecretKey::non_secure_erase` is named "non_secure" for exactly that reason.
+/// This is mitigation, not a guaranteed wipe.
+//
+// DO NOT add Clone/Copy/into_inner/Deref<Xpriv> — re-opens the Copy-escape.
+// (The absence of `Clone`/`Copy` is pinned at compile time by the
+// `AmbiguousIfImpl<_>` `const _: fn()` block in `scrub_tests` below; `Copy` is
+// additionally E0184-blocked by `impl Drop`.)
+//
+// NO `#[derive(Debug)]`: ms-cli enables bitcoin's `std` feature, so a bare
+// `Xpriv` carries a `{:?}`-leaking derived `Debug`. Keeping the inner `Xpriv`
+// private + NOT deriving `Debug` here REMOVES that latent leak surface
+// (RULE Z-DEBUG; the same discipline the repo's
+// `repair_detail_does_not_derive_debug` lint enforces).
+struct ScrubbedXpriv(Xpriv);
+
+impl ScrubbedXpriv {
+    /// Take ownership of `xpriv` by value, confining it inside the move-only
+    /// wrapper. The scrub runs when the returned `ScrubbedXpriv` drops.
+    fn new(xpriv: Xpriv) -> Self {
+        ScrubbedXpriv(xpriv)
+    }
+
+    /// Read the PUBLIC xpub. `&self`-borrowing — the inner `Xpriv` never
+    /// escapes.
+    fn xpub(&self, secp: &Secp256k1<All>) -> Xpub {
+        Xpub::from_priv(secp, &self.0)
+    }
+
+    /// Read the master/account fingerprint. `&self`-borrowing.
+    fn fingerprint(&self, secp: &Secp256k1<All>) -> Fingerprint {
+        self.0.fingerprint(secp)
+    }
+
+    /// Derive a child `Xpriv` by value WITHOUT letting the parent escape. The
+    /// returned child is the value the caller re-wraps in a fresh
+    /// `ScrubbedXpriv` (this accessor itself does NOT scrub — it only delegates
+    /// to `self.0.derive_priv`).
+    fn derive_priv(
+        &self,
+        secp: &Secp256k1<All>,
+        path: &DerivationPath,
+    ) -> std::result::Result<Xpriv, bitcoin::bip32::Error> {
+        self.0.derive_priv(secp, path)
+    }
+}
+
+impl Drop for ScrubbedXpriv {
+    fn drop(&mut self) {
+        // 1) Scrub the spending secret. `SecretKey::non_secure_erase` is the
+        //    upstream best-effort erase (secp256k1 0.29.x); it overwrites the
+        //    32 secret bytes (to `[1u8; 32]`), destroying the key.
+        self.0.private_key.non_secure_erase();
+        // 2) VOLATILE zero-write over the 32 chain_code bytes. A plain
+        //    assignment would be a dead store the optimizer may elide since
+        //    `self` is dropping; `write_volatile` is guaranteed not elided.
+        //    `ChainCode::as_mut_ptr()` (bitcoin-internals `impl_array_newtype!`)
+        //    yields a `*mut u8` to the backing `[u8; 32]`.
+        let cc_ptr = self.0.chain_code.as_mut_ptr();
+        // SAFETY: `cc_ptr` points at a live, 32-byte, properly-aligned `[u8;
+        // 32]` owned by `self.0.chain_code` (we hold `&mut self`). Each
+        // in-bounds byte is written exactly once; `u8` has no invalid
+        // bit-patterns and no Drop, so volatile zero-writes are sound.
+        for i in 0..32 {
+            unsafe {
+                core::ptr::write_volatile(cc_ptr.add(i), 0u8);
+            }
         }
     }
 }
@@ -217,14 +301,24 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
     let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(passphrase.as_str()));
     let _seed_pin = crate::mlock::pin_pages_for(&seed[..]);
     let secp = Secp256k1::new();
-    // cycle-15 Lane M (slug #7, PARTIAL — upstream-blocked): `bitcoin::bip32::Xpriv`
-    // has NO `Zeroize`/`Drop` (rust-bitcoin), so `master`/`acct_xpriv` below are
-    // bare secrets we cannot scrub in-repo (tracked: `rust-bitcoin-xpriv-zeroize-
-    // upstream`). Mitigation = lifetime-min: `master` is consumed only to take the
-    // fingerprint + the single account derive, and `acct_xpriv` is dropped at the
-    // end of the `if let` block once its xpub is taken (the `seed` IS zeroized).
-    let master = Xpriv::new_master(args.network.kind(), &seed[..])
-        .map_err(|e| CliError::BadInput(format!("master derive: {e}")))?;
+    // Wave-2 ms lane (in-repo leg of `ms-cli-derive-xpriv-master-not-zeroized`):
+    // the derived `master`/`acct_xpriv` `Xpriv` values are confined in the
+    // binary-private move-only `ScrubbedXpriv` newtype below, whose `Drop` does
+    // a BEST-EFFORT byte-scrub (`SecretKey::non_secure_erase()` + a volatile
+    // chain_code zero-write). `master_fp`/`acct_xpub` are materialized
+    // (`.to_string()`) BEFORE either wrapper drops, so the output is byte-
+    // identical and the scrub only touches post-last-use private memory.
+    //
+    // CAVEAT (inherent, best-effort): `bitcoin::bip32::Xpriv` is upstream
+    // `#[derive(Copy)]` (and so is its `SecretKey`), so the compiler may have
+    // spilled transient bit-copies we cannot reach — exactly why secp256k1
+    // names its erase `non_secure_erase`. A CLEAN fix (a `Zeroize`/non-`Copy`
+    // `Xpriv`) is upstream-blocked, tracked as `rust-bitcoin-xpriv-zeroize-
+    // upstream`. The `seed` itself IS `Zeroizing` + mlock-pinned (above).
+    let master = ScrubbedXpriv::new(
+        Xpriv::new_master(args.network.kind(), &seed[..])
+            .map_err(|e| CliError::BadInput(format!("master derive: {e}")))?,
+    );
     let master_fp = master.fingerprint(&secp);
 
     let account: Option<(String, String)> = if let Some(t) = args.template {
@@ -235,10 +329,12 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
             args.account
         ))
         .map_err(|e| CliError::BadInput(format!("account path: {e}")))?;
-        let acct_xpriv = master
-            .derive_priv(&secp, &path)
-            .map_err(|e| CliError::BadInput(format!("account derive: {e}")))?;
-        let acct_xpub = Xpub::from_priv(&secp, &acct_xpriv);
+        let acct_xpriv = ScrubbedXpriv::new(
+            master
+                .derive_priv(&secp, &path)
+                .map_err(|e| CliError::BadInput(format!("account derive: {e}")))?,
+        );
+        let acct_xpub = acct_xpriv.xpub(&secp);
         Some((format!("m/{}'/{}'/{}'", t.purpose(), args.network.coin(), args.account), acct_xpub.to_string()))
     } else {
         None
@@ -284,4 +380,62 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
     // non-defaulted language. Coexists with the language-defaulted note above.
     emit_output_class_advisory(OutputClass::WatchOnly, &mut std::io::stderr().lock());
     Ok(0)
+}
+
+#[cfg(test)]
+mod scrub_tests {
+    use super::*;
+
+    // ========================================================================
+    // COMPILE-TIME move-only guard for `ScrubbedXpriv` (mirrors the toolkit's
+    // `derive_slot.rs` guard). `Copy` is E0184-blocked by `impl Drop`. `Clone`
+    // is deliberately NOT derived; this block makes a `Clone` impl a COMPILE
+    // ERROR. We cannot add `static_assertions` as a dep, and a `compile_fail`
+    // doctest does NOT run for this binary-private module, so this `const _:
+    // fn()` block is the load-bearing guard.
+    //
+    // Mechanics: two blanket `AmbiguousIfImpl` impls — one ALWAYS applies (the
+    // `()` anchor), one applies ONLY when `T: Clone` (the `Invalid` marker).
+    // The qualified call with an inferred `<_>` forces the compiler to UNIFY
+    // the type-arg; ambiguous ⇒ compile error IFF `ScrubbedXpriv: Clone`.
+    // ========================================================================
+    const _: fn() = || {
+        trait AmbiguousIfImpl<A> {
+            fn some_item() {}
+        }
+        impl<T> AmbiguousIfImpl<()> for T {}
+        struct Invalid;
+        impl<T: Clone> AmbiguousIfImpl<Invalid> for T {}
+
+        let _ = <ScrubbedXpriv as AmbiguousIfImpl<_>>::some_item;
+    };
+
+    /// Runtime drop-witness: build a known `Xpriv`, wrap it, assert the `&self`
+    /// accessor surface (`xpub` / `fingerprint` / `derive_priv`) matches the
+    /// bare upstream derivation of the same key, then let it drop (the scrub
+    /// runs at end of scope). We do NOT assert post-drop byte values — reading
+    /// scrubbed private memory is best-effort / UB-adjacent (the impl SAFETY
+    /// note explains the inherent Copy-spill caveat); this test pins the
+    /// accessor surface + that `Drop` runs, mirroring the toolkit's witness.
+    #[test]
+    fn scrubbed_xpriv_self_accessors_and_drop() {
+        let secp = Secp256k1::new();
+        let seed = [7u8; 32];
+        // `master` is `Copy` upstream — keeping a bare copy here is itself an
+        // independent witness of the Copy-spill caveat the scrub cannot defeat.
+        let master = Xpriv::new_master(NetworkKind::Main, &seed).unwrap();
+        let scrubbed = ScrubbedXpriv::new(master);
+
+        // Public projections match the bare upstream derivation.
+        assert_eq!(scrubbed.xpub(&secp), Xpub::from_priv(&secp, &master));
+        assert_eq!(scrubbed.fingerprint(&secp), master.fingerprint(&secp));
+
+        // The `&self` derive accessor matches bare upstream `derive_priv`.
+        let path = DerivationPath::from_str("m/84'/0'/0'").unwrap();
+        let child = scrubbed.derive_priv(&secp, &path).unwrap();
+        assert_eq!(child, master.derive_priv(&secp, &path).unwrap());
+
+        // `scrubbed` drops here → private_key.non_secure_erase() + volatile
+        // chain_code zero-write run. (Best-effort; see the impl SAFETY note.)
+    }
 }

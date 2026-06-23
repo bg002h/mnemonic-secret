@@ -4,6 +4,20 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.11.0] — 2026-06-22
+
+**SemVer-MINOR — secret-memory-hygiene: `ms derive` best-effort byte-scrubs the derived master/account `Xpriv` (Wave-2 ms lane).**
+
+### Changed
+
+- **`ms derive` now confines the two derived `Xpriv` values (root + account private keys) in a binary-private, move-only `ScrubbedXpriv` newtype** that BEST-EFFORT byte-scrubs on drop: `SecretKey::non_secure_erase()` over the spending key + a `write_volatile` zero-write over the 32 `chain_code` bytes. Mirrors the R0-blessed `ScrubbedXpriv` shipped in the toolkit (v0.70.0). `master_fingerprint` and `account_xpub` are materialized before either wrapper drops, so `ms derive` stdout and `--json` output are **byte-identical** before/after. The introduction of a named secret-confinement type makes this MINOR (consistent with the constellation's secret-type-migration precedent), even though the observable output is unchanged.
+- The newtype derives no `Debug` and keeps the inner `Xpriv` private, removing the latent `{:?}` Debug-leak surface a bare `Xpriv` carries under bitcoin's `std` feature (RULE Z-DEBUG).
+
+### Notes
+
+- This closes the **in-repo leg** of `ms-cli-derive-xpriv-master-not-zeroized`. The scrub is **best-effort**: `bitcoin::bip32::Xpriv` (and its `SecretKey`) are upstream `#[derive(Copy)]`, so the compiler may have spilled transient bit-copies the scrub cannot reach — which is why secp256k1 names its erase `non_secure_erase`. The CLEAN fix (a `Zeroize`/non-`Copy` `Xpriv`) is upstream-blocked and stays tracked as `rust-bitcoin-xpriv-zeroize-upstream`. The source seed remains `Zeroizing<[u8; 64]>` + mlock-pinned.
+- **No public API / CLI flag / output-shape change.** `ms-codec` is **not** bumped (the change is entirely in `crates/ms-cli`).
+
 ## ms-codec [0.6.0] — 2026-06-21
 
 **SemVer-MINOR — secret-memory-hygiene: `InspectReport` redacts + scrubs the entropy; `decode()` theater-clone removed (cycle-15 Lane M).**

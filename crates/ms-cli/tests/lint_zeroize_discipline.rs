@@ -110,6 +110,17 @@ const ZEROIZE_ROWS: &[ZeroizeRow] = &[
         source_file: "src/cmd/repair.rs",
         evidence: &["original_chunk: Zeroizing<String>"],
     },
+    // ---- derive.rs (Wave-2 ms lane: derived-Xpriv best-effort scrub) ----
+    ZeroizeRow {
+        // The derived master/account `Xpriv` values are confined in the
+        // binary-private move-only `ScrubbedXpriv` newtype; its `Drop` does a
+        // best-effort byte-scrub (`SecretKey::non_secure_erase()` +
+        // volatile chain_code zero-write). Closes the in-repo leg of
+        // `ms-cli-derive-xpriv-master-not-zeroized`.
+        label: "cmd/derive ScrubbedXpriv scrubs master/account Xpriv on drop (wave2)",
+        source_file: "src/cmd/derive.rs",
+        evidence: &["struct ScrubbedXpriv", "non_secure_erase()"],
+    },
 ];
 
 fn crate_root() -> &'static Path {
@@ -120,8 +131,8 @@ fn crate_root() -> &'static Path {
 fn canonical_list_has_expected_row_count() {
     let n = ZEROIZE_ROWS.len();
     assert_eq!(
-        n, 13,
-        "ZEROIZE_ROWS row count = {n}; expected 13 (survey §1 ms-cli table, post-R1 C-2 fold + cycle-15 Lane M: inspect-intake/repair-intake/repair-chunk-field rows; the verify row was re-pointed not added)."
+        n, 14,
+        "ZEROIZE_ROWS row count = {n}; expected 14 (survey §1 ms-cli table, post-R1 C-2 fold + cycle-15 Lane M: inspect-intake/repair-intake/repair-chunk-field rows, the verify row was re-pointed not added; + Wave-2 ms lane: the derive.rs ScrubbedXpriv derived-Xpriv scrub row)."
     );
 }
 

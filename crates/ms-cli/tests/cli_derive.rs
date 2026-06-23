@@ -187,3 +187,44 @@ fn inline_secret_argv_advisory() {
     let o = ms(&["derive", "--hex", ZEROS_HEX]);
     assert!(err(&o).contains("secret material on argv (--hex)"), "{}", err(&o));
 }
+
+/// Wave-2 ms lane (slug `ms-cli-derive-xpriv-master-not-zeroized`, in-repo
+/// leg) — the derived `master`/`acct_xpriv` `Xpriv` values are now confined in
+/// a binary-private move-only `ScrubbedXpriv` newtype that byte-scrubs on drop.
+/// `master_fingerprint` and `account_xpub` are materialized (`.to_string()`)
+/// BEFORE either wrapper drops, so the scrub is output-invisible. This pins the
+/// byte-identical-output invariant across the scrub rewire: a regression in the
+/// rewire (reading a stale/zeroed value, or moving the materialize past the
+/// scrub) surfaces here as a golden mismatch. Anchors on `MASTER_FP_EN` +
+/// `BIP84_ACCT_XPUB` (text + `--json`, fingerprint-only + account-xpub paths).
+#[test]
+fn scrub_rewire_leaves_output_byte_identical() {
+    // (a) fingerprint-only (text) — master fp unchanged.
+    let fp_text = ms(&["derive", "--hex", ZEROS_HEX, "--language", "english"]);
+    assert_eq!(code(&fp_text), 0, "{}", err(&fp_text));
+    assert!(
+        out(&fp_text).contains(&format!("master_fingerprint:  {MASTER_FP_EN}")),
+        "fingerprint-only text output changed by scrub rewire: {}",
+        out(&fp_text)
+    );
+
+    // (b) fingerprint-only (--json) — exact field value unchanged.
+    let fp_json = ms(&["derive", "--hex", ZEROS_HEX, "--language", "english", "--json"]);
+    let vj: serde_json::Value = serde_json::from_str(&out(&fp_json)).unwrap();
+    assert_eq!(vj["master_fingerprint"], MASTER_FP_EN);
+    assert!(vj.get("account_xpub").is_none(), "no account without --template: {}", out(&fp_json));
+
+    // (c) account-xpub bip84 (text) — both fp and account xpub unchanged.
+    let acct_text = ms(&["derive", "--hex", ZEROS_HEX, "--language", "english", "--template", "bip84"]);
+    assert_eq!(code(&acct_text), 0, "{}", err(&acct_text));
+    let at = out(&acct_text);
+    assert!(at.contains(MASTER_FP_EN), "account text fp changed: {at}");
+    assert!(at.contains(BIP84_ACCT_XPUB), "account xpub changed by scrub rewire: {at}");
+
+    // (d) account-xpub bip84 (--json) — exact field values unchanged.
+    let acct_json = ms(&["derive", "--hex", ZEROS_HEX, "--language", "english", "--template", "bip84", "--json"]);
+    let va: serde_json::Value = serde_json::from_str(&out(&acct_json)).unwrap();
+    assert_eq!(va["master_fingerprint"], MASTER_FP_EN);
+    assert_eq!(va["account_xpub"], BIP84_ACCT_XPUB);
+    assert_eq!(va["account_path"], "m/84'/0'/0'");
+}
