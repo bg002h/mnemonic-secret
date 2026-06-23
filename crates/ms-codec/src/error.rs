@@ -17,7 +17,13 @@ use std::fmt;
 /// break (the `Debug` IMPL is preserved; its exact output is not contractual).
 #[non_exhaustive]
 pub enum Error {
-    /// Upstream codex32 parse / checksum failure (delegated from rust-codex32).
+    /// codex32 parse / checksum failure, delegated from the vendored codex32
+    /// module (`crate::codex32::Error`; Cycle-B inlined the formerly-external
+    /// `codex32 = "=0.1.0"` crate). The variant NAME and field SHAPE are
+    /// unchanged from the external-dep era; only the inner type's crate-path
+    /// moved (`codex32::Error` → `crate::codex32::Error`) — a pre-1.0 breaking
+    /// change for any downstream matcher that named the old extern type (the
+    /// toolkit's friendly.rs is exactly such a matcher → its paired bump).
     Codex32(crate::codex32::Error),
     /// Mnem wordlist-language byte was not in the valid range 0..=9 (SPEC v0.2 §3).
     MnemUnknownLanguage(u8),
@@ -252,7 +258,8 @@ impl fmt::Debug for Error {
 
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        // crate::codex32::Error doesn't impl std::error::Error in v0.1.0; chain stops here.
+        // The vendored crate::codex32::Error does not impl std::error::Error
+        // (it didn't upstream either); the chain stops here.
         None
     }
 }
