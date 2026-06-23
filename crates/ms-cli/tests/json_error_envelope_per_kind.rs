@@ -1,7 +1,7 @@
 //! For each CliError `kind`, verify JSON-mode error output matches §5.4 schema.
 
 use assert_cmd::Command;
-use codex32::{Codex32String, Fe};
+use ms_codec::codex32::{Codex32String, Fe};
 use serde_json::Value;
 
 fn run_and_parse(args: &[&str]) -> Value {

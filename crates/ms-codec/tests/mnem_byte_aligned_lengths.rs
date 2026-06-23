@@ -2,7 +2,7 @@
 //! constructs through codex32 from_seed for ALL 5 entropy lengths. The earlier
 //! bit-aligned 4-bit layout failed sanity_check for N=20/24/32; this pins that
 //! the byte-aligned layout does not.
-use codex32::{Codex32String, Fe};
+use ms_codec::codex32::{Codex32String, Fe};
 
 #[test]
 fn mnem_byte_aligned_constructs_for_all_five_lengths() {

@@ -12,7 +12,7 @@
 //!
 //! BIP-93 spec: <https://github.com/bitcoin/bips/blob/master/bip-0093.mediawiki>
 
-use codex32::Codex32String;
+use ms_codec::codex32::Codex32String;
 use ms_codec::{decode, encode, Payload, Tag};
 
 /// BIP-93 §Test Vectors, vector 4: `leet` 256-bit single-share secret.

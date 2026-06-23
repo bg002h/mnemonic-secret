@@ -21,9 +21,9 @@
 //!
 //! `Fe` non-`s` index construction: `Fe::from_char(c)` over a fixed pool of
 //! bech32-alphabet chars (`qpzry9x8gf2tvdw0s3jn54khce6mua7l` minus `s`), taken in
-//! a fixed canonical order. `from_char` returns `Result<Fe, codex32::Error>`.
+//! a fixed canonical order. `from_char` returns `Result<Fe, ms_codec::codex32::Error>`.
 
-use codex32::{Codex32String, Fe};
+use ms_codec::codex32::{Codex32String, Fe};
 
 const HRP: &str = "ms";
 

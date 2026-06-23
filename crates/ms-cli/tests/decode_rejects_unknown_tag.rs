@@ -6,7 +6,7 @@
 //! (FormatViolation -> exit 2).
 
 use assert_cmd::Command;
-use codex32::{Codex32String, Fe};
+use ms_codec::codex32::{Codex32String, Fe};
 use predicates::prelude::*;
 
 #[test]

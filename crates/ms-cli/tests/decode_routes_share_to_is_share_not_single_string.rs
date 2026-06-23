@@ -17,7 +17,7 @@
 //! K-of-N share).
 
 use assert_cmd::Command;
-use codex32::{Codex32String, Fe};
+use ms_codec::codex32::{Codex32String, Fe};
 use predicates::prelude::*;
 
 /// A threshold=2 / index=A string is a genuine share; `decode` must route it to

@@ -26,6 +26,7 @@
 //! For v0.1 we never see long-checksum strings (rejected by SPEC §4 rule 9
 //! before this module is reached); `CHECKSUM_LEN_SHORT = 13` is hard-coded.
 
+use crate::codex32::{Codex32String, Fe};
 use crate::consts::{
     CHECKSUM_LEN_SHORT, HRP, MNEM_PREFIX, RESERVED_PREFIX, SEPARATOR, SHARE_INDEX_V01,
     THRESHOLD_V01,
@@ -33,7 +34,6 @@ use crate::consts::{
 use crate::error::{Error, Result};
 use crate::payload::Payload;
 use crate::tag::Tag;
-use codex32::{Codex32String, Fe};
 use zeroize::Zeroizing;
 
 /// Wire-position offsets relative to the separator index.
@@ -261,7 +261,7 @@ pub(crate) fn package(tag: Tag, payload: &Payload) -> Result<Codex32String> {
     let data: Zeroizing<Vec<u8>> = payload_wire_bytes(payload);
 
     // Delegate to rust-codex32. Always uses threshold=0, share=Fe::S.
-    // `?` leverages the From<codex32::Error> for Error impl in error.rs.
+    // `?` leverages the From<crate::codex32::Error> for Error impl in error.rs.
     Ok(Codex32String::from_seed(
         HRP,
         0,
@@ -387,7 +387,7 @@ mod tests_discriminate {
         let mut data = vec![0x00u8];
         data.extend_from_slice(&[0xAAu8; 16]);
         match Codex32String::from_seed(HRP, 1, "tst7", Fe::A, &data) {
-            Err(codex32::Error::InvalidThresholdN(1)) => {}
+            Err(crate::codex32::Error::InvalidThresholdN(1)) => {}
             other => panic!("expected InvalidThresholdN(1) from from_seed, got {other:?}"),
         }
 
@@ -407,7 +407,7 @@ mod tests_discriminate {
         assert!(
             matches!(
                 Codex32String::from_string(forged),
-                Err(codex32::Error::InvalidChecksum { .. })
+                Err(crate::codex32::Error::InvalidChecksum { .. })
             ),
             "a forged threshold-'1' char must fail the BCH checksum at from_string",
         );

@@ -10,12 +10,12 @@
 //! v0.1/mnem single-strings stay byte-identical: `encode_shares(tag, ZERO, 1, &p)`
 //! reduces to the exact `package()`/`encode()` construction (the Phase-0 gate).
 
+use crate::codex32::{Codex32String, Fe};
 use crate::consts::{HRP, RESERVED_ID_BLOCKLIST, SHARE_INDEX_V01};
 use crate::envelope::{dispatch_payload, extract_wire_fields, payload_wire_bytes, wire_string};
 use crate::error::{Error, Result};
 use crate::payload::Payload;
 use crate::tag::Tag;
-use codex32::{Codex32String, Fe};
 use zeroize::Zeroizing;
 
 /// The codex32 bech32 alphabet (32 chars). Index `s` (position 16) is the
@@ -227,7 +227,7 @@ pub fn combine_shares(shares: &[String]) -> Result<(Tag, Payload)> {
 
     if parsed.is_empty() {
         // No shares → surface as below-threshold (k unknown; report 1/0).
-        return Err(Error::Codex32(codex32::Error::ThresholdNotPassed {
+        return Err(Error::Codex32(crate::codex32::Error::ThresholdNotPassed {
             threshold: 1,
             n_shares: 0,
         }));
@@ -258,7 +258,7 @@ pub fn combine_shares(shares: &[String]) -> Result<(Tag, Payload)> {
     //    threshold, surfaced as ThresholdNotPassed.
     let k = (fields[0].0 - b'0') as usize;
     if parsed.len() < k {
-        return Err(Error::Codex32(codex32::Error::ThresholdNotPassed {
+        return Err(Error::Codex32(crate::codex32::Error::ThresholdNotPassed {
             threshold: k,
             n_shares: parsed.len(),
         }));
@@ -270,7 +270,7 @@ pub fn combine_shares(shares: &[String]) -> Result<(Tag, Payload)> {
         for j in (i + 1)..fields.len() {
             if fields[i].1 == fields[j].1 {
                 let idx = Fe::from_char(fields[i].1 as char).map_err(Error::Codex32)?;
-                return Err(Error::Codex32(codex32::Error::RepeatedIndex(idx)));
+                return Err(Error::Codex32(crate::codex32::Error::RepeatedIndex(idx)));
             }
         }
     }
@@ -362,11 +362,11 @@ mod tests {
 
     // --- encode_shares tests (Task 1.3) ---
 
+    use crate::codex32::{Codex32String, Fe};
     use crate::consts::RESERVED_PREFIX;
     use crate::encode::encode;
     use crate::payload::Payload;
     use crate::tag::Tag;
-    use codex32::{Codex32String, Fe};
 
     fn entr_p() -> Payload {
         Payload::Entr(vec![0xCDu8; 16])
@@ -535,7 +535,7 @@ mod tests {
         assert!(
             matches!(
                 err,
-                Error::Codex32(codex32::Error::ThresholdNotPassed { .. })
+                Error::Codex32(crate::codex32::Error::ThresholdNotPassed { .. })
             ),
             "expected ThresholdNotPassed, got {err:?}"
         );
@@ -549,7 +549,7 @@ mod tests {
         let dup = vec![shares[0].clone(), shares[0].clone()];
         assert!(matches!(
             combine_shares(&dup),
-            Err(Error::Codex32(codex32::Error::RepeatedIndex(_)))
+            Err(Error::Codex32(crate::codex32::Error::RepeatedIndex(_)))
         ));
     }
 
@@ -585,7 +585,10 @@ mod tests {
         let mixed = vec![set2[0].clone(), set3[1].clone()];
         let err = combine_shares(&mixed).unwrap_err();
         assert!(
-            matches!(err, Error::Codex32(codex32::Error::MismatchedThreshold(..))),
+            matches!(
+                err,
+                Error::Codex32(crate::codex32::Error::MismatchedThreshold(..))
+            ),
             "expected MismatchedThreshold, got {err:?}"
         );
     }

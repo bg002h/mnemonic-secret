@@ -13,7 +13,8 @@ keywords = ["bitcoin", "codex32", "bip93", "backup", "engraving"]
 categories = ["cryptography::cryptocurrencies"]
 
 [dependencies]
-codex32 = { workspace = true }
+# codex32 is vendored inline at src/codex32/ (Cycle-B, shape A; CC0-1.0) — no
+# external dep. Re-exported as `ms_codec::codex32::`.
 getrandom = "0.3"
 zeroize = "1.8"
 

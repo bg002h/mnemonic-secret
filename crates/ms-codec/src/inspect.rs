@@ -1,10 +1,10 @@
 //! Structural inspection of an ms1 string for debugging / future ms-cli.
 
+use crate::codex32::Codex32String;
 use crate::consts::MNEM_PREFIX;
 use crate::envelope;
 use crate::error::Result;
 use crate::tag::Tag;
-use codex32::Codex32String;
 use std::fmt;
 use zeroize::Zeroizing;
 
@@ -95,7 +95,7 @@ impl fmt::Debug for InspectReport {
 /// reserved-not-emitted tag, non-zero prefix byte) — caller can examine the
 /// fields to diagnose what's wrong. Still requires a valid BIP-93 parse.
 pub fn inspect(s: &str) -> Result<InspectReport> {
-    // `?` leverages From<codex32::Error> for Error.
+    // `?` leverages From<crate::codex32::Error> for Error.
     let c = Codex32String::from_string(s.to_string())?;
     // Canonical lowercase wire copy (BIP-173 uppercase QR form folds here;
     // codex32 already rejected mixed case). Lowercasing loses no diagnostic
@@ -170,7 +170,7 @@ mod tests {
         // A non-zero-prefix string: decode() rejects, inspect() returns the report.
         let mut data = vec![0x01u8];
         data.extend_from_slice(&[0xAAu8; 16]);
-        let c = Codex32String::from_seed("ms", 0, "entr", codex32::Fe::S, &data).unwrap();
+        let c = Codex32String::from_seed("ms", 0, "entr", crate::codex32::Fe::S, &data).unwrap();
         let r = inspect(&c.to_string()).unwrap();
         assert_eq!(r.prefix_byte, 0x01); // would fail decode rule 8, inspect surfaces it
     }

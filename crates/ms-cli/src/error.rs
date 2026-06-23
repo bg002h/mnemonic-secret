@@ -10,8 +10,8 @@ use crate::codex32_friendly::friendly_codex32;
 
 /// All CLI failure modes. `exit_code()` maps each to the SPEC §6 table.
 ///
-/// L5: `Debug` is hand-rolled (NOT derived) — `Codex32(codex32::Error)` carries
-/// the raw inner error, and `codex32::Error::InvalidChecksum { string }` echoes
+/// L5: `Debug` is hand-rolled (NOT derived) — `Codex32(ms_codec::codex32::Error)` carries
+/// the raw inner error, and `ms_codec::codex32::Error::InvalidChecksum { string }` echoes
 /// the full input ms1 (secret-equivalent). A derived Debug would leak it on any
 /// future `{:?}`/`unwrap`/`expect`/`panic`. The impl below delegates to the
 /// sanitized `kind()`+`message()` (`Codex32` → `friendly_codex32`, which drops
@@ -23,7 +23,7 @@ pub enum CliError {
     /// BIP-39 phrase parse / checksum failure.
     Bip39(bip39::Error),
     /// codex32 parse / BCH-checksum failure (delegated from ms_codec).
-    Codex32(codex32::Error),
+    Codex32(ms_codec::codex32::Error),
     /// String length not in v0.1 set (delegated from ms_codec).
     UnexpectedStringLength { got: usize },
     /// Payload byte length mismatch (delegated from ms_codec).
@@ -123,7 +123,7 @@ impl CliError {
 
 impl std::fmt::Debug for CliError {
     /// Hand-rolled (NOT derived) so Debug NEVER prints the raw inner error.
-    /// `codex32::Error::InvalidChecksum` carries the secret ms1 `string`; the
+    /// `ms_codec::codex32::Error::InvalidChecksum` carries the secret ms1 `string`; the
     /// derived Debug would leak it. `kind()` is a stable non-secret discriminant;
     /// `message()` is sanitized (Codex32 → `friendly_codex32`, which drops
     /// `InvalidChecksum.string`).
@@ -417,10 +417,10 @@ mod tests {
 
     #[test]
     fn debug_does_not_echo_codex32_invalid_checksum_secret() {
-        // codex32::Error::InvalidChecksum.string carries the full input ms1
+        // ms_codec::codex32::Error::InvalidChecksum.string carries the full input ms1
         // (secret-equivalent). The derived Debug would leak it; the hand-rolled
         // Debug delegates to the sanitized kind()+message().
-        let e = CliError::Codex32(codex32::Error::InvalidChecksum {
+        let e = CliError::Codex32(ms_codec::codex32::Error::InvalidChecksum {
             checksum: "long",
             string: "ms1secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".into(),
         });
@@ -446,7 +446,7 @@ mod tests {
         // M-4 forward-looking hardening: a non-InvalidChecksum codex32 arm also
         // must not echo input through Debug. InvalidChar carries only a single
         // structural char, never the full secret.
-        let e = CliError::Codex32(codex32::Error::InvalidChar('!'));
+        let e = CliError::Codex32(ms_codec::codex32::Error::InvalidChar('!'));
         let dbg = format!("{:?}", e);
         assert!(dbg.contains("Codex32"), "sanitized kind present: {dbg}");
         assert!(!dbg.is_empty());
@@ -455,7 +455,7 @@ mod tests {
     #[test]
     fn codex32_share_errors_route_through_friendly() {
         // ThresholdNotPassed surfaces via Error::Codex32 → friendly_codex32.
-        let e: CliError = ms_codec::Error::Codex32(codex32::Error::ThresholdNotPassed {
+        let e: CliError = ms_codec::Error::Codex32(ms_codec::codex32::Error::ThresholdNotPassed {
             threshold: 3,
             n_shares: 1,
         })

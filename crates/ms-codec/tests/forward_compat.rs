@@ -2,7 +2,7 @@
 //! 0x00 → Entr, 0x02 → Mnem (v0.2); all other non-zero prefixes →
 //! Error::ReservedPrefixViolation.
 
-use codex32::{Codex32String, Fe};
+use ms_codec::codex32::{Codex32String, Fe};
 use ms_codec::{decode, encode, Error, Payload, PayloadKind, Tag};
 
 #[test]

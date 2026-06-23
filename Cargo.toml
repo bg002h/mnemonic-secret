@@ -9,5 +9,7 @@ repository = "https://github.com/bg002h/mnemonic-secret"
 homepage = "https://github.com/bg002h/mnemonic-secret"
 rust-version = "1.85"
 
+# codex32 is no longer an external dependency — it is vendored inline into
+# ms-codec at crates/ms-codec/src/codex32/ (Cycle-B, shape A; CC0-1.0). Consumers
+# reach it via `ms_codec::codex32::`.
 [workspace.dependencies]
-codex32 = "=0.1.0"

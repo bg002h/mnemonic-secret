@@ -21,7 +21,6 @@ ms-codec = { path = "../ms-codec", version = "=0.6.0" }
 bip39 = { version = "2", features = ["all-languages"] }
 bitcoin = "0.32"
 clap = { version = "4", features = ["derive"] }
-codex32 = { workspace = true }
 hex = "0.4"
 libc = "0.2"
 serde = { version = "1", features = ["derive"] }
@@ -31,5 +30,5 @@ zeroize = "1.8"
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
-# codex32 is a runtime dep (above) — accessible to tests transitively. No
-# separate dev-dep entry needed.
+# codex32 is vendored inside ms-codec (Cycle-B, shape A); tests reach it via the
+# `ms_codec::codex32::` re-export — no separate codex32 dep.

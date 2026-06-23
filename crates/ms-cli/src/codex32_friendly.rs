@@ -1,12 +1,12 @@
-//! Friendly human-readable messages for `codex32::Error` variants.
+//! Friendly human-readable messages for `ms_codec::codex32::Error` variants.
 //!
 //! Realizes SPEC §6.2. Stable since `codex32 = "=0.1.0"` is exact-pinned;
-//! see `/tmp/codex32-extract/codex32-0.1.0/src/lib.rs:42-83` for the variant
+//! see `ms-codec/src/codex32/mod.rs (vendored, Cycle-B)` for the variant
 //! source.
 
-use codex32::Error;
+use ms_codec::codex32::Error;
 
-/// Map each `codex32::Error` variant to a one-line user-facing message.
+/// Map each `ms_codec::codex32::Error` variant to a one-line user-facing message.
 pub fn friendly_codex32(e: &Error) -> String {
     match e {
         Error::Field(fe) => format!("invalid bech32 character: {:?}", fe),

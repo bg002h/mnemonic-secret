@@ -1,7 +1,7 @@
 //! Inspect on non-zero-prefix string → verdict FAIL with rule 8.
 
 use assert_cmd::Command;
-use codex32::{Codex32String, Fe};
+use ms_codec::codex32::{Codex32String, Fe};
 use predicates::prelude::*;
 
 fn build_with_prefix_0x01() -> String {

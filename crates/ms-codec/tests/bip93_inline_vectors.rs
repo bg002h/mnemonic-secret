@@ -38,7 +38,7 @@
 //! SPEC: `mnemonic-toolkit/design/SPEC_test_vector_audit_v0_8_0.md` §2.
 //! Phase: 2.
 
-use codex32::Codex32String;
+use ms_codec::codex32::Codex32String;
 
 // ─── Valid vectors ────────────────────────────────────────────────────────
 

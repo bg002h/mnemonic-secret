@@ -2,7 +2,7 @@
 //! ms1 string that violates exactly one rule and asserts the corresponding
 //! Error variant.
 
-use codex32::{Codex32String, Fe};
+use ms_codec::codex32::{Codex32String, Fe};
 use ms_codec::{decode, Error};
 
 const VALID_PREFIX: u8 = 0x00;

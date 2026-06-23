@@ -1,7 +1,7 @@
 //! Inspect on string with multiple violations reports both, sorted by rule number.
 
 use assert_cmd::Command;
-use codex32::{Codex32String, Fe};
+use ms_codec::codex32::{Codex32String, Fe};
 
 #[test]
 fn inspect_multiple_failures_sorted() {

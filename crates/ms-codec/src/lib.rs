@@ -39,6 +39,7 @@
 
 pub mod bch;
 pub mod bch_decode;
+pub mod codex32; // vendored BIP-93 codex32 (CC0, inlined; see src/codex32/ + LICENSE)
 pub mod consts;
 pub mod decode;
 pub mod encode;

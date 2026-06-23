@@ -9,7 +9,7 @@ use std::fmt;
 /// `Debug` of this type can echo ≥8 contiguous chars of secret input
 /// (`ms-codec-error-display-echoes-input`, 0.4.4). A derived `Debug` would
 /// print every field — including the raw input carried by the inner
-/// `codex32::Error` (`InvalidChecksum`/`MismatchedHrp`/`MismatchedId`) and the
+/// `crate::codex32::Error` (`InvalidChecksum`/`MismatchedHrp`/`MismatchedId`) and the
 /// `WrongHrp.got` HRP — so it is replaced by a delegation to the sanitized
 /// `Display`. This is load-bearing for downstream `#[derive(Debug)]` wrappers
 /// (toolkit `ToolkitError`/`CliError`) whose `{:?}` transitively renders this
@@ -18,7 +18,7 @@ use std::fmt;
 #[non_exhaustive]
 pub enum Error {
     /// Upstream codex32 parse / checksum failure (delegated from rust-codex32).
-    Codex32(codex32::Error),
+    Codex32(crate::codex32::Error),
     /// Mnem wordlist-language byte was not in the valid range 0..=9 (SPEC v0.2 §3).
     MnemUnknownLanguage(u8),
     /// HRP was not "ms" (SPEC §4 rule 2).
@@ -149,13 +149,13 @@ impl fmt::Display for Error {
             // ≤1 echoed char < the 8-char window) and are rendered structurally
             // via `{:?}` on the inner error AFTER the 3 leaky arms are peeled off.
             Error::Codex32(e) => match e {
-                codex32::Error::InvalidChecksum { checksum, .. } => {
+                crate::codex32::Error::InvalidChecksum { checksum, .. } => {
                     write!(f, "invalid {checksum} checksum (input withheld)")
                 }
-                codex32::Error::MismatchedHrp(..) => {
+                crate::codex32::Error::MismatchedHrp(..) => {
                     write!(f, "mismatched HRP across shares")
                 }
-                codex32::Error::MismatchedId(..) => {
+                crate::codex32::Error::MismatchedId(..) => {
                     write!(f, "mismatched ID across shares")
                 }
                 // Safe variants only reach here (the 3 leaky ones are peeled off
@@ -242,7 +242,7 @@ impl fmt::Display for Error {
 impl fmt::Debug for Error {
     /// Hand-rolled to match `Display`'s sanitization — see the type doc.
     /// Delegates to the (non-echoing) `Display` so the leaky inner
-    /// `codex32::Error` String fields and the (already construction-bounded)
+    /// `crate::codex32::Error` String fields and the (already construction-bounded)
     /// `WrongHrp.got` can never reach a derived field dump. Wrapped as
     /// `Error("…")` so the output still reads as a debug value.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -252,13 +252,13 @@ impl fmt::Debug for Error {
 
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        // codex32::Error doesn't impl std::error::Error in v0.1.0; chain stops here.
+        // crate::codex32::Error doesn't impl std::error::Error in v0.1.0; chain stops here.
         None
     }
 }
 
-impl From<codex32::Error> for Error {
-    fn from(e: codex32::Error) -> Self {
+impl From<crate::codex32::Error> for Error {
+    fn from(e: crate::codex32::Error) -> Self {
         Error::Codex32(e)
     }
 }
@@ -339,7 +339,10 @@ mod no_echo_tests {
         let e = decode(&flipped).unwrap_err();
         // Must be the leaky Codex32(InvalidChecksum) arm.
         assert!(
-            matches!(e, Error::Codex32(codex32::Error::InvalidChecksum { .. })),
+            matches!(
+                e,
+                Error::Codex32(crate::codex32::Error::InvalidChecksum { .. })
+            ),
             "expected Codex32(InvalidChecksum), got {e:?}"
         );
         // The secret is the data-part of the flipped string (after `ms1`).
@@ -351,7 +354,7 @@ mod no_echo_tests {
     /// secret string — the construction-side red-first cell.
     #[test]
     fn codex32_invalid_checksum_constructed_does_not_leak() {
-        let e = Error::Codex32(codex32::Error::InvalidChecksum {
+        let e = Error::Codex32(crate::codex32::Error::InvalidChecksum {
             checksum: "short",
             string: format!("ms1{SECRET_50}"),
         });
@@ -380,7 +383,7 @@ mod no_echo_tests {
     /// (3) `Codex32(MismatchedHrp)` constructed directly with secret strings.
     #[test]
     fn codex32_mismatched_hrp_does_not_leak() {
-        let e = Error::Codex32(codex32::Error::MismatchedHrp(
+        let e = Error::Codex32(crate::codex32::Error::MismatchedHrp(
             SECRET_50.to_string(),
             SECRET_50.to_string(),
         ));
@@ -390,7 +393,7 @@ mod no_echo_tests {
     /// (4) `Codex32(MismatchedId)` constructed directly with secret strings.
     #[test]
     fn codex32_mismatched_id_does_not_leak() {
-        let e = Error::Codex32(codex32::Error::MismatchedId(
+        let e = Error::Codex32(crate::codex32::Error::MismatchedId(
             SECRET_50.to_string(),
             SECRET_50.to_string(),
         ));

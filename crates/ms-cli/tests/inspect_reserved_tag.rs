@@ -1,7 +1,7 @@
 //! Inspect on string with id="seed" → verdict FAIL with rule 7.
 
 use assert_cmd::Command;
-use codex32::{Codex32String, Fe};
+use ms_codec::codex32::{Codex32String, Fe};
 use predicates::prelude::*;
 
 #[test]

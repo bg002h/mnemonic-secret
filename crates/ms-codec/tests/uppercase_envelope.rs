@@ -15,7 +15,7 @@
 //!   GREEN (characterization of the pristine-fails/corrupted-repairs
 //!   asymmetry's repaired leg).
 
-use codex32::{Codex32String, Fe};
+use ms_codec::codex32::{Codex32String, Fe};
 use ms_codec::error::Error;
 use ms_codec::{
     combine_shares, decode, decode_with_correction, encode, encode_shares, inspect, Payload, Tag,
@@ -150,7 +150,7 @@ fn u4_mixed_case_within_one_string_still_rejects() {
     assert!(
         matches!(
             decode(&mixed),
-            Err(Error::Codex32(codex32::Error::InvalidCase(..)))
+            Err(Error::Codex32(ms_codec::codex32::Error::InvalidCase(..)))
         ),
         "within-one-string mixed case must stay InvalidCase on decode"
     );
@@ -162,7 +162,10 @@ fn u4_mixed_case_within_one_string_still_rejects() {
     bad.replace_range(0..1, "M");
     let res = combine_shares(&[bad, shares[1].clone()]);
     assert!(
-        matches!(res, Err(Error::Codex32(codex32::Error::InvalidCase(..)))),
+        matches!(
+            res,
+            Err(Error::Codex32(ms_codec::codex32::Error::InvalidCase(..)))
+        ),
         "within-one-string mixed case must stay InvalidCase on combine; got {res:?}"
     );
 }

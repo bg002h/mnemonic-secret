@@ -1,7 +1,7 @@
 //! Verify on string with reserved-not-emitted tag → exit 3.
 
 use assert_cmd::Command;
-use codex32::{Codex32String, Fe};
+use ms_codec::codex32::{Codex32String, Fe};
 use predicates::prelude::*;
 
 #[test]

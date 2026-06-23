@@ -8,6 +8,7 @@
 //! spec, so there is no atomic-multi-chunk variant (cf. md-codec's
 //! per-chunk-set version).
 
+use crate::codex32::Codex32String;
 use crate::consts::{
     RESERVED_NOT_EMITTED_V01, TAG_ENTR, VALID_MNEM_STR_LENGTHS, VALID_STR_LENGTHS,
 };
@@ -15,7 +16,6 @@ use crate::envelope;
 use crate::error::{Error, Result};
 use crate::payload::{Payload, PayloadKind};
 use crate::tag::Tag;
-use codex32::Codex32String;
 
 /// Union of all emittable string lengths (entr ∪ mnem). Used as the
 /// pre-dispatch gate in `decode` before kind-specific binding.
@@ -144,7 +144,7 @@ const HRP_PREFIX: &str = "ms1";
 /// returned symbol count includes the 13-symbol BCH checksum tail.
 ///
 /// Returns [`Error::WrongHrp`] if the string does not start with `ms1`,
-/// or [`Error::Codex32`] (via a `codex32::Error::InvalidChar`) if any
+/// or [`Error::Codex32`] (via a `crate::codex32::Error::InvalidChar`) if any
 /// data-part character is not in the codex32 alphabet.
 fn parse_ms1_symbols(s: &str) -> Result<Vec<u8>> {
     let lower = s.to_ascii_lowercase();
@@ -174,7 +174,7 @@ fn parse_ms1_symbols(s: &str) -> Result<Vec<u8>> {
     let rest = &lower[HRP_PREFIX.len()..];
     let mut symbols: Vec<u8> = Vec::with_capacity(rest.len());
     // Non-alphabet characters can't appear in a valid v0.1 string. We
-    // can't fabricate a `codex32::Error` value here (the upstream crate
+    // can't fabricate a `crate::codex32::Error` value here (the upstream crate
     // doesn't expose a constructor for `InvalidChar`), so we use
     // `UnexpectedStringLength` as a stand-in: the existing `decode` path
     // would have rejected the string for the same reason on a different
@@ -370,7 +370,7 @@ mod tests {
         // The string-length check passes; tag-rule 7 fails.
         let mut data = vec![0x00u8];
         data.extend_from_slice(&[0xAAu8; 16]);
-        let c = Codex32String::from_seed("ms", 0, "seed", codex32::Fe::S, &data).unwrap();
+        let c = Codex32String::from_seed("ms", 0, "seed", crate::codex32::Fe::S, &data).unwrap();
         let s = c.to_string();
         assert_eq!(s.len(), 50, "expected str.len 50 for 16-B + prefix");
         assert!(matches!(

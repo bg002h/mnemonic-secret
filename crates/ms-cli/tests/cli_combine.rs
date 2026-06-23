@@ -194,9 +194,10 @@ fn combine_secret_share_index_s_rejected() {
     };
     let mut data = vec![0x00u8];
     data.extend_from_slice(&[0x00u8; 16]);
-    let secret_s = codex32::Codex32String::from_seed("ms", 2, &id, codex32::Fe::S, &data)
-        .unwrap()
-        .to_string();
+    let secret_s =
+        ms_codec::codex32::Codex32String::from_seed("ms", 2, &id, ms_codec::codex32::Fe::S, &data)
+            .unwrap()
+            .to_string();
     Command::cargo_bin("ms")
         .unwrap()
         .args(["combine", &secret_s, &shares[0]])
