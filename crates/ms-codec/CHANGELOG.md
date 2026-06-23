@@ -4,6 +4,30 @@ All notable changes to the `ms-codec` crate are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-06-23
+
+**MINOR (secret-memory-hygiene + dep-ownership) — codex32 is now VENDORED inline; `Codex32String` scrubs on drop + redacts Debug; the external `codex32` dep is dropped. Wire format BYTE-IDENTICAL. Cycle-B.**
+
+This release inlines the formerly-external `codex32 = "=0.1.0"` (CC0-1.0, Andrew Poelstra) as a crate-owned `pub mod codex32`, so ms-codec owns the BCH-Shamir primitives and can apply the secret-hygiene fixes the dormant upstream crate could not carry.
+
+### Added
+
+- **`pub mod codex32`** — the three runtime modules of `codex32-0.1.0` (`lib.rs`/`field.rs`/`checksum.rs`) vendored byte-identical under `src/codex32/` (CC0 LICENSE retained verbatim + attribution header). Re-exports `Codex32String`/`Fe`/`Error`/`Parts`/`ChecksumEngine` (same public surface as the upstream crate; `checksum`/`field` stay private submodules).
+
+### Changed (breaking, public API → MINOR)
+
+- **`Error::Codex32`'s inner type moves `codex32::Error` → `crate::codex32::Error`** (variant name + field shape preserved; only the crate-path moved). A downstream matcher that named the old extern type must re-point to `ms_codec::codex32::Error` — the pre-1.0 break.
+- **`codex32::Codex32String` now derives `zeroize::ZeroizeOnDrop`** (scrubs its inner secret String on drop) and **`Debug` is hand-rolled length-only** (`Codex32String([REDACTED; N chars])`; the upstream derived Debug echoed the full secret). `Clone`/`PartialEq`/`Eq`/`Hash` retained.
+
+### Removed
+
+- **External `codex32` dependency** dropped from the workspace + ms-codec + ms-cli (consumers reach it via `ms_codec::codex32::`).
+
+### Notes
+
+- **Wire format BYTE-IDENTICAL** — the encoding paths (`from_seed`/`from_string`/`interpolate_at`/`Parts::data`/`checksum`/`field`) are copied with ZERO behavioral edits; proven by the new `codex32_vendor_parity.rs` gate (BIP-93-published strings + a pre-vendor `from_seed` golden) re-run AFTER the Zeroize/Debug change.
+- **Share-string leg RESOLVED** (was PARTIAL in 0.6.0). The share-spine `Codex32String` bindings auto-drop-scrub; the irreducible `distributed: Vec<String>` return-value residue is documented under the caller-wrap contract and anchored by the `lint_zeroize_discipline` floor bump (4→5).
+
 ## [0.6.0] — 2026-06-21
 
 **MINOR (secret-memory-hygiene) — `InspectReport` redacts + scrubs the decoded entropy; `decode()` theater-clone removed. Wire format UNCHANGED. Cycle-15 Lane M.**
