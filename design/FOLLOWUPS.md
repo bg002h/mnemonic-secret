@@ -71,10 +71,15 @@ Single source of truth for items that surfaced during a review or implementation
 ### `ms-codec-no-ci-workflow` — add CI (test + clippy + fmt) for both crates + a one-time fmt normalization
 
 - **Surfaced:** 2026-06-01, ms `mnem` v0.2 cycle (Phase 0 spike + every phase gate).
-- **Where:** `.github/workflows/` — the only workflow is `rust.yml`, scoped to `crates/ms-cli/**` and with **no `fmt` step**. `ms-codec` has **no CI at all**.
+- **Where:** `.github/workflows/` — two workflows now (`rust.yml` + `fuzz-smoke.yml`). `rust.yml` was scoped to `crates/ms-cli/**` with **no `fmt` step**, and `ms-codec` had **no CI at all**.
 - **What:** (a) Add a workflow that runs `cargo test --no-fail-fast`, `cargo clippy --all-targets -- -D warnings`, and `cargo +stable fmt --check --all` across **both** crates on push/PR. The `mnem` cycle's only gate was local verification because of this gap. (b) Before the `fmt --check` step can pass, the repo needs a one-time repo-wide normalization: `cargo +stable fmt --all` currently rewrites ~16 pre-existing files (across `ms-codec` and `ms-cli`, drift accumulated from the prior advisory cycle). Land that as a standalone `chore(fmt)` commit FIRST — do **not** bundle it into a feature cycle (the `mnem` cycle deliberately wrote fmt-clean-by-hand and skipped the fmt gate to avoid pulling that churn in).
 - **Why deferred:** out of scope for the `mnem` feature; the local gate (full suite + clippy at every phase) was sufficient for this cycle. CI hardening is its own small cycle.
-- **Status:** open
+- **Status:** ✓ RESOLVED (CI added + fmt-normalized; NO-BUMP; `5ba05c6` chore-fmt + this CI commit) — Wave-3 lane W3-7 per `design/SPEC_wave3_ms_codec_ci.md` (R0 GREEN 0C/0I). Resolution:
+  - (a) **chore(fmt)** normalized **43 non-mlock files** (ms-codec 8 src + 7 tests; ms-cli 10 src + 18 tests) via `cargo +1.95.0 fmt --all` + `git checkout -- crates/ms-cli/src/mlock.rs` (mlock.rs kept g6-synced/unformatted). Landed standalone FIRST.
+  - (b) **ci** extended `.github/workflows/rust.yml` with three NEW jobs: `fmt` (pinned 1.95.0, mlock.rs carve-out — `grep -v '/mlock\.rs$'` over `Diff in` headers, copied verbatim from the toolkit's gate), `test-ms-codec` (`cargo test -p ms-codec`), `clippy-ms-codec` (`cargo clippy -p ms-codec --all-targets -- -D warnings`). The `--all` fmt job covers ms-cli with the SAME carve-out (no separate ms-cli fmt step needed). Path filter widened to `crates/ms-codec/**` on both push + pull_request so the new ms-codec jobs actually fire.
+  - (c) ms-codec's 19 test binaries now run in CI for the FIRST time.
+  - (d) The `~16 files` estimate above was stale — the actual 1.95.0/rustfmt-1.9.0-stable scope is **43 non-mlock files**, matching the toolkit's Wave-1 `toolkit-rustfmt-1-95-0-rebaseline-divergence` chore (this lane is its sibling).
+  - NO-BUMP (ms-codec 0.6.0 + ms-cli 0.11.0; pure whitespace + CI, no public API/CLI/wire change). `mlock-rs-fmt-exempt` / `mlock-g4-a-page-count-assert-flake` remain deferred to the next ms-cli g6-pin tag (mlock.rs intentionally NOT reformatted here).
 - **Tier:** `v0.1-nice-to-have`
 
 ### `ms-codec-decode-with-correction-public-api` — promote `decode_with_correction` for downstream BCH consumers
