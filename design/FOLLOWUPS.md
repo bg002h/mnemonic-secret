@@ -202,6 +202,15 @@ Single source of truth for items that surfaced during a review or implementation
 - **Status:** `open` (strategic decision, no urgency — we are not exposed to a live bug).
 - **Tier:** `external`
 
+### `codex32-error-enum-redacting-debug-defense-in-depth` — vendored `codex32::Error` keeps the upstream derived `Debug`; 3 variants carry the full ms1 string (NOT reachable today; redacting Debug would be defense-in-depth at the cost of the byte-identical-vendor invariant)
+
+- **Surfaced:** 2026-06-23, Cycle-B post-impl review (vendored-codex32 secret-hygiene sweep, the `Codex32String` drop-scrub fold).
+- **Where:** `crates/ms-codec/src/codex32/mod.rs` — `#[derive(Debug)]` on `pub enum Error` (mod.rs:69). Three variants embed the full ms1 string: `InvalidChecksum { checksum, string }` (mod.rs:86), `MismatchedHrp(String, String)` (mod.rs:102), `MismatchedId(String, String)` (mod.rs:106).
+- **What:** Unlike the sibling `Codex32String` (which Cycle-B gave a hand-rolled length-only `Debug`), the vendored `codex32::Error` retains upstream's *derived* `Debug`, so a bare `{:?}` of one of those 3 variants would echo the full secret-bearing string. **This leak is NOT reachable today**, verified four ways: (1) the wrapper `ms_codec::Error::Codex32(_)`'s `Display` peels all 3 leaky arms before its `{safe:?}` fallback (`crates/ms-codec/src/error.rs:157-169`) and the `Debug` impl routes through the same redaction; (2) the toolkit's `friendly_ms_codec` + ms-cli surfaces redact (no bare `{:?}` of a leaky inner variant escapes); (3) no bare `{:?}` of the inner `codex32::Error` exists in `src/`; (4) the `no_echo` / Debug-redaction tests (`codex32_zeroize_debug.rs`, `inspect_report_debug_redaction.rs`, the error-Display redaction cells) prove no ≥8-char secret window reaches any surface.
+- **Why deferred (by choice, NOT a defect):** Hand-rolling a redacting `Debug` on `codex32::Error` would be belt-and-suspenders defense-in-depth (it would harden against a *future* code path that `{:?}`-prints a raw inner variant before the wrapper peels it). But the Cycle-B vendor invariant is **byte-identical to upstream codex32-0.1.0 except for the two documented `Codex32String` edits** (the `ZeroizeOnDrop` derive + the redacting `Codex32String` Debug); adding a third hand-rolled impl on `Error` diverges further from that audited-against-upstream baseline. The redaction is therefore enforced at the wrapper boundary (where it is load-bearing and tested) rather than on the vendored type itself. A future cycle could revisit this trade if the vendor-divergence budget is reopened.
+- **Status:** `open` (catalog — defense-in-depth, deferred-by-choice; no reachable defect today).
+- **Tier:** `external` (vendored-upstream surface).
+
 ### `md-mk-private-key-surface-watch` — reopen md/mk Cycle A participation if either repo grows a private-key surface
 
 - **Surfaced:** 2026-05-13, v0.9.0 Cycle A Phase 3 hygiene-matrix R1 (Opus, finding C-1). SPEC §3 `OOS-md-mk` class.

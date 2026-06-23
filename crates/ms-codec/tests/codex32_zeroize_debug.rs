@@ -68,3 +68,19 @@ fn debug_reports_a_plausible_length_only() {
         "expected the public char-count {len} in Debug: {dbg}"
     );
 }
+
+/// Compile-time gate: `Codex32String` MUST stay `zeroize::ZeroizeOnDrop`.
+///
+/// Why a dedicated bound-assert rather than relying on the zeroize-discipline
+/// lint: that lint's `Codex32String` row uses an `.any()` evidence-anchor over
+/// `["zeroize::ZeroizeOnDrop", "impl fmt::Debug for Codex32String"]`, so
+/// removing JUST the `ZeroizeOnDrop` derive (while keeping the redacting Debug)
+/// would still satisfy the second anchor and the lint would stay GREEN. The
+/// drop-scrub guarantee was therefore not independently gated. This assert
+/// makes it independent: if the derive is ever removed, the trait bound fails
+/// to resolve and the test crate fails to COMPILE (RED).
+#[test]
+fn codex32_string_is_zeroize_on_drop() {
+    fn _assert_zod<T: zeroize::ZeroizeOnDrop>() {}
+    _assert_zod::<ms_codec::codex32::Codex32String>();
+}
