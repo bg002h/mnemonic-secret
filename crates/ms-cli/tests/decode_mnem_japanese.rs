@@ -59,8 +59,8 @@ fn decode_mnem_wrong_language_arg_wire_wins_with_warning() {
         .assert()
         .success()
         .stdout(predicate::str::contains(&phrase)) // wire language (japanese) phrase
-        .stderr(predicate::str::contains("japanese"))  // warning names wire language
-        .stderr(predicate::str::contains("english"));  // warning names user-supplied language
+        .stderr(predicate::str::contains("japanese")) // warning names wire language
+        .stderr(predicate::str::contains("english")); // warning names user-supplied language
 }
 
 /// (c) Existing entr string decoded → unchanged (English default, no wire-wins warning).
@@ -68,7 +68,10 @@ fn decode_mnem_wrong_language_arg_wire_wins_with_warning() {
 fn decode_entr_string_unchanged() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["decode", "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f"])
+        .args([
+            "decode",
+            "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("abandon abandon"))

@@ -32,16 +32,37 @@ fn inspect_share_text_reports_kind_share_no_fail() {
         .stdout
         .clone();
     let text = String::from_utf8(out).unwrap();
-    assert!(text.contains("kind: share"), "expected 'kind: share' in:\n{text}");
-    assert!(text.contains("threshold: 2"), "expected 'threshold: 2' in:\n{text}");
+    assert!(
+        text.contains("kind: share"),
+        "expected 'kind: share' in:\n{text}"
+    );
+    assert!(
+        text.contains("threshold: 2"),
+        "expected 'threshold: 2' in:\n{text}"
+    );
     assert!(text.contains("tst7"), "expected the id in:\n{text}");
-    assert!(text.contains("index: p") || text.contains("share_index: p"), "expected index p in:\n{text}");
+    assert!(
+        text.contains("index: p") || text.contains("share_index: p"),
+        "expected index p in:\n{text}"
+    );
     // NOT a v0.1 failure path.
-    assert!(!text.contains("FAIL"), "must not report FAIL for a share:\n{text}");
-    assert!(!text.contains("threshold-not-zero"), "must not push threshold-not-zero:\n{text}");
+    assert!(
+        !text.contains("FAIL"),
+        "must not report FAIL for a share:\n{text}"
+    );
+    assert!(
+        !text.contains("threshold-not-zero"),
+        "must not push threshold-not-zero:\n{text}"
+    );
     // The garbage prefix-byte / payload-bytes interpretation is suppressed.
-    assert!(!text.contains("prefix_byte"), "prefix_byte must be suppressed:\n{text}");
-    assert!(!text.contains("payload_bytes"), "payload_bytes must be suppressed:\n{text}");
+    assert!(
+        !text.contains("prefix_byte"),
+        "prefix_byte must be suppressed:\n{text}"
+    );
+    assert!(
+        !text.contains("payload_bytes"),
+        "payload_bytes must be suppressed:\n{text}"
+    );
 }
 
 #[test]
@@ -74,7 +95,11 @@ fn inspect_share_json_reports_kind_share() {
     assert_eq!(v["report"]["share_index"], "p");
     // No would-not-decode FAIL; no threshold-not-zero reason.
     let reasons = v["would_decode"].as_bool();
-    assert_eq!(reasons, Some(true), "a share is a valid read (would_combine)");
+    assert_eq!(
+        reasons,
+        Some(true),
+        "a share is a valid read (would_combine)"
+    );
     // Garbage payload fields suppressed in JSON too.
     assert!(v["report"].get("prefix_byte").is_none() || v["report"]["prefix_byte"].is_null());
     assert!(

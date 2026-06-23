@@ -455,7 +455,7 @@ pub fn decode_regular_errors(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bch::{MS_REGULAR_CONST, bch_create_checksum_regular, hrp_expand, polymod_run};
+    use crate::bch::{bch_create_checksum_regular, hrp_expand, polymod_run, MS_REGULAR_CONST};
 
     #[test]
     fn gf32_mul_identity() {

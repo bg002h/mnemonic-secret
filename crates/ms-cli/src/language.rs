@@ -116,7 +116,8 @@ mod tests {
                 CliLanguage::from_code(code),
                 Some(lang),
                 "from_code({}) did not round-trip to {:?}",
-                code, lang
+                code,
+                lang
             );
         }
         // Out-of-range codes must return None.

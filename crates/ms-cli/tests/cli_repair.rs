@@ -213,7 +213,11 @@ fn repair_json_envelope_shape() {
     let corrected_chunks = envelope["corrected_chunks"]
         .as_array()
         .expect("corrected_chunks must be a JSON array");
-    assert_eq!(corrected_chunks.len(), 1, "ms1 single-chunk → one corrected_chunk");
+    assert_eq!(
+        corrected_chunks.len(),
+        1,
+        "ms1 single-chunk → one corrected_chunk"
+    );
     assert_eq!(
         corrected_chunks[0],
         serde_json::Value::String(ABANDON_MS1.into()),
@@ -223,11 +227,7 @@ fn repair_json_envelope_shape() {
     let repairs = envelope["repairs"]
         .as_array()
         .expect("repairs must be a JSON array");
-    assert_eq!(
-        repairs.len(),
-        1,
-        "one corrupted input → one repair entry"
-    );
+    assert_eq!(repairs.len(), 1, "one corrupted input → one repair entry");
     let r0 = &repairs[0];
     assert_eq!(
         r0["chunk_index"],
@@ -251,10 +251,7 @@ fn repair_json_envelope_shape() {
     assert_eq!(p0["position"], serde_json::Value::from(9u32));
     assert!(p0["was"].is_string(), "was must be a string");
     assert!(p0["now"].is_string(), "now must be a string");
-    assert_ne!(
-        p0["was"], p0["now"],
-        "was != now for a real correction"
-    );
+    assert_ne!(p0["was"], p0["now"], "was != now for a real correction");
 
     // D9 advisory MUST also fire in JSON mode (sensitive material is on
     // stdout regardless of representation).

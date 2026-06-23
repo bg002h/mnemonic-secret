@@ -62,15 +62,13 @@ fn byte_parity_advisory_lines() {
     );
     // W line
     assert_eq!(
-        WATCH_ONLY_LINE,
-        "note: stdout is watch-only \u{2014} public keys only, cannot spend",
+        WATCH_ONLY_LINE, "note: stdout is watch-only \u{2014} public keys only, cannot spend",
         "W advisory must match toolkit literal exactly"
     );
     // T line (not emitted by any ms command, but the constant must be correct)
     let template_line = "note: stdout is a keyless descriptor template (no keys)";
     assert_eq!(
-        template_line,
-        "note: stdout is a keyless descriptor template (no keys)",
+        template_line, "note: stdout is a keyless descriptor template (no keys)",
         "T advisory must match toolkit literal exactly"
     );
     // Confirm em-dash is U+2014, not ASCII hyphen
@@ -93,7 +91,11 @@ fn ms_encode_emits_private_key_material_text_mode() {
         .args(["encode", "--hex", ABANDON_HEX, "--no-engraving-card"])
         .output()
         .expect("invoke ms encode");
-    assert!(out.status.success(), "expected exit 0; stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "expected exit 0; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stderr = String::from_utf8(out.stderr).expect("stderr utf-8");
     assert!(
         stderr.contains(PRIVATE_KEY_LINE),
@@ -108,7 +110,11 @@ fn ms_encode_emits_private_key_material_json_mode() {
         .args(["encode", "--hex", ABANDON_HEX, "--json"])
         .output()
         .expect("invoke ms encode --json");
-    assert!(out.status.success(), "expected exit 0; stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "expected exit 0; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stderr = String::from_utf8(out.stderr).expect("stderr utf-8");
     assert!(
         stderr.contains(PRIVATE_KEY_LINE),
@@ -125,7 +131,11 @@ fn ms_decode_emits_private_key_material_text_mode() {
         .args(["decode", ABANDON_MS1])
         .output()
         .expect("invoke ms decode");
-    assert!(out.status.success(), "expected exit 0; stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "expected exit 0; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stderr = String::from_utf8(out.stderr).expect("stderr utf-8");
     assert!(
         stderr.contains(PRIVATE_KEY_LINE),
@@ -140,7 +150,11 @@ fn ms_decode_emits_private_key_material_json_mode() {
         .args(["decode", ABANDON_MS1, "--json"])
         .output()
         .expect("invoke ms decode --json");
-    assert!(out.status.success(), "expected exit 0; stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "expected exit 0; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stderr = String::from_utf8(out.stderr).expect("stderr utf-8");
     assert!(
         stderr.contains(PRIVATE_KEY_LINE),
@@ -160,7 +174,11 @@ fn ms_derive_emits_watch_only_and_language_note_text_mode() {
         .args(["derive", ABANDON_MS1])
         .output()
         .expect("invoke ms derive");
-    assert!(out.status.success(), "expected exit 0; stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "expected exit 0; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stderr = String::from_utf8(out.stderr).expect("stderr utf-8");
     // Both lines must be present.
     assert!(
@@ -181,7 +199,11 @@ fn ms_derive_emits_watch_only_json_mode() {
         .args(["derive", ABANDON_MS1, "--language", "english", "--json"])
         .output()
         .expect("invoke ms derive --json");
-    assert!(out.status.success(), "expected exit 0; stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "expected exit 0; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stderr = String::from_utf8(out.stderr).expect("stderr utf-8");
     assert!(
         stderr.contains(WATCH_ONLY_LINE),
@@ -194,10 +216,21 @@ fn ms_derive_emits_watch_only_with_template() {
     // --template path: still W (account xpub is public key, cannot spend).
     let out = Command::cargo_bin("ms")
         .unwrap()
-        .args(["derive", ABANDON_MS1, "--language", "english", "--template", "bip84"])
+        .args([
+            "derive",
+            ABANDON_MS1,
+            "--language",
+            "english",
+            "--template",
+            "bip84",
+        ])
         .output()
         .expect("invoke ms derive --template");
-    assert!(out.status.success(), "expected exit 0; stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "expected exit 0; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stderr = String::from_utf8(out.stderr).expect("stderr utf-8");
     assert!(
         stderr.contains(WATCH_ONLY_LINE),
@@ -216,7 +249,11 @@ fn ms_repair_emits_private_key_material() {
         .args(["repair", "--ms1", ABANDON_MS1])
         .output()
         .expect("invoke ms repair");
-    assert!(out.status.success(), "expected exit 0; stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "expected exit 0; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stderr = String::from_utf8(out.stderr).expect("stderr utf-8");
     assert!(
         stderr.contains(PRIVATE_KEY_LINE),
@@ -234,7 +271,11 @@ fn ms_inspect_is_inert_no_advisory() {
         .args(["inspect", ABANDON_MS1])
         .output()
         .expect("invoke ms inspect");
-    assert!(out.status.success(), "expected exit 0; stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "expected exit 0; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stderr = String::from_utf8(out.stderr).expect("stderr utf-8");
     assert!(
         !stderr.contains("warning:") && !stderr.contains("note: stdout"),
@@ -250,7 +291,11 @@ fn ms_verify_is_inert_no_advisory() {
         .args(["verify", ABANDON_MS1])
         .output()
         .expect("invoke ms verify");
-    assert!(out.status.success(), "expected exit 0; stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "expected exit 0; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stderr = String::from_utf8(out.stderr).expect("stderr utf-8");
     assert!(
         !stderr.contains("note: stdout"),
@@ -266,7 +311,11 @@ fn ms_vectors_is_inert_no_advisory() {
         .args(["vectors"])
         .output()
         .expect("invoke ms vectors");
-    assert!(out.status.success(), "expected exit 0; stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "expected exit 0; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stderr = String::from_utf8(out.stderr).expect("stderr utf-8");
     assert!(
         !stderr.contains("note: stdout"),

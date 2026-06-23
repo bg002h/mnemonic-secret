@@ -352,7 +352,13 @@ mod tests_discriminate {
         let c = Codex32String::from_seed(HRP, 0, "entr", Fe::S, &data).unwrap();
         let (tag, recovered) = discriminate(&c).unwrap();
         assert_eq!(tag, Tag::ENTR);
-        assert_eq!(recovered, Payload::Mnem { language: 2, entropy });
+        assert_eq!(
+            recovered,
+            Payload::Mnem {
+                language: 2,
+                entropy
+            }
+        );
     }
 
     #[test]
@@ -422,7 +428,10 @@ mod tests_wire_bytes {
 
     #[test]
     fn mnem_wire_bytes_are_prefix_lang_entropy() {
-        let p = Payload::Mnem { language: 1, entropy: vec![0xABu8; 16] };
+        let p = Payload::Mnem {
+            language: 1,
+            entropy: vec![0xABu8; 16],
+        };
         let mut expected = vec![0x02u8, 0x01u8];
         expected.extend(std::iter::repeat_n(0xABu8, 16));
         assert_eq!(&payload_wire_bytes(&p)[..], &expected[..]);
@@ -449,11 +458,20 @@ mod tests_package {
     fn package_mnem_round_trips_through_discriminate() {
         for len in [16usize, 20, 24, 28, 32] {
             let entropy = vec![0xCCu8; len];
-            let p = Payload::Mnem { language: 3, entropy: entropy.clone() };
+            let p = Payload::Mnem {
+                language: 3,
+                entropy: entropy.clone(),
+            };
             let c = package(Tag::ENTR, &p).unwrap();
             let (tag, recovered) = discriminate(&c).unwrap();
             assert_eq!(tag, Tag::ENTR);
-            assert_eq!(recovered, Payload::Mnem { language: 3, entropy });
+            assert_eq!(
+                recovered,
+                Payload::Mnem {
+                    language: 3,
+                    entropy
+                }
+            );
         }
     }
 
@@ -481,7 +499,10 @@ mod tests_package {
         let expected_lengths = crate::consts::VALID_MNEM_STR_LENGTHS;
         for (i, len) in [16usize, 20, 24, 28, 32].iter().enumerate() {
             let entropy = vec![0xAAu8; *len];
-            let p = Payload::Mnem { language: 0, entropy };
+            let p = Payload::Mnem {
+                language: 0,
+                entropy,
+            };
             let c = package(Tag::ENTR, &p).unwrap();
             let s = c.to_string();
             assert_eq!(

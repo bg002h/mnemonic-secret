@@ -17,11 +17,21 @@ fn encode_12_word_abandon_about() {
         .unwrap();
     assert!(out.status.success());
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(!stdout.contains("\n\n"), "print-once: no blank line; got {stdout:?}");
-    let line = stdout.lines().next().unwrap();
-    assert_eq!(line.chars().nth(5), Some(' '), "default space/5; got {line:?}");
     assert!(
-        line.chars().filter(|c| *c != ' ').collect::<String>().starts_with("ms10entrsqqqq"),
+        !stdout.contains("\n\n"),
+        "print-once: no blank line; got {stdout:?}"
+    );
+    let line = stdout.lines().next().unwrap();
+    assert_eq!(
+        line.chars().nth(5),
+        Some(' '),
+        "default space/5; got {line:?}"
+    );
+    assert!(
+        line.chars()
+            .filter(|c| *c != ' ')
+            .collect::<String>()
+            .starts_with("ms10entrsqqqq"),
         "space-stripped form starts with the canonical prefix; got {line:?}"
     );
     let stderr = String::from_utf8(out.stderr).unwrap();

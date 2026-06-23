@@ -69,7 +69,10 @@ const ZEROIZE_ROWS: &[ZeroizeRow] = &[
     ZeroizeRow {
         label: "cmd/encode entropy buffer fed to Payload via wrapped clone",
         source_file: "src/cmd/encode.rs",
-        evidence: &["Payload::Entr((*entropy_for_codec).clone())", "Payload::Entr((*entropy).clone())"],
+        evidence: &[
+            "Payload::Entr((*entropy_for_codec).clone())",
+            "Payload::Entr((*entropy).clone())",
+        ],
     },
     // ---- cmd/decode.rs run() locals ----
     ZeroizeRow {
@@ -143,8 +146,8 @@ fn canonical_list_has_expected_row_count() {
 /// `Debug` derive entirely. This guards that it stays dropped.
 #[test]
 fn repair_detail_does_not_derive_debug() {
-    let src = fs::read_to_string(crate_root().join("src/cmd/repair.rs"))
-        .expect("read src/cmd/repair.rs");
+    let src =
+        fs::read_to_string(crate_root().join("src/cmd/repair.rs")).expect("read src/cmd/repair.rs");
     // The struct definition line must not derive Debug.
     assert!(
         !src.contains("#[derive(Debug, Clone)]\nstruct RepairDetail")

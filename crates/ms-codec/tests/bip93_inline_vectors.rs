@@ -48,8 +48,7 @@ const V1_MASTER_SEED_HEX: &str = "318c6318c6318c6318c6318c6318c631";
 
 #[test]
 fn vector_1_no_split_16_byte_secret() {
-    let parsed =
-        Codex32String::from_string(V1_STRING.to_string()).expect("§93.1 parses");
+    let parsed = Codex32String::from_string(V1_STRING.to_string()).expect("§93.1 parses");
     assert_eq!(
         parsed.to_string(),
         V1_STRING,
@@ -100,8 +99,7 @@ const V3_MASTER_SEED_HEX: &str = "ffeeddccbbaa99887766554433221100";
 
 #[test]
 fn vector_3_k_of_3_share_s_canonical() {
-    let parsed =
-        Codex32String::from_string(V3_S_SHARE.to_string()).expect("§93.3 parses");
+    let parsed = Codex32String::from_string(V3_S_SHARE.to_string()).expect("§93.3 parses");
     assert_eq!(parsed.to_string(), V3_S_SHARE, "§93.3 round-trips");
     let data = parsed.parts().data();
     let expected = hex_to_bytes(V3_MASTER_SEED_HEX);
@@ -118,13 +116,11 @@ fn vector_3_k_of_3_share_s_canonical() {
 /// regression in either path surfaces here too.
 const V4_STRING: &str =
     "ms10leetsllhdmn9m42vcsamx24zrxgs3qrl7ahwvhw4fnzrhve25gvezzyqqtum9pgv99ycma";
-const V4_MASTER_SEED_HEX: &str =
-    "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100";
+const V4_MASTER_SEED_HEX: &str = "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100";
 
 #[test]
 fn vector_4_no_split_32_byte_secret() {
-    let parsed =
-        Codex32String::from_string(V4_STRING.to_string()).expect("§93.4 parses");
+    let parsed = Codex32String::from_string(V4_STRING.to_string()).expect("§93.4 parses");
     assert_eq!(parsed.to_string(), V4_STRING, "§93.4 round-trips");
     let data = parsed.parts().data();
     let expected = hex_to_bytes(V4_MASTER_SEED_HEX);
@@ -145,8 +141,7 @@ const V5_MASTER_SEED_HEX: &str =
 
 #[test]
 fn vector_5_long_codex32_512_bit_secret() {
-    let parsed =
-        Codex32String::from_string(V5_STRING.to_string()).expect("§93.5 parses");
+    let parsed = Codex32String::from_string(V5_STRING.to_string()).expect("§93.5 parses");
     assert_eq!(
         parsed.to_string(),
         V5_STRING,
@@ -278,8 +273,6 @@ fn hex_to_bytes(s: &str) -> Vec<u8> {
     assert!(s.len() % 2 == 0, "hex must be even-length: {s}");
     (0..s.len())
         .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&s[i..i + 2], 16).expect("valid hex")
-        })
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("valid hex"))
         .collect()
 }

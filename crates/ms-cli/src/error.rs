@@ -429,7 +429,10 @@ mod tests {
             !dbg.contains("ms1secret_"),
             "Debug leaked the secret string: {dbg}"
         );
-        assert!(dbg.contains("Codex32"), "Debug keeps the sanitized kind: {dbg}");
+        assert!(
+            dbg.contains("Codex32"),
+            "Debug keeps the sanitized kind: {dbg}"
+        );
         assert!(!dbg.is_empty(), "Debug stays informative: {dbg}");
         // Display is already sanitized (pin).
         assert!(

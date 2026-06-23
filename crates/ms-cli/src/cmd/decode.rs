@@ -10,7 +10,7 @@ use clap::Args;
 use ms_codec::Payload;
 use serde_json::to_string;
 
-use crate::advisory::{OutputClass, emit_output_class_advisory};
+use crate::advisory::{emit_output_class_advisory, OutputClass};
 use crate::error::Result;
 use crate::format::DecodeJson;
 use crate::language::CliLanguage;
@@ -62,7 +62,10 @@ pub fn run(args: DecodeArgs) -> Result<u8> {
     // `lint_zeroize_discipline` test (every_canonical_zeroize_row_has_evidence_anchor).
     let (effective_lang, effective_lang_defaulted) = match &payload {
         Payload::Entr(_) => (cli_lang, defaulted),
-        Payload::Mnem { language: wire_code, .. } => {
+        Payload::Mnem {
+            language: wire_code,
+            ..
+        } => {
             let wire_cli_lang = CliLanguage::from_code(*wire_code).unwrap_or(CliLanguage::English);
             // Wire wins; warn only if user EXPLICITLY supplied --language that disagrees.
             if !defaulted && wire_cli_lang != cli_lang {
@@ -111,7 +114,10 @@ pub fn run(args: DecodeArgs) -> Result<u8> {
             effective_lang_defaulted,
         )?;
     }
-    emit_output_class_advisory(OutputClass::PrivateKeyMaterial, &mut std::io::stderr().lock());
+    emit_output_class_advisory(
+        OutputClass::PrivateKeyMaterial,
+        &mut std::io::stderr().lock(),
+    );
     Ok(0)
 }
 
@@ -132,8 +138,9 @@ fn emit_json(
     };
     // cycle-15 Lane M (slug #8, defense-in-depth): the serialized JSON carries
     // the entropy hex + phrase — scrub the buffer on drop.
-    let s: zeroize::Zeroizing<String> =
-        zeroize::Zeroizing::new(to_string(&json).expect("decode json serialization always succeeds"));
+    let s: zeroize::Zeroizing<String> = zeroize::Zeroizing::new(
+        to_string(&json).expect("decode json serialization always succeeds"),
+    );
     println!("{}", *s);
     Ok(())
 }

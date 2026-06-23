@@ -39,7 +39,7 @@ use ms_codec::CorrectionDetail;
 use serde::Serialize;
 use zeroize::Zeroizing;
 
-use crate::advisory::{OutputClass, emit_output_class_advisory};
+use crate::advisory::{emit_output_class_advisory, OutputClass};
 use crate::error::{CliError, Result};
 use crate::parse::read_input;
 
@@ -102,8 +102,7 @@ pub fn run(args: RepairArgs) -> Result<u8> {
 
     // The serialized corrected chunk is stdout-bound (OOS-10 stdout-leak), but
     // hold the in-memory vec as Zeroizing too (defense-in-depth, slug #6/#8).
-    let corrected_chunks: Zeroizing<Vec<String>> =
-        Zeroizing::new(vec![(*corrected_chunk).clone()]);
+    let corrected_chunks: Zeroizing<Vec<String>> = Zeroizing::new(vec![(*corrected_chunk).clone()]);
     let reports = vec![report];
 
     if args.json {
@@ -116,7 +115,10 @@ pub fn run(args: RepairArgs) -> Result<u8> {
     // of a valid ms1 to stdout is sensitive material on stdout). Uses the
     // canonical OutputClass::PrivateKeyMaterial line (byte-identical to
     // mnemonic-toolkit's emit_output_class_advisory for PrivateKeyMaterial).
-    emit_output_class_advisory(OutputClass::PrivateKeyMaterial, &mut std::io::stderr().lock());
+    emit_output_class_advisory(
+        OutputClass::PrivateKeyMaterial,
+        &mut std::io::stderr().lock(),
+    );
 
     let any_correction = reports.iter().any(|r| !r.corrected_positions.is_empty());
     Ok(if any_correction { 5 } else { 0 })
@@ -143,8 +145,7 @@ fn reconstruct_corrected(
     // lowercases internally, so the `was`/`now` chars are lowercase).
     let mut data_chars: Vec<char> = rest[1..].chars().map(|c| c.to_ascii_lowercase()).collect();
 
-    let mut corrected_positions: Vec<(usize, char, char)> =
-        Vec::with_capacity(corrections.len());
+    let mut corrected_positions: Vec<(usize, char, char)> = Vec::with_capacity(corrections.len());
     for c in corrections {
         // Defensive: ms-codec's `decode_with_correction` bounds-checks
         // before applying corrections (errors `TooManyErrors` otherwise),

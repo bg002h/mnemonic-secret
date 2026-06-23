@@ -29,7 +29,10 @@ fn flipping_prefix_byte_to_0x01_rejects_with_reserved_prefix_violation() {
 fn prefix_0x02_with_valid_mnem_payload_is_accepted() {
     // 0x02 is the v0.2 mnem-prefix; decoder must accept it and return Payload::Mnem.
     let entropy = vec![0xAAu8; 16];
-    let p = Payload::Mnem { language: 0, entropy: entropy.clone() };
+    let p = Payload::Mnem {
+        language: 0,
+        entropy: entropy.clone(),
+    };
     let s = encode(Tag::ENTR, &p).unwrap();
     assert_eq!(s.len(), 51, "mnem 16-byte → 51-char ms1");
     let (tag, recovered) = decode(&s).unwrap();

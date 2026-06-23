@@ -22,7 +22,15 @@ fn encode_japanese_phrase_produces_mnem_ms1_of_expected_length() {
     let ja = japanese_12_word_phrase();
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["encode", "--language", "japanese", "--phrase", &ja, "--group-size", "0"])
+        .args([
+            "encode",
+            "--language",
+            "japanese",
+            "--phrase",
+            &ja,
+            "--group-size",
+            "0",
+        ])
         .assert()
         .success()
         .stdout(predicate::function(|s: &str| {
@@ -37,7 +45,15 @@ fn encode_japanese_phrase_decode_round_trip() {
     // Encode to ms1
     let encode_out = Command::cargo_bin("ms")
         .unwrap()
-        .args(["encode", "--language", "japanese", "--phrase", &ja, "--group-size", "0"])
+        .args([
+            "encode",
+            "--language",
+            "japanese",
+            "--phrase",
+            &ja,
+            "--group-size",
+            "0",
+        ])
         .assert()
         .success()
         .get_output()

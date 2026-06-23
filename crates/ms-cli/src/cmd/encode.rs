@@ -11,7 +11,7 @@ use hex::FromHex;
 use ms_codec::{Payload, Tag};
 use serde_json::to_string;
 
-use crate::advisory::{OutputClass, emit_output_class_advisory};
+use crate::advisory::{emit_output_class_advisory, OutputClass};
 use crate::error::{CliError, Result};
 use crate::format::{render_grouped, EncodeJson};
 use crate::language::CliLanguage;
@@ -93,7 +93,10 @@ pub(crate) fn resolve_secret_payload(
             // Zeroize; tracked at FOLLOWUP `rust-bip39-mnemonic-zeroize-upstream`
             // (companion of the mnemonic-toolkit cycle entry).
             let mnemonic = Mnemonic::parse_in(lang, phrase.as_str())?;
-            (Zeroizing::new(mnemonic.to_entropy()), Some(language.as_str()))
+            (
+                Zeroizing::new(mnemonic.to_entropy()),
+                Some(language.as_str()),
+            )
         } else if let Some(hex_arg) = hex {
             let hex_str = Zeroizing::new(read_input(Some(hex_arg))?);
             let bytes = Zeroizing::new(parse_hex_entropy(&hex_str)?);
@@ -133,8 +136,7 @@ pub fn run(mut args: EncodeArgs) -> Result<u8> {
     // now in the Zeroizing wrapper and will be scrubbed on drop).
     let phrase_arg: Option<Zeroizing<String>> =
         std::mem::take(&mut args.phrase).map(Zeroizing::new);
-    let hex_arg: Option<Zeroizing<String>> =
-        std::mem::take(&mut args.hex).map(Zeroizing::new);
+    let hex_arg: Option<Zeroizing<String>> = std::mem::take(&mut args.hex).map(Zeroizing::new);
 
     // Shared entropy-resolution + AUTO-route (also used by `ms split`).
     let (payload, language_for_card) = resolve_secret_payload(
@@ -162,7 +164,10 @@ pub fn run(mut args: EncodeArgs) -> Result<u8> {
             args.separator,
         )?;
     }
-    emit_output_class_advisory(OutputClass::PrivateKeyMaterial, &mut std::io::stderr().lock());
+    emit_output_class_advisory(
+        OutputClass::PrivateKeyMaterial,
+        &mut std::io::stderr().lock(),
+    );
     Ok(0)
 }
 

@@ -7,7 +7,13 @@ use predicates::prelude::*;
 fn encode_hex_zeros_16_bytes() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["encode", "--hex", "00000000000000000000000000000000", "--group-size", "0"])
+        .args([
+            "encode",
+            "--hex",
+            "00000000000000000000000000000000",
+            "--group-size",
+            "0",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::starts_with("ms10entrsqqqq"));

@@ -14,10 +14,10 @@ use ms_codec::{PayloadKind, Tag, Threshold};
 use serde_json::to_string;
 use zeroize::Zeroizing;
 
-use crate::advisory::{OutputClass, emit_output_class_advisory};
+use crate::advisory::{emit_output_class_advisory, OutputClass};
 use crate::cmd::encode::resolve_secret_payload;
 use crate::error::{CliError, Result};
-use crate::format::{SplitJson, render_grouped};
+use crate::format::{render_grouped, SplitJson};
 use crate::language::CliLanguage;
 
 /// `ms split` arguments.
@@ -88,7 +88,10 @@ pub fn run(mut args: SplitArgs) -> Result<u8> {
     let id = share_id(&shares[0]);
     let (kind, language): (&'static str, Option<&'static str>) = match payload.kind() {
         PayloadKind::Entr => ("entr", None),
-        PayloadKind::Mnem => ("mnem", Some(language_str_for_payload(&payload, args.language))),
+        PayloadKind::Mnem => (
+            "mnem",
+            Some(language_str_for_payload(&payload, args.language)),
+        ),
         // PayloadKind is #[non_exhaustive]; guard against future kinds.
         _ => ("unknown", None),
     };
@@ -100,7 +103,10 @@ pub fn run(mut args: SplitArgs) -> Result<u8> {
     }
 
     // The N-share SET is secret-equivalent (any K reconstruct the secret).
-    emit_output_class_advisory(OutputClass::PrivateKeyMaterial, &mut std::io::stderr().lock());
+    emit_output_class_advisory(
+        OutputClass::PrivateKeyMaterial,
+        &mut std::io::stderr().lock(),
+    );
     Ok(0)
 }
 

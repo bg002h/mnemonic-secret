@@ -24,7 +24,7 @@
 //! seeds. The all-length sweep lives in `tests/bch_all_lengths.rs`; see
 //! `design/BUG_decode_with_correction_length_divergence.md`.
 
-use ms_codec::{CorrectionDetail, Error, Tag, decode_with_correction};
+use ms_codec::{decode_with_correction, CorrectionDetail, Error, Tag};
 
 /// Codex32 alphabet — needed for deterministic single-character
 /// corruption masks in the 5-bit symbol space.
@@ -65,7 +65,10 @@ fn zero_error_passthrough() {
     let (tag, _payload, details) =
         decode_with_correction(VALID_MS1_12W).expect("clean ms1 must decode");
     assert_eq!(tag, Tag::ENTR);
-    assert!(details.is_empty(), "no corrections expected for clean input");
+    assert!(
+        details.is_empty(),
+        "no corrections expected for clean input"
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -136,7 +136,9 @@ fn json_wire_shape_unchanged_advisory_on_stderr() {
     let shares = split_shares(&["--language", "japanese", "--phrase", &ja], "2", "3");
     let assert = Command::cargo_bin("ms")
         .unwrap()
-        .args(["combine", &shares[0], &shares[2], "--to", "entropy", "--json"])
+        .args([
+            "combine", &shares[0], &shares[2], "--to", "entropy", "--json",
+        ])
         .assert()
         .success()
         .stderr(predicate::str::contains(ADVISORY_SUBSTR));

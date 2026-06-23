@@ -64,7 +64,10 @@ fn inspect_mnem_string_json_mode_ok() {
 fn inspect_entr_string_unchanged() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["inspect", "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f"])
+        .args([
+            "inspect",
+            "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::starts_with("OK:"))

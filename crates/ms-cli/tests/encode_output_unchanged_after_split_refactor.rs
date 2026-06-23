@@ -10,7 +10,8 @@
 
 use assert_cmd::Command;
 
-const ENGLISH_12: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const ENGLISH_12: &str =
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
 /// 12-word Japanese mnemonic from 16 bytes of 0xAB (mirrors encode_mnem_japanese.rs).
 fn japanese_12_word() -> String {
@@ -70,7 +71,14 @@ fn japanese_phrase_text_unchanged() {
 #[test]
 fn japanese_phrase_json_unchanged() {
     let ja = japanese_12_word();
-    let s = stdout_of(&["encode", "--language", "japanese", "--phrase", &ja, "--json"]);
+    let s = stdout_of(&[
+        "encode",
+        "--language",
+        "japanese",
+        "--phrase",
+        &ja,
+        "--json",
+    ]);
     assert_eq!(
         s,
         "{\"schema_version\":\"1\",\"ms1\":\"ms10entrsqgq6h2at4w46h2at4w46h2at4w46k0mt2va9nwh4ql\",\"language\":\"japanese\",\"word_count\":12,\"entropy_hex\":\"abababababababababababababababab\"}\n"

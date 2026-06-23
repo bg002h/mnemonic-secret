@@ -106,8 +106,9 @@ fn parity_smoke_ms_against_toolkit_v0_22_1() {
         stderr
     );
 
-    let toolkit_corrected = extract_corrected_ms1(&stdout)
-        .unwrap_or_else(|| panic!("could not extract corrected ms1 from toolkit stdout:\n{stdout}"));
+    let toolkit_corrected = extract_corrected_ms1(&stdout).unwrap_or_else(|| {
+        panic!("could not extract corrected ms1 from toolkit stdout:\n{stdout}")
+    });
 
     // 3. Cross-validate: toolkit's corrected string must equal the
     // original valid ms1 (the BCH decoder restored the codeword, and

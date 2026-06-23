@@ -51,7 +51,10 @@ fn u1_decode_uppercase_equals_lowercase_twin() {
 fn u2_inspect_uppercase_report_equals_lowercase_report() {
     let lower = encode(
         Tag::ENTR,
-        &Payload::Mnem { language: 1, entropy: vec![0xBBu8; 16] },
+        &Payload::Mnem {
+            language: 1,
+            entropy: vec![0xBBu8; 16],
+        },
     )
     .unwrap();
     let upper = lower.to_uppercase();
@@ -199,11 +202,13 @@ fn u6_clean_uppercase_decodes_with_empty_corrections() {
     let upper = lower.to_uppercase();
     let (lt, lp, ld) = decode_with_correction(&lower).expect("lowercase twin");
     assert!(ld.is_empty(), "lowercase clean codeword has no corrections");
-    let (ut, up, ud) =
-        decode_with_correction(&upper).expect("pristine uppercase card must decode");
+    let (ut, up, ud) = decode_with_correction(&upper).expect("pristine uppercase card must decode");
     assert_eq!(ut, lt);
     assert_eq!(up, lp);
-    assert!(ud.is_empty(), "pristine uppercase card must report no corrections");
+    assert!(
+        ud.is_empty(),
+        "pristine uppercase card must report no corrections"
+    );
 }
 
 /// U6-corrupted (characterization — GREEN today: corrections re-emit
@@ -222,7 +227,14 @@ fn u6_corrupted_uppercase_repairs() {
     let (ut, up, details) =
         decode_with_correction(&upper).expect("1-error uppercase card must repair");
     assert_eq!(ut, lt);
-    assert_eq!(up, lp, "repaired payload must match the pristine lowercase twin");
+    assert_eq!(
+        up, lp,
+        "repaired payload must match the pristine lowercase twin"
+    );
     assert_eq!(details.len(), 1, "exactly one correction");
-    assert_eq!(details[0].position, 10 - 3, "data-part position (post-HRP+separator)");
+    assert_eq!(
+        details[0].position,
+        10 - 3,
+        "data-part position (post-HRP+separator)"
+    );
 }

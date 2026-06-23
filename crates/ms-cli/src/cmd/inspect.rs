@@ -72,7 +72,10 @@ fn is_share(report: &InspectReport) -> bool {
 /// entr/mnem kind — a distributed share's data()[0] is interpolated, not a
 /// payload-kind prefix.
 fn emit_share_text(report: &InspectReport) {
-    println!("OK: K-of-N share (would combine: needs {} shares)", report.threshold);
+    println!(
+        "OK: K-of-N share (would combine: needs {} shares)",
+        report.threshold
+    );
     println!();
     println!("hrp: {}", report.hrp);
     println!("threshold: {}", report.threshold);
@@ -103,7 +106,10 @@ fn emit_share_json(report: &InspectReport) -> Result<()> {
         "would_combine": true,
         "failure_reasons": Vec::<&str>::new(),
     });
-    println!("{}", serde_json::to_string(&json).expect("inspect share json serializes"));
+    println!(
+        "{}",
+        serde_json::to_string(&json).expect("inspect share json serializes")
+    );
     Ok(())
 }
 

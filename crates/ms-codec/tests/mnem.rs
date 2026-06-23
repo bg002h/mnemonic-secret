@@ -8,10 +8,18 @@ use ms_codec::{decode, decode_with_correction, encode, Payload, PayloadKind, Tag
 #[test]
 fn mnem_encode_decode_round_trip_16b_japanese() {
     let entropy: Vec<u8> = (0u8..16).collect();
-    let p = Payload::Mnem { language: 1, entropy: entropy.clone() };
+    let p = Payload::Mnem {
+        language: 1,
+        entropy: entropy.clone(),
+    };
     let s = encode(Tag::ENTR, &p).expect("encode Mnem should succeed");
     // 16-byte entropy → mnem str len 51
-    assert_eq!(s.len(), 51, "mnem 16-byte entropy -> ms1 len 51, got {}", s.len());
+    assert_eq!(
+        s.len(),
+        51,
+        "mnem 16-byte entropy -> ms1 len 51, got {}",
+        s.len()
+    );
 
     let (tag, recovered) = decode(&s).expect("decode mnem should succeed");
     assert_eq!(tag, Tag::ENTR);
@@ -41,12 +49,18 @@ fn entr_still_decodes_to_entr_payload() {
 #[test]
 fn mnem_decode_with_correction_clean_passes() {
     let entropy: Vec<u8> = vec![0x55u8; 16];
-    let p = Payload::Mnem { language: 0, entropy: entropy.clone() };
+    let p = Payload::Mnem {
+        language: 0,
+        entropy: entropy.clone(),
+    };
     let s = encode(Tag::ENTR, &p).expect("encode mnem");
     let (tag, recovered, corrections) =
         ms_codec::decode_with_correction(&s).expect("decode_with_correction on clean mnem");
     assert_eq!(tag, Tag::ENTR);
-    assert!(corrections.is_empty(), "no corrections expected for clean input");
+    assert!(
+        corrections.is_empty(),
+        "no corrections expected for clean input"
+    );
     assert_eq!(recovered.as_bytes(), entropy.as_slice());
     assert!(
         matches!(recovered, Payload::Mnem { language: 0, .. }),
@@ -94,14 +108,15 @@ fn data_part_len(s: &str) -> usize {
 fn mnem_decode_with_correction_recovers_from_corruption() {
     for &n in &[16usize, 20, 24, 28, 32] {
         let entropy = vec![0xABu8; n];
-        let p = Payload::Mnem { language: 2, entropy: entropy.clone() };
-        let s = encode(Tag::ENTR, &p)
-            .unwrap_or_else(|e| panic!("encode n={n} failed: {e:?}"));
+        let p = Payload::Mnem {
+            language: 2,
+            entropy: entropy.clone(),
+        };
+        let s = encode(Tag::ENTR, &p).unwrap_or_else(|e| panic!("encode n={n} failed: {e:?}"));
         let dp = data_part_len(&s);
 
         for k in 1..=4usize {
-            let positions: Vec<usize> =
-                (0..k).map(|j| 1 + j * (dp / (k + 1)).max(1)).collect();
+            let positions: Vec<usize> = (0..k).map(|j| 1 + j * (dp / (k + 1)).max(1)).collect();
             let mut bad = s.clone();
             for &pos in &positions {
                 bad = corrupt_at(&bad, pos, 0x1F);
@@ -143,16 +158,18 @@ fn mnem_decode_with_correction_recovers_from_corruption() {
 #[test]
 fn golden_mnem_english_16b_wire_vector() {
     let entropy: Vec<u8> = vec![
-        0x0c, 0x1e, 0x24, 0xe5, 0x91, 0x75, 0x44, 0xd6,
-        0x66, 0xc3, 0x42, 0x99, 0x2a, 0xcf, 0xda, 0x1b,
+        0x0c, 0x1e, 0x24, 0xe5, 0x91, 0x75, 0x44, 0xd6, 0x66, 0xc3, 0x42, 0x99, 0x2a, 0xcf, 0xda,
+        0x1b,
     ];
-    let p = Payload::Mnem { language: 0, entropy: entropy.clone() };
+    let p = Payload::Mnem {
+        language: 0,
+        entropy: entropy.clone(),
+    };
     let s = encode(Tag::ENTR, &p).expect("encode mnem golden");
 
     // Pin the exact wire string byte-for-byte.
     assert_eq!(
-        s,
-        "ms10entrsqgqqc83yukgh23xkvmp59xf2eldpk4cdrq2y4h82yz",
+        s, "ms10entrsqgqqc83yukgh23xkvmp59xf2eldpk4cdrq2y4h82yz",
         "mnem wire encoding drifted from golden vector"
     );
     assert_eq!(s.len(), 51);
@@ -160,5 +177,11 @@ fn golden_mnem_english_16b_wire_vector() {
     // Also verify it decodes back correctly.
     let (tag, recovered) = decode(&s).expect("decode golden");
     assert_eq!(tag, Tag::ENTR);
-    assert_eq!(recovered, Payload::Mnem { language: 0, entropy });
+    assert_eq!(
+        recovered,
+        Payload::Mnem {
+            language: 0,
+            entropy
+        }
+    );
 }

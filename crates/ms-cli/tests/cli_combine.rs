@@ -10,7 +10,8 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::Value;
 
-const ENGLISH_12: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const ENGLISH_12: &str =
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
 fn japanese_12_word() -> String {
     bip39::Mnemonic::from_entropy_in(bip39::Language::Japanese, &[0xABu8; 16])

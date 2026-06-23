@@ -15,7 +15,11 @@ use assert_cmd::Command;
 use codex32::{Codex32String, Fe};
 
 fn ms(args: &[&str]) -> Output {
-    Command::cargo_bin("ms").unwrap().args(args).output().unwrap()
+    Command::cargo_bin("ms")
+        .unwrap()
+        .args(args)
+        .output()
+        .unwrap()
 }
 fn out(o: &Output) -> String {
     String::from_utf8(o.stdout.clone()).unwrap()
@@ -35,7 +39,15 @@ fn phrase_of(lang: bip39::Language, entropy: &[u8]) -> String {
 
 /// Build a mnem ms1 (carries the wire language byte) via `ms encode`.
 fn mnem_ms1(language: &str, phrase: &str) -> String {
-    let o = ms(&["encode", "--language", language, "--phrase", phrase, "--group-size", "0"]);
+    let o = ms(&[
+        "encode",
+        "--language",
+        language,
+        "--phrase",
+        phrase,
+        "--group-size",
+        "0",
+    ]);
     assert!(o.status.success(), "encode: {}", err(&o));
     out(&o).lines().next().unwrap().trim().to_string()
 }
@@ -68,7 +80,12 @@ fn english_phrase_against_japanese_card_fails() {
     let ja = phrase_of(bip39::Language::Japanese, &[0xABu8; 16]);
     let card = mnem_ms1("japanese", &ja);
     let o = ms(&["verify", "--phrase", ENGLISH_12, &card]);
-    assert_ne!(code(&o), 0, "must not be a false GREEN; stdout: {}", out(&o));
+    assert_ne!(
+        code(&o),
+        0,
+        "must not be a false GREEN; stdout: {}",
+        out(&o)
+    );
 }
 
 /// Disagreement note (EXPLICIT flag): `--language english` on a Japanese card →
@@ -109,8 +126,14 @@ fn round_trip_label_shows_wire_language() {
     let o = ms(&["verify", "--phrase", &ja, &card]);
     assert_eq!(code(&o), 0, "stderr: {}", err(&o));
     let s = out(&o);
-    assert!(s.contains("language=japanese"), "round-trip label = wire japanese: {s}");
-    assert!(!s.contains("language=english"), "must not show english: {s}");
+    assert!(
+        s.contains("language=japanese"),
+        "round-trip label = wire japanese: {s}"
+    );
+    assert!(
+        !s.contains("language=english"),
+        "must not show english: {s}"
+    );
 }
 
 /// EXIT-3 NO-REGRESSION: a reserved-tag future-format string still exits 3 via

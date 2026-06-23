@@ -68,8 +68,7 @@ pub const RESERVED_NOT_EMITTED_V01: &[[u8; 4]] = &[*b"seed", *b"xprv", *b"prvk"]
 ///
 /// **DISTINCT from `RESERVED_NOT_EMITTED_V01`** (the decoder-reject set, which
 /// dropped `mnem` in Cycle 1): `mnem` MUST stay in this id-blocklist.
-pub const RESERVED_ID_BLOCKLIST: &[[u8; 4]] =
-    &[*b"entr", *b"seed", *b"xprv", *b"mnem", *b"prvk"];
+pub const RESERVED_ID_BLOCKLIST: &[[u8; 4]] = &[*b"entr", *b"seed", *b"xprv", *b"mnem", *b"prvk"];
 
 #[cfg(test)]
 mod tests {

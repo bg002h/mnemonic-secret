@@ -10,13 +10,18 @@ use std::process::Output;
 use assert_cmd::Command;
 
 const ZEROS_HEX: &str = "00000000000000000000000000000000";
-const ABANDON: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const ABANDON: &str =
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const MASTER_FP_EN: &str = "73c5da0a";
 const MASTER_FP_FR: &str = "7d53dc37";
 const BIP84_ACCT_XPUB: &str = "xpub6CatWdiZiodmUeTDp8LT5or8nmbKNcuyvz7WyksVFkKB4RHwCD3XyuvPEbvqAQY3rAPshWcMLoP2fMFMKHPJ4ZeZXYVUhLv1VMrjPC7PW6V";
 
 fn ms(args: &[&str]) -> Output {
-    Command::cargo_bin("ms").unwrap().args(args).output().unwrap()
+    Command::cargo_bin("ms")
+        .unwrap()
+        .args(args)
+        .output()
+        .unwrap()
 }
 fn out(o: &Output) -> String {
     String::from_utf8(o.stdout.clone()).unwrap()
@@ -48,7 +53,11 @@ fn hex_and_phrase_parity() {
     let from_hex = ms(&["derive", "--hex", ZEROS_HEX]);
     let from_phrase = ms(&["derive", "--phrase", ABANDON]);
     assert!(out(&from_hex).contains(MASTER_FP_EN), "{}", out(&from_hex));
-    assert!(out(&from_phrase).contains(MASTER_FP_EN), "{}", out(&from_phrase));
+    assert!(
+        out(&from_phrase).contains(MASTER_FP_EN),
+        "{}",
+        out(&from_phrase)
+    );
 }
 
 #[test]
@@ -62,8 +71,26 @@ fn account_xpub_bip84_matches_oracle() {
 
 #[test]
 fn account_index_changes_xpub() {
-    let a0 = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip84", "--account", "0", "--json"]);
-    let a1 = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip84", "--account", "1", "--json"]);
+    let a0 = ms(&[
+        "derive",
+        "--hex",
+        ZEROS_HEX,
+        "--template",
+        "bip84",
+        "--account",
+        "0",
+        "--json",
+    ]);
+    let a1 = ms(&[
+        "derive",
+        "--hex",
+        ZEROS_HEX,
+        "--template",
+        "bip84",
+        "--account",
+        "1",
+        "--json",
+    ]);
     let v0: serde_json::Value = serde_json::from_str(&out(&a0)).unwrap();
     let v1: serde_json::Value = serde_json::from_str(&out(&a1)).unwrap();
     assert_ne!(v0["account_xpub"], v1["account_xpub"]);
@@ -102,29 +129,58 @@ fn passphrase_changes_fingerprint() {
     let plain = ms(&["derive", "--hex", ZEROS_HEX]);
     let with_pp = ms(&["derive", "--hex", ZEROS_HEX, "--passphrase", "TREZOR"]);
     assert!(out(&plain).contains(MASTER_FP_EN));
-    assert!(!out(&with_pp).contains(MASTER_FP_EN), "passphrase must change fp: {}", out(&with_pp));
+    assert!(
+        !out(&with_pp).contains(MASTER_FP_EN),
+        "passphrase must change fp: {}",
+        out(&with_pp)
+    );
 }
 
 #[test]
 fn passphrase_stdin_reads_stdin() {
-    let o = Command::cargo_bin("ms").unwrap()
+    let o = Command::cargo_bin("ms")
+        .unwrap()
         .args(["derive", "--hex", ZEROS_HEX, "--passphrase-stdin"])
-        .write_stdin("TREZOR").output().unwrap();
-    assert_eq!(o.status.code().unwrap(), 0, "{}", String::from_utf8_lossy(&o.stderr));
-    assert!(!String::from_utf8(o.stdout).unwrap().contains(MASTER_FP_EN), "passphrase applied");
+        .write_stdin("TREZOR")
+        .output()
+        .unwrap();
+    assert_eq!(
+        o.status.code().unwrap(),
+        0,
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(
+        !String::from_utf8(o.stdout).unwrap().contains(MASTER_FP_EN),
+        "passphrase applied"
+    );
 }
 
 #[test]
 fn passphrase_stdin_preserves_multiword_matches_inline() {
     // C1 regression: a multi-word passphrase via stdin must NOT be whitespace-
     // stripped — it must equal the inline --passphrase result for the same bytes.
-    let inline = ms(&["derive", "--hex", ZEROS_HEX, "--passphrase", "a b c", "--json"]);
-    let from_stdin = Command::cargo_bin("ms").unwrap()
+    let inline = ms(&[
+        "derive",
+        "--hex",
+        ZEROS_HEX,
+        "--passphrase",
+        "a b c",
+        "--json",
+    ]);
+    let from_stdin = Command::cargo_bin("ms")
+        .unwrap()
         .args(["derive", "--hex", ZEROS_HEX, "--passphrase-stdin", "--json"])
-        .write_stdin("a b c\n").output().unwrap();
+        .write_stdin("a b c\n")
+        .output()
+        .unwrap();
     let vi: serde_json::Value = serde_json::from_str(&out(&inline)).unwrap();
-    let vs: serde_json::Value = serde_json::from_str(&String::from_utf8(from_stdin.stdout).unwrap()).unwrap();
-    assert_eq!(vi["master_fingerprint"], vs["master_fingerprint"], "stdin passphrase must match inline");
+    let vs: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(from_stdin.stdout).unwrap()).unwrap();
+    assert_eq!(
+        vi["master_fingerprint"], vs["master_fingerprint"],
+        "stdin passphrase must match inline"
+    );
     // and differ from the no-passphrase fp (proves it was actually applied).
     assert_ne!(vi["master_fingerprint"], MASTER_FP_EN);
 }
@@ -133,20 +189,51 @@ fn passphrase_stdin_preserves_multiword_matches_inline() {
 fn single_stdin_guard() {
     // ms1 from stdin + --passphrase-stdin → BadInput (one stdin).
     let card = ms1_of(ZEROS_HEX);
-    let o = Command::cargo_bin("ms").unwrap()
+    let o = Command::cargo_bin("ms")
+        .unwrap()
         .args(["derive", "--passphrase-stdin"])
-        .write_stdin(card).output().unwrap();
-    assert_eq!(o.status.code().unwrap(), 1, "{}", String::from_utf8_lossy(&o.stderr));
+        .write_stdin(card)
+        .output()
+        .unwrap();
+    assert_eq!(
+        o.status.code().unwrap(),
+        1,
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
 }
 
 #[test]
 fn network_testnet_tpub_same_fingerprint() {
-    let main = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip84", "--json"]);
-    let test = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip84", "--network", "testnet", "--json"]);
+    let main = ms(&[
+        "derive",
+        "--hex",
+        ZEROS_HEX,
+        "--template",
+        "bip84",
+        "--json",
+    ]);
+    let test = ms(&[
+        "derive",
+        "--hex",
+        ZEROS_HEX,
+        "--template",
+        "bip84",
+        "--network",
+        "testnet",
+        "--json",
+    ]);
     let vm: serde_json::Value = serde_json::from_str(&out(&main)).unwrap();
     let vt: serde_json::Value = serde_json::from_str(&out(&test)).unwrap();
-    assert_eq!(vm["master_fingerprint"], vt["master_fingerprint"], "fp network-independent");
-    assert!(vt["account_xpub"].as_str().unwrap().starts_with("tpub"), "{}", vt["account_xpub"]);
+    assert_eq!(
+        vm["master_fingerprint"], vt["master_fingerprint"],
+        "fp network-independent"
+    );
+    assert!(
+        vt["account_xpub"].as_str().unwrap().starts_with("tpub"),
+        "{}",
+        vt["account_xpub"]
+    );
     assert_eq!(vt["account_path"], "m/84'/1'/0'");
 }
 
@@ -160,7 +247,14 @@ fn input_exclusivity() {
 
 #[test]
 fn json_shape() {
-    let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip84", "--json"]);
+    let o = ms(&[
+        "derive",
+        "--hex",
+        ZEROS_HEX,
+        "--template",
+        "bip84",
+        "--json",
+    ]);
     let v: serde_json::Value = serde_json::from_str(&out(&o)).unwrap();
     assert_eq!(v["schema_version"], "1");
     assert_eq!(v["master_fingerprint"], MASTER_FP_EN);
@@ -170,13 +264,24 @@ fn json_shape() {
     // no-template → account fields omitted (skip_serializing_if)
     let nt = ms(&["derive", "--hex", ZEROS_HEX, "--json"]);
     let vnt: serde_json::Value = serde_json::from_str(&out(&nt)).unwrap();
-    assert!(vnt.get("account_xpub").is_none(), "omitted without --template");
+    assert!(
+        vnt.get("account_xpub").is_none(),
+        "omitted without --template"
+    );
 }
 
 #[test]
 fn no_secret_on_stdout() {
     // PUBLIC-only boundary: stdout never carries an xprv/tprv or a 64-byte seed.
-    let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip84", "--network", "testnet"]);
+    let o = ms(&[
+        "derive",
+        "--hex",
+        ZEROS_HEX,
+        "--template",
+        "bip84",
+        "--network",
+        "testnet",
+    ]);
     let s = out(&o);
     assert!(!s.contains("xprv"), "{s}");
     assert!(!s.contains("tprv"), "{s}");
@@ -185,7 +290,11 @@ fn no_secret_on_stdout() {
 #[test]
 fn inline_secret_argv_advisory() {
     let o = ms(&["derive", "--hex", ZEROS_HEX]);
-    assert!(err(&o).contains("secret material on argv (--hex)"), "{}", err(&o));
+    assert!(
+        err(&o).contains("secret material on argv (--hex)"),
+        "{}",
+        err(&o)
+    );
 }
 
 /// Wave-2 ms lane (slug `ms-cli-derive-xpriv-master-not-zeroized`, in-repo
@@ -209,20 +318,51 @@ fn scrub_rewire_leaves_output_byte_identical() {
     );
 
     // (b) fingerprint-only (--json) — exact field value unchanged.
-    let fp_json = ms(&["derive", "--hex", ZEROS_HEX, "--language", "english", "--json"]);
+    let fp_json = ms(&[
+        "derive",
+        "--hex",
+        ZEROS_HEX,
+        "--language",
+        "english",
+        "--json",
+    ]);
     let vj: serde_json::Value = serde_json::from_str(&out(&fp_json)).unwrap();
     assert_eq!(vj["master_fingerprint"], MASTER_FP_EN);
-    assert!(vj.get("account_xpub").is_none(), "no account without --template: {}", out(&fp_json));
+    assert!(
+        vj.get("account_xpub").is_none(),
+        "no account without --template: {}",
+        out(&fp_json)
+    );
 
     // (c) account-xpub bip84 (text) — both fp and account xpub unchanged.
-    let acct_text = ms(&["derive", "--hex", ZEROS_HEX, "--language", "english", "--template", "bip84"]);
+    let acct_text = ms(&[
+        "derive",
+        "--hex",
+        ZEROS_HEX,
+        "--language",
+        "english",
+        "--template",
+        "bip84",
+    ]);
     assert_eq!(code(&acct_text), 0, "{}", err(&acct_text));
     let at = out(&acct_text);
     assert!(at.contains(MASTER_FP_EN), "account text fp changed: {at}");
-    assert!(at.contains(BIP84_ACCT_XPUB), "account xpub changed by scrub rewire: {at}");
+    assert!(
+        at.contains(BIP84_ACCT_XPUB),
+        "account xpub changed by scrub rewire: {at}"
+    );
 
     // (d) account-xpub bip84 (--json) — exact field values unchanged.
-    let acct_json = ms(&["derive", "--hex", ZEROS_HEX, "--language", "english", "--template", "bip84", "--json"]);
+    let acct_json = ms(&[
+        "derive",
+        "--hex",
+        ZEROS_HEX,
+        "--language",
+        "english",
+        "--template",
+        "bip84",
+        "--json",
+    ]);
     let va: serde_json::Value = serde_json::from_str(&out(&acct_json)).unwrap();
     assert_eq!(va["master_fingerprint"], MASTER_FP_EN);
     assert_eq!(va["account_xpub"], BIP84_ACCT_XPUB);

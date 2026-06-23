@@ -6,7 +6,8 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 
-const Z12: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const Z12: &str =
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
 fn comma5(s: &str) -> String {
     let mut out = String::new();

@@ -221,8 +221,7 @@ pub fn combine_shares(shares: &[String]) -> Result<(Tag, Payload)> {
     let parsed: Vec<Codex32String> = parsed
         .iter()
         .map(|c| {
-            Codex32String::from_string(c.to_string().to_ascii_lowercase())
-                .map_err(Error::Codex32)
+            Codex32String::from_string(c.to_string().to_ascii_lowercase()).map_err(Error::Codex32)
         })
         .collect::<Result<Vec<_>>>()?;
 
@@ -327,7 +326,8 @@ mod tests {
     #[test]
     fn new_accepts_2_through_9() {
         for k in 2u8..=9 {
-            let t = Threshold::new(k).unwrap_or_else(|e| panic!("new({k}) should be Ok, got {e:?}"));
+            let t =
+                Threshold::new(k).unwrap_or_else(|e| panic!("new({k}) should be Ok, got {e:?}"));
             assert_eq!(t.get(), k);
         }
     }
@@ -344,7 +344,10 @@ mod tests {
 
     #[test]
     fn new_rejects_ten() {
-        assert!(matches!(Threshold::new(10), Err(Error::InvalidThreshold(10))));
+        assert!(matches!(
+            Threshold::new(10),
+            Err(Error::InvalidThreshold(10))
+        ));
     }
 
     #[test]
@@ -369,7 +372,10 @@ mod tests {
         Payload::Entr(vec![0xCDu8; 16])
     }
     fn mnem_p() -> Payload {
-        Payload::Mnem { language: 1, entropy: vec![0xCDu8; 16] }
+        Payload::Mnem {
+            language: 1,
+            entropy: vec![0xCDu8; 16],
+        }
     }
 
     /// Re-parse a share string and return (threshold_char, share_index_char, id).
@@ -497,7 +503,10 @@ mod tests {
     fn combine_round_trip_entr_and_mnem_all_lengths() {
         for ent_len in [16usize, 20, 24, 28, 32] {
             let entr = Payload::Entr(vec![0x37u8; ent_len]);
-            let mnem = Payload::Mnem { language: 7, entropy: vec![0x91u8; ent_len] };
+            let mnem = Payload::Mnem {
+                language: 7,
+                entropy: vec![0x91u8; ent_len],
+            };
             for p in [entr, mnem] {
                 for k in 2u8..=9 {
                     let n = (k as usize) + 1;
@@ -508,8 +517,7 @@ mod tests {
                         let (tag, recovered) = combine_shares(subset).unwrap();
                         assert_eq!(tag, Tag::ENTR, "combine always returns Tag::ENTR");
                         assert_eq!(
-                            recovered,
-                            p,
+                            recovered, p,
                             "k={k} n={n} ent_len={ent_len} must recover the exact payload"
                         );
                     }
@@ -525,7 +533,10 @@ mod tests {
         // Only 2 of a 3-of-4 set.
         let err = combine_shares(&shares[..2]).unwrap_err();
         assert!(
-            matches!(err, Error::Codex32(codex32::Error::ThresholdNotPassed { .. })),
+            matches!(
+                err,
+                Error::Codex32(codex32::Error::ThresholdNotPassed { .. })
+            ),
             "expected ThresholdNotPassed, got {err:?}"
         );
     }
@@ -611,7 +622,11 @@ mod tests {
             out.push(s.to_string());
         }
         for pidx in pool.iter().take(n).skip(k - 1) {
-            out.push(Codex32String::interpolate_at(&defining, *pidx).unwrap().to_string());
+            out.push(
+                Codex32String::interpolate_at(&defining, *pidx)
+                    .unwrap()
+                    .to_string(),
+            );
         }
         out
     }
@@ -636,7 +651,10 @@ mod tests {
         let mut bad = vec![RESERVED_PREFIX];
         bad.extend(std::iter::repeat(0xCDu8).take(17));
         assert!(
-            matches!(dispatch_payload(&bad), Err(Error::PayloadLengthMismatch { got: 17, .. })),
+            matches!(
+                dispatch_payload(&bad),
+                Err(Error::PayloadLengthMismatch { got: 17, .. })
+            ),
             "non-standard Entr length must Err"
         );
         // Positive control: a standard length (16) still decodes Ok — no over-rejection.
@@ -682,7 +700,11 @@ mod tests {
             out.push(s.to_string());
         }
         for pidx in pool.iter().take(n).skip(k - 1) {
-            out.push(Codex32String::interpolate_at(&defining, *pidx).unwrap().to_string());
+            out.push(
+                Codex32String::interpolate_at(&defining, *pidx)
+                    .unwrap()
+                    .to_string(),
+            );
         }
         out
     }
@@ -721,7 +743,10 @@ mod tests {
         let shares = encode_shares(Tag::ENTR, Threshold::new(2).unwrap(), 3, &p).unwrap();
         let (tag, recovered) = combine_shares(&shares[..2]).unwrap();
         assert_eq!(tag, Tag::ENTR);
-        assert_eq!(recovered, p, "exactly-k combine must recover the exact payload");
+        assert_eq!(
+            recovered, p,
+            "exactly-k combine must recover the exact payload"
+        );
     }
 
     #[test]
@@ -733,7 +758,10 @@ mod tests {
         let shares = encode_shares(Tag::ENTR, Threshold::new(2).unwrap(), 3, &p).unwrap();
         let (tag, recovered) = combine_shares(&shares).unwrap();
         assert_eq!(tag, Tag::ENTR);
-        assert_eq!(recovered, p, "n>k all-consistent combine must recover the exact payload");
+        assert_eq!(
+            recovered, p,
+            "n>k all-consistent combine must recover the exact payload"
+        );
     }
 
     #[test]

@@ -75,7 +75,10 @@ pub fn run(mut args: VerifyArgs) -> Result<u8> {
         bool,
     ) = match ms_codec::decode(&ms1) {
         Ok((_tag, payload)) => crate::cmd::payload_lang::payload_entropy_and_language(
-            payload, cli_lang, defaulted, &mut stderr,
+            payload,
+            cli_lang,
+            defaulted,
+            &mut stderr,
         ),
         Err(ms_codec::Error::ReservedTagNotEmittedInV01 { got }) => {
             // Exit 3 path: print the success-shaped "valid future format" message.

@@ -65,8 +65,8 @@ fn zero_share_is_byte_identical_to_single() {
         let s = single.to_string();
 
         // Re-parse the emitted string and confirm byte-identity of the payload.
-        let reparsed = Codex32String::from_string(s.clone())
-            .expect("the emitted v0.1 single must re-parse");
+        let reparsed =
+            Codex32String::from_string(s.clone()).expect("the emitted v0.1 single must re-parse");
         assert_eq!(
             reparsed.parts().data(),
             data,
@@ -124,11 +124,18 @@ fn run_case(prefix: &[u8], n_ent: usize, k: u8, n: usize) -> Result<(), String> 
         distributed.push((idx, derived));
     }
     if distributed.len() != n {
-        return Err(format!("expected {n} distributed shares, got {}", distributed.len()));
+        return Err(format!(
+            "expected {n} distributed shares, got {}",
+            distributed.len()
+        ));
     }
 
     // 6 (length): assert every distributed share string is the expected length.
-    let len_set = if prefix[0] == 0x00 { ENTR_STR_LENGTHS } else { MNEM_STR_LENGTHS };
+    let len_set = if prefix[0] == 0x00 {
+        ENTR_STR_LENGTHS
+    } else {
+        MNEM_STR_LENGTHS
+    };
     let pos = ENT_LENGTHS.iter().position(|&e| e == n_ent).unwrap();
     let expected_len = len_set[pos];
     for (idx, share) in &distributed {
@@ -186,8 +193,7 @@ fn run_case(prefix: &[u8], n_ent: usize, k: u8, n: usize) -> Result<(), String> 
 #[test]
 fn kofn_round_trip_entr_and_mnem() {
     // entr prefix = [0x00]; mnem prefix = [0x02][lang=ja=1].
-    let kinds: [(&str, Vec<u8>); 2] =
-        [("entr", vec![0x00u8]), ("mnem(ja)", vec![0x02u8, 0x01u8])];
+    let kinds: [(&str, Vec<u8>); 2] = [("entr", vec![0x00u8]), ("mnem(ja)", vec![0x02u8, 0x01u8])];
 
     let mut failures: Vec<String> = Vec::new();
 

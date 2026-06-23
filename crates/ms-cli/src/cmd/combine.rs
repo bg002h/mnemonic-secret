@@ -13,7 +13,7 @@ use ms_codec::{Payload, Tag};
 use serde_json::to_string;
 use zeroize::Zeroizing;
 
-use crate::advisory::{OutputClass, emit_output_class_advisory};
+use crate::advisory::{emit_output_class_advisory, OutputClass};
 use crate::error::{CliError, Result};
 use crate::format::CombineJson;
 use crate::language::CliLanguage;
@@ -124,7 +124,10 @@ pub fn run(mut args: CombineArgs) -> Result<u8> {
         CombineTo::Ms1 => emit_ms1(&payload, &entropy, kind, args.json)?,
     }
 
-    emit_output_class_advisory(OutputClass::PrivateKeyMaterial, &mut std::io::stderr().lock());
+    emit_output_class_advisory(
+        OutputClass::PrivateKeyMaterial,
+        &mut std::io::stderr().lock(),
+    );
     Ok(0)
 }
 

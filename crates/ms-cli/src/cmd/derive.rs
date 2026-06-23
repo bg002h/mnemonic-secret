@@ -8,13 +8,13 @@ use std::io::Write;
 use std::str::FromStr;
 
 use bip39::Mnemonic;
-use bitcoin::NetworkKind;
 use bitcoin::bip32::{DerivationPath, Fingerprint, Xpriv, Xpub};
 use bitcoin::secp256k1::{All, Secp256k1};
+use bitcoin::NetworkKind;
 use clap::Args;
 use zeroize::Zeroizing;
 
-use crate::advisory::{OutputClass, emit_output_class_advisory, secret_in_argv_warning};
+use crate::advisory::{emit_output_class_advisory, secret_in_argv_warning, OutputClass};
 use crate::cmd::encode::parse_hex_entropy;
 use crate::error::{CliError, Result};
 use crate::language::CliLanguage;
@@ -335,7 +335,15 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
                 .map_err(|e| CliError::BadInput(format!("account derive: {e}")))?,
         );
         let acct_xpub = acct_xpriv.xpub(&secp);
-        Some((format!("m/{}'/{}'/{}'", t.purpose(), args.network.coin(), args.account), acct_xpub.to_string()))
+        Some((
+            format!(
+                "m/{}'/{}'/{}'",
+                t.purpose(),
+                args.network.coin(),
+                args.account
+            ),
+            acct_xpub.to_string(),
+        ))
     } else {
         None
     };

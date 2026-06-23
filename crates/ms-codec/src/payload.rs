@@ -115,31 +115,52 @@ mod tests {
 
     #[test]
     fn mnem_valid_language_and_entropy_accepts() {
-        let p = Payload::Mnem { language: 1, entropy: vec![0u8; 16] };
+        let p = Payload::Mnem {
+            language: 1,
+            entropy: vec![0u8; 16],
+        };
         assert!(matches!(p.validate(), Ok(())));
     }
 
     #[test]
     fn mnem_language_10_rejects() {
-        let p = Payload::Mnem { language: 10, entropy: vec![0u8; 16] };
+        let p = Payload::Mnem {
+            language: 10,
+            entropy: vec![0u8; 16],
+        };
         assert!(matches!(p.validate(), Err(Error::MnemUnknownLanguage(10))));
     }
 
     #[test]
     fn mnem_language_0x10_rejects() {
-        let p = Payload::Mnem { language: 0x10, entropy: vec![0u8; 16] };
-        assert!(matches!(p.validate(), Err(Error::MnemUnknownLanguage(0x10))));
+        let p = Payload::Mnem {
+            language: 0x10,
+            entropy: vec![0u8; 16],
+        };
+        assert!(matches!(
+            p.validate(),
+            Err(Error::MnemUnknownLanguage(0x10))
+        ));
     }
 
     #[test]
     fn mnem_bad_entropy_length_rejects() {
-        let p = Payload::Mnem { language: 0, entropy: vec![0u8; 17] };
-        assert!(matches!(p.validate(), Err(Error::PayloadLengthMismatch { .. })));
+        let p = Payload::Mnem {
+            language: 0,
+            entropy: vec![0u8; 17],
+        };
+        assert!(matches!(
+            p.validate(),
+            Err(Error::PayloadLengthMismatch { .. })
+        ));
     }
 
     #[test]
     fn mnem_kind_returns_mnem() {
-        let p = Payload::Mnem { language: 0, entropy: vec![0u8; 16] };
+        let p = Payload::Mnem {
+            language: 0,
+            entropy: vec![0u8; 16],
+        };
         assert_eq!(p.kind(), PayloadKind::Mnem);
     }
 

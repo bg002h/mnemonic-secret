@@ -326,7 +326,11 @@ mod no_echo_tests {
     fn codex32_invalid_checksum_from_decode_does_not_leak() {
         // Verified-valid 50-char ms1 vector (decodes OK at HEAD).
         let valid = "ms10entrsqgqqc83yukgh23xkvmp59xf2eldpk4cdrq2y4h82yz";
-        assert!(decode(valid).is_ok(), "fixture must decode: {:?}", decode(valid));
+        assert!(
+            decode(valid).is_ok(),
+            "fixture must decode: {:?}",
+            decode(valid)
+        );
         let mut chars: Vec<char> = valid.chars().collect();
         // Flip a data char (well past the `ms10entrs` prefix) → checksum fails.
         let i = 14;

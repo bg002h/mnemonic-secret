@@ -18,7 +18,11 @@ const MASTER_FP_EN: &str = "73c5da0a";
 const MASTER_FP_FR: &str = "7d53dc37";
 
 fn ms(args: &[&str]) -> Output {
-    Command::cargo_bin("ms").unwrap().args(args).output().unwrap()
+    Command::cargo_bin("ms")
+        .unwrap()
+        .args(args)
+        .output()
+        .unwrap()
 }
 fn out(o: &Output) -> String {
     String::from_utf8(o.stdout.clone()).unwrap()
@@ -39,7 +43,15 @@ fn phrase_of(lang: bip39::Language, entropy: &[u8]) -> String {
 
 /// Build a mnem ms1 (carries the wire language byte) via `ms encode`.
 fn mnem_ms1(language: &str, phrase: &str) -> String {
-    let o = ms(&["encode", "--language", language, "--phrase", phrase, "--group-size", "0"]);
+    let o = ms(&[
+        "encode",
+        "--language",
+        language,
+        "--phrase",
+        phrase,
+        "--group-size",
+        "0",
+    ]);
     assert!(o.status.success(), "encode: {}", err(&o));
     out(&o).lines().next().unwrap().trim().to_string()
 }
@@ -60,7 +72,10 @@ fn french_mnem_ms1_derives_correct_french_fp() {
     let o = ms(&["derive", &card]);
     assert_eq!(code(&o), 0, "stderr: {}", err(&o));
     let s = out(&o);
-    assert!(s.contains(MASTER_FP_FR), "expected French fp {MASTER_FP_FR}, got: {s}");
+    assert!(
+        s.contains(MASTER_FP_FR),
+        "expected French fp {MASTER_FP_FR}, got: {s}"
+    );
     assert!(
         !s.contains(MASTER_FP_EN),
         "must NOT emit wrong English fp {MASTER_FP_EN} (naive-patch bug): {s}"
@@ -100,7 +115,11 @@ fn explicit_wrong_language_wire_wins_with_note() {
     let card = mnem_ms1("french", &fr);
     let o = ms(&["derive", "--language", "english", &card]);
     assert_eq!(code(&o), 0, "stderr: {}", err(&o));
-    assert!(out(&o).contains(MASTER_FP_FR), "wire (French) fp: {}", out(&o));
+    assert!(
+        out(&o).contains(MASTER_FP_FR),
+        "wire (French) fp: {}",
+        out(&o)
+    );
     let e = err(&o);
     assert!(e.contains("note:"), "expected disagreement note: {e}");
     assert!(e.contains("french"), "note names wire language: {e}");
@@ -120,7 +139,10 @@ fn french_card_labels_french_not_default() {
     assert_eq!(code(&o), 0, "stderr: {}", err(&o));
     let s = out(&o);
     assert!(s.contains(MASTER_FP_FR), "{s}");
-    assert!(s.contains("language:            french"), "expected 'language: french': {s}");
+    assert!(
+        s.contains("language:            french"),
+        "expected 'language: french': {s}"
+    );
     assert!(!s.contains("(DEFAULT)"), "must not be DEFAULT-labeled: {s}");
     assert!(
         !err(&o).contains("--language defaulted to english"),
@@ -132,8 +154,14 @@ fn french_card_labels_french_not_default() {
     let oj = ms(&["derive", "--json", &card]);
     assert_eq!(code(&oj), 0, "stderr: {}", err(&oj));
     let sj = out(&oj);
-    assert!(sj.contains("\"language\":\"french\""), "json language=french: {sj}");
-    assert!(sj.contains("\"language_defaulted\":false"), "json defaulted=false: {sj}");
+    assert!(
+        sj.contains("\"language\":\"french\""),
+        "json language=french: {sj}"
+    );
+    assert!(
+        sj.contains("\"language_defaulted\":false"),
+        "json defaulted=false: {sj}"
+    );
 }
 
 /// Positive control: an English Entr card (no language byte) → fp 73c5da0a,
@@ -145,7 +173,10 @@ fn english_entr_card_default_label_preserved() {
     assert_eq!(code(&o), 0, "stderr: {}", err(&o));
     let s = out(&o);
     assert!(s.contains(MASTER_FP_EN), "{s}");
-    assert!(s.contains("(DEFAULT)"), "Entr card keeps DEFAULT label: {s}");
+    assert!(
+        s.contains("(DEFAULT)"),
+        "Entr card keeps DEFAULT label: {s}"
+    );
     let e = err(&o);
     assert!(
         e.contains("--language defaulted to english"),
@@ -174,7 +205,10 @@ fn french_card_explicit_matching_language_no_default_label() {
     let s = out(&o);
     assert!(s.contains(MASTER_FP_FR), "{s}");
     assert!(s.contains("language:            french"), "{s}");
-    assert!(!s.contains("(DEFAULT)"), "real-wire french card is not DEFAULT-labeled: {s}");
+    assert!(
+        !s.contains("(DEFAULT)"),
+        "real-wire french card is not DEFAULT-labeled: {s}"
+    );
     assert!(
         !err(&o).contains("--language defaulted to english"),
         "no english-default note for a real-wire card: {}",

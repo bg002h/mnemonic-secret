@@ -8,7 +8,9 @@
 //! spec, so there is no atomic-multi-chunk variant (cf. md-codec's
 //! per-chunk-set version).
 
-use crate::consts::{RESERVED_NOT_EMITTED_V01, TAG_ENTR, VALID_MNEM_STR_LENGTHS, VALID_STR_LENGTHS};
+use crate::consts::{
+    RESERVED_NOT_EMITTED_V01, TAG_ENTR, VALID_MNEM_STR_LENGTHS, VALID_STR_LENGTHS,
+};
 use crate::envelope;
 use crate::error::{Error, Result};
 use crate::payload::{Payload, PayloadKind};
@@ -180,13 +182,14 @@ fn parse_ms1_symbols(s: &str) -> Result<Vec<u8>> {
     // per plan §2.B.4 D29 error-mapping table.
     for c in rest.chars() {
         let lc = c as u8;
-        let sym = CODEX32_ALPHABET
-            .iter()
-            .position(|&b| b == lc)
-            .ok_or(Error::UnexpectedStringLength {
-                got: s.len(),
-                allowed: VALID_STR_LENGTHS,
-            })? as u8;
+        let sym =
+            CODEX32_ALPHABET
+                .iter()
+                .position(|&b| b == lc)
+                .ok_or(Error::UnexpectedStringLength {
+                    got: s.len(),
+                    allowed: VALID_STR_LENGTHS,
+                })? as u8;
         symbols.push(sym);
     }
     Ok(symbols)
@@ -283,8 +286,7 @@ pub fn decode_with_correction(s: &str) -> Result<(Tag, Payload, Vec<CorrectionDe
     // happen to produce a degree-≤4 locator with 4 valid roots).
     let mut verify_input = crate::bch::hrp_expand("ms");
     verify_input.extend_from_slice(&corrected);
-    let verify_residue =
-        crate::bch::polymod_run(&verify_input) ^ crate::bch::MS_REGULAR_CONST;
+    let verify_residue = crate::bch::polymod_run(&verify_input) ^ crate::bch::MS_REGULAR_CONST;
     if verify_residue != 0 {
         return Err(Error::TooManyErrors { bound: 8 });
     }
@@ -353,7 +355,10 @@ mod tests {
         assert!(decode(&entr).is_ok(), "v0.1 entr single must still decode");
         let mnem = encode::encode(
             Tag::ENTR,
-            &Payload::Mnem { language: 1, entropy: vec![0x22u8; 16] },
+            &Payload::Mnem {
+                language: 1,
+                entropy: vec![0x22u8; 16],
+            },
         )
         .unwrap();
         assert!(decode(&mnem).is_ok(), "mnem single must still decode");

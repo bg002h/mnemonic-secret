@@ -8,7 +8,8 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::Value;
 
-const ENGLISH_12: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const ENGLISH_12: &str =
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
 fn japanese_12_word() -> String {
     bip39::Mnemonic::from_entropy_in(bip39::Language::Japanese, &[0xABu8; 16])
@@ -32,7 +33,17 @@ fn split_english_phrase_emits_n_shares_text() {
     // (default is now space/5; labels moved to stderr — mstring-grouping P2).
     let out = Command::cargo_bin("ms")
         .unwrap()
-        .args(["split", "--phrase", ENGLISH_12, "-k", "2", "-n", "3", "--group-size", "0"])
+        .args([
+            "split",
+            "--phrase",
+            ENGLISH_12,
+            "-k",
+            "2",
+            "-n",
+            "3",
+            "--group-size",
+            "0",
+        ])
         .assert()
         .success()
         .get_output()
@@ -75,7 +86,16 @@ fn split_emits_private_key_material_advisory() {
 fn split_json_shape() {
     let out = Command::cargo_bin("ms")
         .unwrap()
-        .args(["split", "--hex", &"ab".repeat(16), "-k", "3", "-n", "5", "--json"])
+        .args([
+            "split",
+            "--hex",
+            &"ab".repeat(16),
+            "-k",
+            "3",
+            "-n",
+            "5",
+            "--json",
+        ])
         .assert()
         .success()
         .get_output()
@@ -97,7 +117,18 @@ fn split_japanese_phrase_json_has_language_and_mnem_kind() {
     let ja = japanese_12_word();
     let out = Command::cargo_bin("ms")
         .unwrap()
-        .args(["split", "--language", "japanese", "--phrase", &ja, "-k", "2", "-n", "3", "--json"])
+        .args([
+            "split",
+            "--language",
+            "japanese",
+            "--phrase",
+            &ja,
+            "-k",
+            "2",
+            "-n",
+            "3",
+            "--json",
+        ])
         .assert()
         .success()
         .get_output()
