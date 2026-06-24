@@ -4,6 +4,15 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.13.2] — 2026-06-23
+
+**SemVer-PATCH — musl static-binary release asset + musl build/test CI leg. Ships the first fully-static, dependency-free `ms` Linux binaries (`x86_64-unknown-linux-musl` + `aarch64-unknown-linux-musl`) as GitHub-release tarballs on the `ms-cli-v*` tag, each with a per-arch `SHA256SUMS.<arch>` for offline / air-gapped verification. Also adds a musl compile/test CI leg to `rust.yml` (a separate `musl-check` job). `ms-codec` UNTOUCHED. No crate source / API / `--json` / CLI-flag / subcommand change. NOT published to crates.io (binary-asset-only PATCH; the tag ships the binary). The shipped guarantee is *static + checksummed*, not bit-for-bit reproducible.**
+
+### Added
+
+- **musl static-binary release-asset job** (`.github/workflows/man-release.yml`, new `musl-binaries` job). On each `ms-cli-v*` tag it builds `ms` for `x86_64-unknown-linux-musl` (natively with `musl-tools` + `CC_x86_64_unknown_linux_musl=musl-gcc`) and `aarch64-unknown-linux-musl` (via `cross`), tarballs each as `ms-<version>-<arch>-linux-musl.tar.gz`, emits a per-arch `SHA256SUMS.<arch>`, and attaches them to the same release via `gh release upload --clobber` (alongside `ms-man.tar.gz`). Scoped `-p ms-cli --bin ms`. `crt-static` left at its musl default (ON); `-Ctarget-feature=-crt-static` never set (per `rust#135244`). Toolchain pinned `@1.85.0`. The only C dep is the vendored libsecp256k1 in `secp256k1-sys`.
+- **musl compile/test CI leg** (`.github/workflows/rust.yml`, new `musl-check` job). `cargo test -p ms-cli --target x86_64-unknown-linux-musl` (native, `musl-tools` + `CC_*=musl-gcc`, with the `ulimit -l 65536` mlock-test dance) + `cross build` for aarch64-musl (build-only). Pinned `@1.85.0`.
+
 ## ms-cli [0.13.1] — 2026-06-23
 
 **SemVer-PATCH — BSD secret-hygiene parity + FreeBSD compile-gate. `set_non_dumpable()` (in `crates/ms-cli/src/process_hardening.rs`) was fenced `#[cfg(target_os = "linux")]` and a silent no-op on the BSDs, so an `ms` process on FreeBSD/OpenBSD/NetBSD could be ptrace/ktrace-introspected and could drop a core file the BIP-39 entropy / mnemonic spills into. A second cfg arm restores parity. No new CLI flag / subcommand / output-shape. Linux behavior unchanged (the new arm is cfg-gated off everywhere but the BSDs). `ms-codec` UNTOUCHED. Shipped in lockstep with `mnemonic-toolkit` 0.73.1 / `md-cli` 0.11.1 / `mk-cli` 0.11.1 (byte-identical executable arm in all four CLI crates).**

@@ -290,3 +290,55 @@ jobs:
         with:
           targets: x86_64-unknown-freebsd
       - run: cargo check --target x86_64-unknown-freebsd -p ms-cli
+
+  musl-check:
+    # musl target coverage (static air-gapped binary cycle). Both musl targets
+    # are Tier 2 with Host Tools and `unix` + Linux, so every `#[cfg(unix)]` /
+    # `#[cfg(target_os = "linux")]` path (mlock, process_hardening) compiles +
+    # is functional on musl with ZERO source change.
+    #
+    #   * x86_64-musl — built + tested natively (`cargo test -p ms-cli`). Needs
+    #     `musl-tools` (`musl-gcc`) + `CC_x86_64_unknown_linux_musl=musl-gcc` so
+    #     cc-rs builds the ONLY C dep (the vendored libsecp256k1 in
+    #     `secp256k1-sys`) against musl. Honors the `ulimit -l 65536` dance
+    #     (mlock tests). ms-cli is bin-only — `-p ms-cli` covers the bin's test
+    #     build.
+    #   * aarch64-musl — `cross build`-only (cross bundles the musl cross C
+    #     toolchain; build coverage, no emulated test run).
+    #
+    # crt-static left at its musl default (ON). NEVER pass
+    # `-Ctarget-feature=-crt-static` (rust#135244 silently links host glibc).
+    # Toolchain pinned `@1.85.0` (matches `rust-toolchain.toml`).
+    #
+    # Security note: this job uses only GitHub-provided trusted context.
+    name: musl compile/test (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            musl_native: true
+          - target: aarch64-unknown-linux-musl
+            cross: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          targets: ${{ matrix.target }}
+      - name: install musl-tools (x86_64-musl native)
+        if: ${{ matrix.musl_native }}
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: install cross (aarch64-musl)
+        if: ${{ matrix.cross }}
+        run: cargo install --locked cross
+      - name: cargo test -p ms-cli --target x86_64-musl (native)
+        if: ${{ matrix.musl_native }}
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+        run: |
+          ulimit -l 65536 || true
+          cargo test -p ms-cli --target ${{ matrix.target }}
+      - name: cross build -p ms-cli --target aarch64-musl (build-only)
+        if: ${{ matrix.cross }}
+        run: cross build --release -p ms-cli --target ${{ matrix.target }}
