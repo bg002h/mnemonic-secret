@@ -34,6 +34,28 @@ println!("{}", mnemonic);
 
 Then derive your BIP-32 master seed via the BIP-39 PBKDF2 (with optional passphrase) — exactly as your wallet does today.
 
+## Man pages
+
+`ms` ships man pages generated from its own clap definition — the same source as `--help` — so they cannot drift from the binary. Three ways to install them:
+
+1. **Automatic (default).** The [constellation installer](https://github.com/bg002h/mnemonic-toolkit) installs them alongside the binary into `~/.local/share/man/man1` — no sudo, no system files:
+
+   ```sh
+   sh -c "$(curl -fsSL https://raw.githubusercontent.com/bg002h/mnemonic-toolkit/master/scripts/install.sh)"
+   ```
+
+   Then `man ms` works (and `man ms-<subcommand>` for each subcommand). Pass `--no-man` to skip, or `--man-dir <dir>` to relocate.
+
+2. **By hand.** If you installed the binary directly (`cargo install`), emit them yourself:
+
+   ```sh
+   ms gen-man --out ~/.local/share/man/man1
+   ```
+
+3. **Download.** Each release attaches a `ms-man.tar.gz` asset — extract it into your manpath.
+
+If `man ms` can't find them (older `man-db`, or macOS/BSD `man` that doesn't auto-read `~/.local/share/man`): `man -M ~/.local/share/man ms`.
+
 ## Scope
 
 | | v0.1 (this release) | v0.2 (planned) | v0.2+ |
