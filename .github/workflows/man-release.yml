@@ -40,7 +40,7 @@ jobs:
           tar czf ms-man.tar.gz -C man .
 
       - name: Ensure a release exists for the tag
-        run: gh release view "$REF_NAME" || gh release create "$REF_NAME" --generate-notes
+        run: gh release view "$REF_NAME" || gh release create "$REF_NAME" --generate-notes || true
 
       - name: Upload ms-man.tar.gz
         run: gh release upload "$REF_NAME" ms-man.tar.gz --clobber
@@ -97,7 +97,7 @@ jobs:
             -C "target/${{ matrix.target }}/release" ms
           sha256sum "ms-${VER}-${{ matrix.arch }}-linux-musl.tar.gz" > "SHA256SUMS.${{ matrix.arch }}"
       - name: ensure-release
-        run: gh release view "$REF_NAME" >/dev/null 2>&1 || gh release create "$REF_NAME" --generate-notes
+        run: gh release view "$REF_NAME" >/dev/null 2>&1 || gh release create "$REF_NAME" --generate-notes || true
       - name: upload
         run: |
           gh release upload "$REF_NAME" ms-*-${{ matrix.arch }}-linux-musl.tar.gz --clobber
