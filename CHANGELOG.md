@@ -4,6 +4,15 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.13.1] — 2026-06-23
+
+**SemVer-PATCH — BSD secret-hygiene parity + FreeBSD compile-gate. `set_non_dumpable()` (in `crates/ms-cli/src/process_hardening.rs`) was fenced `#[cfg(target_os = "linux")]` and a silent no-op on the BSDs, so an `ms` process on FreeBSD/OpenBSD/NetBSD could be ptrace/ktrace-introspected and could drop a core file the BIP-39 entropy / mnemonic spills into. A second cfg arm restores parity. No new CLI flag / subcommand / output-shape. Linux behavior unchanged (the new arm is cfg-gated off everywhere but the BSDs). `ms-codec` UNTOUCHED. Shipped in lockstep with `mnemonic-toolkit` 0.73.1 / `md-cli` 0.11.1 / `mk-cli` 0.11.1 (byte-identical executable arm in all four CLI crates).**
+
+### Changed
+
+- **`set_non_dumpable()` gains a BSD parity arm** (`crates/ms-cli/src/process_hardening.rs`). Keeps the Linux `prctl(PR_SET_DUMPABLE, 0)` arm; adds a `#[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]` arm that does (i) on FreeBSD only, `procctl(P_PID, 0, PROC_TRACE_CTL, PROC_TRACE_CTL_DISABLE)` (disables ptrace/ktrace introspection AND core dumping) and (ii) on all three BSDs, `setrlimit(RLIMIT_CORE, {0, 0})` (hard-zeros the core-dump size). Best-effort (return values ignored). macOS/Windows remain a documented no-op. No `libc` version bump. Compile-gated BSD unit tests added (compile-checked but never executed by the chosen CI).
+- **FreeBSD compile-gate added to CI** (`.github/workflows/rust.yml`, new `freebsd-compile-gate` job). Runs a WHOLE-CRATE `cargo check --target x86_64-unknown-freebsd -p ms-cli` (NOT `--lib` — ms-cli is bin-only [`[[bin]] name = "ms"`] and its `process_hardening` lives in the bin target; a `--lib` check would be silent false-green). Compile-covers the BSD hardening arm.
+
 ## ms-cli [0.13.0] — 2026-06-23
 
 **SemVer-MINOR — `ms gen-man`: self-emit roff man pages from the compiled clap command tree.**

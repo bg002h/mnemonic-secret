@@ -257,3 +257,36 @@ jobs:
         # from invoking them. --include-ignored opts them in for this job
         # which DOES have both.
         run: cargo test -p ms-cli --test mlock_g6_invariant -- --include-ignored
+
+  freebsd-compile-gate:
+    # Cycle C — FreeBSD compile-gate. Catches the day a Linux-only syscall /
+    # cfg / crate breaks the `cargo install`-on-FreeBSD path, and compile-covers
+    # the BSD secret-hygiene arm in `src/process_hardening.rs`
+    # (procctl/setrlimit). `x86_64-unknown-freebsd` is Tier 2 with Host Tools,
+    # so `rustup target add` ships a precompiled std on the ubuntu runner; no
+    # apt cross-compiler step is needed (cargo check stops before link; the only
+    # C step is the vendored libsecp256k1 cc compile, which builds against the
+    # Tier-2 std — validated locally with bare rustup). Fallback if that ever
+    # needs a freebsd sysroot: switch to `cross check --target …` (cross-rs
+    # bundles a freebsd container).
+    #
+    # CRITICAL — this MUST be a WHOLE-CRATE check (`cargo check --target …`),
+    # NEVER `--lib`. ms-cli is a BIN-ONLY crate (`[[bin]] name = "ms"`, no
+    # `src/lib.rs`); its `process_hardening` lives only in the bin target
+    # (`mod process_hardening;` in `main.rs`). A `cargo check --lib` would
+    # compile nothing relevant and give silent false-green coverage of the
+    # entire BSD hardening arm. Only the bare whole-crate check reaches
+    # `main.rs` and therefore the hardening module. (The toolkit's `--lib` row
+    # is a special case that works only because the toolkit alone declares
+    # `process_hardening` as `pub mod` in `src/lib.rs`.)
+    #
+    # Security note: this job uses only GitHub-provided trusted context. No
+    # interpolation of untrusted user input.
+    name: freebsd compile-gate (whole-crate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          targets: x86_64-unknown-freebsd
+      - run: cargo check --target x86_64-unknown-freebsd -p ms-cli

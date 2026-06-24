@@ -57,6 +57,24 @@ Single source of truth for items that surfaced during a review or implementation
 
 ## Open items
 
+### `bsd-process-hardening-parity-procctl-rlimit-core` — `ms`'s `set_non_dumpable()` was a silent no-op on the BSDs (companion)
+
+- **Surfaced:** 2026-06-23, the constellation-wide musl/BSD secret-hygiene recon (toolkit `design/SPEC_bsd_hygiene_and_freebsd_gate.md`, Cycle A). `ms`'s `set_non_dumpable()` in `crates/ms-cli/src/process_hardening.rs` was fenced `#[cfg(target_os = "linux")]` and a silent no-op on FreeBSD/OpenBSD/NetBSD — the anti-core-dump + anti-ptrace-introspection protection did not run, so an `ms` process on a BSD could be ptrace/ktrace-introspected and could drop a core file the BIP-39 entropy / mnemonic spills into.
+- **Status:** ✓ **RESOLVED (`ms-cli` 0.13.1, 2026-06-23).** Added a BYTE-IDENTICAL (across all four CLI crates) BSD cfg arm: `#[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]` doing (i) FreeBSD-only `procctl(P_PID, 0, PROC_TRACE_CTL, PROC_TRACE_CTL_DISABLE)` and (ii) all-three-BSD `setrlimit(RLIMIT_CORE, {0, 0})`. Best-effort. macOS/Windows remain a documented no-op. No `libc` bump. `ms-codec` NO-BUMP. No CLI flag / subcommand / output-shape change. Linux behavior unchanged.
+- **Tier:** `cross-repo`. **Companion:** `mnemonic-toolkit` (primary spec author) + `descriptor-mnemonic` + `mnemonic-key` `design/FOLLOWUPS.md` `bsd-process-hardening-parity-procctl-rlimit-core`.
+
+### `freebsd-compile-gate-ci` — no CI leg compile-checked `ms`'s FreeBSD build / BSD hardening arm (companion)
+
+- **Surfaced:** 2026-06-23, the BSD recon (Cycle C). Nothing in `ms`'s CI caught a Linux-only syscall/cfg/crate breaking the `cargo install`-on-FreeBSD path or the new BSD hardening arm.
+- **Status:** ✓ **RESOLVED (NO-BUMP CI infra, 2026-06-23).** Added a `freebsd-compile-gate` job to `.github/workflows/rust.yml` running WHOLE-CRATE `cargo check --target x86_64-unknown-freebsd -p ms-cli` (NEVER `--lib` — `ms-cli` is bin-only [`[[bin]] name = "ms"`, no `src/lib.rs`]; `process_hardening` lives in the bin target, so `--lib` would be silent false-green). `x86_64-unknown-freebsd` is Tier 2 with Host Tools; bare `rustup target add` validated locally (the cross-rs fallback was not needed).
+- **Tier:** `cross-repo` / `infra`. **Companion:** `mnemonic-toolkit` (toolkit-primary, `--lib`-correct) + `descriptor-mnemonic` + `mnemonic-key` `design/FOLLOWUPS.md` `freebsd-compile-gate-ci`.
+
+### `ms-cli-ungated-mod-mlock-windows-asymmetry` — `ms-cli` declares `mod mlock;` UNGATED vs the toolkit's `#[cfg(unix)]` gate (note-only; Windows-only-relevant)
+
+- **Surfaced:** 2026-06-23, the BSD recon (toolkit `design/SPEC_bsd_hygiene_and_freebsd_gate.md`, Non-Goal #6). `crates/ms-cli/src/main.rs:21` declares `mod mlock;` UNGATED, whereas the toolkit gates its `mlock` mount with `#[cfg(unix)]`. `mlock.rs` uses POSIX `libc::mlock` / `libc::sysconf` / `_SC_PAGESIZE`, none of which exist on Windows — so an ungated mount would fail to compile a Windows `ms` build.
+- **Status:** `open` — **NOTE-ONLY, deliberately NOT fixed.** Windows-only-relevant: both musl and all three BSDs are unix, so the asymmetry never bites the BSD/musl work; `ms-cli` ships/CIs no Windows target, so it is latent, not live. Filed per the recon's explicit "file, do not fix" disposition. Pick up if/when a Windows `ms` build is added (mirror the toolkit's `#[cfg(unix)] mod mlock;` gate, keeping g6 byte-equality in mind — the gate attribute would need matching treatment in both repos).
+- **Tier:** `infra` / `next-cycle`. **Companion:** `mnemonic-toolkit` `design/FOLLOWUPS.md` `ms-cli-ungated-mod-mlock-windows-asymmetry` (the cross-cite from the spec author).
+
 ### `display-grouping-render-strip-v1` — ✓ RESOLVED (full cycle shipped; reconciled 2026-06-22) — standardized mstring display-grouping (`ms` CLI flags + intake strip; companion)
 
 - **Surfaced:** 2026-06-15, the cross-constellation **mstring display-grouping** cycle (P2 = mnemonic-secret). User-requested standardization of `ms1`/`mk1`/`md1` display output across all four CLIs (`mnemonic`/`md`/`ms`/`mk`).
