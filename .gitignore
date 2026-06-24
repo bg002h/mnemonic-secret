@@ -7,3 +7,13 @@
 fuzz/target/
 fuzz/artifacts/
 fuzz/coverage/
+
+# Committed `cargo vendor` tree (reproducible-builds-musl cycle, P3b) — the
+# offline reproducible build needs EVERY vendored file. ms's root-anchored
+# `/target` does NOT reach into vendor/, so no vendored file is excluded today;
+# this negation is a defensive guard (matching the canonical mk-codec fix) so
+# that if any unanchored `**/target/`-style rule is ever added, vendored SOURCE
+# files whose SHA-256 is pinned in each crate's `.cargo-checksum.json` (e.g.
+# `vendor/cc/src/target/*.rs`, the cc crate's target DB — a build dep of
+# secp256k1-sys) are NOT silently dropped. MUST sort AFTER any rule it negates.
+!vendor/**
