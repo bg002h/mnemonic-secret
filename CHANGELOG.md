@@ -4,6 +4,21 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.13.0] — 2026-06-23
+
+**SemVer-MINOR — `ms gen-man`: self-emit roff man pages from the compiled clap command tree.**
+
+### Added
+
+- **New `ms gen-man --out <DIR>` subcommand.** Writes one roff man page per (sub)command into `<DIR>` (`ms.1` plus `ms-<sub>.1` for each subcommand), via `clap_mangen::generate_to(Cli::command(), &dir)` — clap-generated, hence **binary-faithful by construction** (no hand-authored content, no content-fidelity gate). The directory is created if absent. Part of the constellation-wide man-page rollout (`mnemonic`/`md`/`ms`/`mk` all gain `gen-man`); `scripts/install.sh` drops the pages into the user manpath post-`cargo install`, and the man set ships as the `ms-man.tar.gz` release asset on each `ms-cli-v*` tag.
+- New `clap_mangen = "0.3"` dependency (needs clap `^4.0`; ms-cli is on clap 4.6.1 — no clap bump).
+
+### Notes
+
+- The generator uses the **naive** `generate_to` call with **no pre-`.build()`**: a pre-build would materialize clap's `help` pseudo-subcommand shadow tree into spurious `*-help*.1` pages. A negative-canary test asserts zero `*-help*.1` pages are emitted.
+- `--no-auto-repair`-style global flags do not apply here (ms has no `global=true` flag); clap_mangen 0.3 renders global args in zero pages regardless.
+- **No `ms-codec` change** (man generation is a CLI-only concern) — codec is NOT bumped.
+
 ## ms-cli [0.11.0] — 2026-06-22
 
 **SemVer-MINOR — secret-memory-hygiene: `ms derive` best-effort byte-scrubs the derived master/account `Xpriv` (Wave-2 ms lane).**

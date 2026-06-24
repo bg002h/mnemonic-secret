@@ -113,6 +113,19 @@ enum Command {
     )]
     GuiSchema,
 
+    /// Generate roff man pages (one per subcommand) into a directory.
+    ///
+    /// Emits `ms.1` plus `ms-<sub>.1` for each subcommand, clap-generated
+    /// from this binary's own command tree (binary-faithful by construction).
+    /// `scripts/install.sh` invokes this post-`cargo install` to drop pages
+    /// into the user manpath; the man set also ships as the `ms-man.tar.gz`
+    /// release asset on each `ms-cli-v*` tag.
+    #[command(
+        name = "gen-man",
+        after_long_help = "EXAMPLES:\n  ms gen-man --out ./man         # write ms.1, ms-encode.1, … into ./man\n  ms gen-man --out \"$XDG_DATA_HOME/man/man1\"   # user manpath"
+    )]
+    GenMan(cmd::gen_man::GenManArgs),
+
     /// Repair an ms1 string via BCH error correction (exit 5 = REPAIR_APPLIED).
     ///
     /// Single-HRP context: no `--hrp` flag. Up to BCH(93,80,8) t=4 single-chunk
@@ -181,6 +194,7 @@ fn main() -> ExitCode {
         Command::Verify(args) => cmd::verify::run(args),
         Command::Vectors(args) => cmd::vectors::run(args),
         Command::GuiSchema => cmd::gui_schema::run(),
+        Command::GenMan(args) => cmd::gen_man::run(args),
         Command::Repair(args) => cmd::repair::run(args),
         Command::Split(args) => cmd::split::run(args),
         Command::Combine(args) => cmd::combine::run(args),
@@ -211,6 +225,7 @@ fn is_json_mode(cmd: &Command) -> bool {
         Command::Verify(a) => a.json,
         Command::Vectors(_) => false, // vectors output is always JSON-shaped
         Command::GuiSchema => false,  // gui-schema output is always JSON-shaped
+        Command::GenMan(_) => false,  // gen-man writes files; no JSON error envelope
         Command::Repair(a) => a.json,
         Command::Split(a) => a.json,
         Command::Combine(a) => a.json,

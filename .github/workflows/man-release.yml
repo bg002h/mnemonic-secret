@@ -1,0 +1,46 @@
+name: man-release
+
+# On each `ms-cli-v*` tag, build the `ms` binary, self-emit its roff man pages
+# (`ms gen-man`), tar them up, and attach `ms-man.tar.gz` to the GitHub release
+# for that tag. The pages are clap-generated (binary-faithful by construction);
+# the naive `generate_to` call emits zero `*-help*.1` shadow pages.
+
+on:
+  push:
+    tags:
+      - "ms-cli-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  man-tarball:
+    name: ms-man.tar.gz release asset
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REF_NAME: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build the ms binary
+        run: cargo build --release -p ms-cli --bin ms
+
+      - name: Generate man pages + tarball
+        run: |
+          ./target/release/ms gen-man --out man
+          # Negative canary: zero help-shadow pages (tripwire for an accidental pre-build).
+          if ls man/*-help*.1 >/dev/null 2>&1; then
+            echo "error: gen-man emitted *-help*.1 shadow pages" >&2
+            exit 1
+          fi
+          tar czf ms-man.tar.gz -C man .
+
+      - name: Ensure a release exists for the tag
+        run: gh release view "$REF_NAME" || gh release create "$REF_NAME" --generate-notes
+
+      - name: Upload ms-man.tar.gz
+        run: gh release upload "$REF_NAME" ms-man.tar.gz --clobber
