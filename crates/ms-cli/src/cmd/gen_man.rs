@@ -22,7 +22,7 @@ use crate::Cli;
 #[derive(clap::Args, Debug)]
 pub struct GenManArgs {
     /// Directory to write the `*.1` man pages into (created if absent).
-    #[arg(long)]
+    #[arg(long, value_name = "DIR")]
     pub out: PathBuf,
 }
 
