@@ -303,8 +303,22 @@ jobs:
     #     `secp256k1-sys`) against musl. Honors the `ulimit -l 65536` dance
     #     (mlock tests). ms-cli is bin-only — `-p ms-cli` covers the bin's test
     #     build.
-    #   * aarch64-musl — `cross build`-only (cross bundles the musl cross C
-    #     toolchain; build coverage, no emulated test run).
+    #   * aarch64-musl — `cross test` under QEMU user-mode emulation (cross
+    #     bundles the musl cross C toolchain AND the qemu-aarch64 runner). This
+    #     RUNS the package test suite on aarch64-Linux so the ms1/encode/decode
+    #     golden vectors are output-verified for the shipped aarch64 binary, not
+    #     merely compiled. The lib `mlock::tests::*` are SKIPPED here
+    #     (`-- --skip mlock`): they are POSIX-`mlock(2)` syscall + runtime-
+    #     page-size gates (`g4_a` asserts a 64-byte buf pins exactly 1 page),
+    #     not meaningfully testable under QEMU (qemu-user forwards `mlock` to
+    #     the host kernel inside the cross container, which can EPERM under the
+    #     container RLIMIT_MEMLOCK; emulated page size / heap alignment can also
+    #     differ), and mlock behavior is not this job's target — the goldens
+    #     are. No `--include-ignored`, so the `g2_*` fault-injection tests stay
+    #     skipped. ms-cli has no `tests/mlock_unit.rs` G1.x integration binary
+    #     (unlike mnemonic-toolkit), so a single `--skip mlock` is sufficient;
+    #     the `mlock_g6_invariant` integration test is `#[ignore]`-gated (g6
+    #     job) and already off by default.
     #
     # crt-static left at its musl default (ON). NEVER pass
     # `-Ctarget-feature=-crt-static` (rust#135244 silently links host glibc).
@@ -339,6 +353,12 @@ jobs:
         run: |
           ulimit -l 65536 || true
           cargo test -p ms-cli --target ${{ matrix.target }}
-      - name: cross build -p ms-cli --target aarch64-musl (build-only)
+      # Run the package test suite on aarch64-Linux under QEMU user-mode so the
+      # ms1/encode/decode golden vectors are OUTPUT-verified for the shipped
+      # aarch64 binary. `--skip mlock` drops the lib `mlock::tests::*` POSIX-
+      # syscall / page-size gates (untestable-meaningfully under emulation);
+      # every golden/integration test still runs. No `--include-ignored`, so
+      # the `g2_*` fault-injection tests stay skipped.
+      - name: cross test -p ms-cli --target aarch64-musl (QEMU; goldens, mlock skipped)
         if: ${{ matrix.cross }}
-        run: cross build --release -p ms-cli --target ${{ matrix.target }}
+        run: cross test --release -p ms-cli --target ${{ matrix.target }} -- --skip mlock
