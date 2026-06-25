@@ -89,6 +89,31 @@ ms1 v0.1 does NOT carry the BIP-39 wordlist language on the wire. A user whose o
 - **ms-codec** (this crate) — BIP-39 entropy (`ms1`, HRP `ms`).
 - **mnemonic-toolkit** (planned) — top-level integration: take a BIP-39 phrase, emit a complete ms1 + mk1 + md1 engravable bundle.
 
+## Verifying your download
+
+The release `ms-<version>-x86_64-linux-musl.tar.gz` and `…-aarch64-linux-musl.tar.gz`
+binaries are **reproducible** — bit-for-bit rebuildable from source. Each release
+attaches `SHA256SUMS.x86_64`, `SHA256SUMS.aarch64`, and `PROVENANCE.<arch>.txt`.
+
+**Integrity** (did my download arrive intact?):
+
+```sh
+sha256sum -c SHA256SUMS.x86_64      # or SHA256SUMS.aarch64
+```
+
+**Provenance** (was it really built from this source — no hidden changes?):
+independently rebuild and confirm you get the *same* hash. See
+[`docs/verify-reproducibility.md`](docs/verify-reproducibility.md) for the exact
+steps — in brief: `git checkout` the release commit (from `PROVENANCE.<arch>.txt`),
+`docker pull ghcr.io/bg002h/repro-musl-mnemonic-secret@sha256:<digest>` (the pinned,
+public build image), rebuild offline, and compare to `SHA256SUMS.<arch>`. A match
+proves the published binary came from this source.
+
+**Scope:** the static-musl Linux **x86_64** and **aarch64** `ms` binaries.
+(gnu, macOS/Windows, and the GUI are not yet reproducible.) Note: a local
+`cargo install` / `install.sh` build is *not* bit-for-bit reproducible — the
+guarantee is for the published container-built release tarballs.
+
 ## License
 
 Dual-licensed, at your option, under either the [MIT License](LICENSE) or the
