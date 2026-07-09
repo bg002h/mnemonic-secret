@@ -13,9 +13,21 @@
 //! internally against `"ms"`. HRP mismatches surface as exit 2 (via
 //! `From<ms_codec::Error>` mapping `WrongHrp` → `CliError::FormatViolation`).
 //!
-//! Exit codes (D26 cross-CLI parity):
+//! Exit codes (D26 cross-CLI parity; Cycle F `ms1-repair-demote-to-candidate`
+//! demotes the correction-applied case from 5 to 4 — see below):
 //!   - 0 — input was already valid (no corrections applied)
-//!   - 5 — corrections were applied (REPAIR_APPLIED)
+//!   - 4 — VERIFY-ME candidate: a substitution correction was applied. An
+//!     ms1 is a single-string bearer secret with no cross-chunk hash and no
+//!     internal redundancy, so a bounded-distance BCH substitution-correction
+//!     spends the checksum's error-detection budget and can alias to a
+//!     DIFFERENT valid seed undetectably (BIP-93: implementations SHOULD NOT
+//!     automatically proceed with a corrected codex32 string without user
+//!     confirmation). `ms repair` therefore NEVER silently "recovers" an
+//!     ms1 — any correction is surfaced as an unverified candidate (exit 4),
+//!     mirroring the toolkit's `mnemonic repair --ms1` demotion (same
+//!     `ms_codec` engine). ms-cli has no indel recovery path, so exit 5 is
+//!     effectively unreachable for `ms repair` — a corrected ms1 is always
+//!     a candidate.
 //!   - 2 — unrepairable input (`CliError::FormatViolation`) — propagated
 //!     by `?`. The new v0.2.0 `ms_codec::Error::TooManyErrors` is mapped
 //!     to `FormatViolation` in `error.rs` for parity with mk-cli's
@@ -31,8 +43,10 @@
 //! Text output mirrors `mnemonic repair`'s text-form report shape (see
 //! `mnemonic-toolkit/src/cmd/repair.rs::emit_repair_text`). JSON output
 //! byte-matches the toolkit's standalone `RepairJson` schema (D27 — fields
-//! `schema_version`, `kind`, `corrected_chunks`, `repairs`) so cross-CLI
-//! parsers reuse the same struct.
+//! `schema_version`, `kind`, `verdict`, `corrected_chunks`, `repairs`) so
+//! cross-CLI parsers reuse the same struct. `verdict` (Cycle F
+//! `ms1-repair-demote-to-candidate`) is `"blessed"` for a clean (0-correction)
+//! decode, `"candidate"` for a touched substitution correction.
 
 use clap::Args;
 use ms_codec::CorrectionDetail;
@@ -121,7 +135,22 @@ pub fn run(args: RepairArgs) -> Result<u8> {
     );
 
     let any_correction = reports.iter().any(|r| !r.corrected_positions.is_empty());
-    Ok(if any_correction { 5 } else { 0 })
+
+    // Cycle F (`ms1-repair-demote-to-candidate`) Option B demotion: a touched
+    // substitution correction is a VERIFY-ME candidate (exit 4), never a
+    // silent exit-5 "recovered" — an ms1 is a single-string bearer secret
+    // with no cross-chunk hash / internal redundancy, so the correction
+    // cannot self-verify. Mirrors the toolkit engine's ms1
+    // `SetVerify::Unverified` reason text byte-for-byte (D27/D9 parity).
+    if any_correction {
+        eprintln!(
+            "repair: correction UNVERIFIED — a corrected seed card cannot be \
+             self-verified; confirm the derived address/xpub against a known-good \
+             copy before use; BIP-93 recommends confirming a corrected codex32 string"
+        );
+    }
+
+    Ok(if any_correction { 4 } else { 0 })
 }
 
 /// Build the corrected ms1 string + `(position, was, now)` triples from
@@ -198,13 +227,18 @@ fn emit_text(corrected_chunks: &[String], reports: &[RepairDetail]) -> Result<()
 }
 
 // JSON envelope — schema MUST byte-match toolkit's standalone `RepairJson`
-// at `mnemonic-toolkit/src/cmd/repair.rs:162-183` (D27 cross-CLI parser
+// at `mnemonic-toolkit/src/cmd/repair.rs` (D27 cross-CLI parser
 // reuse). Field order is part of the schema (serde preserves struct field
 // order in the default JSON serializer).
 #[derive(Serialize)]
 struct RepairJson<'a> {
     schema_version: &'static str,
     kind: &'static str,
+    /// Cycle F (`ms1-repair-demote-to-candidate`) M1/M4 — `"blessed"` for a
+    /// clean (0-correction) decode, `"candidate"` for a touched substitution
+    /// correction. Fixed position right after `kind` — byte-matches the
+    /// toolkit's `RepairJson.verdict` field order (D27/D9).
+    verdict: &'static str,
     corrected_chunks: &'a [String],
     repairs: Vec<RepairJsonDetail<'a>>,
 }
@@ -225,9 +259,15 @@ struct RepairJsonPosition {
 }
 
 fn emit_json(corrected_chunks: &[String], reports: &[RepairDetail]) -> Result<()> {
+    let any_correction = reports.iter().any(|r| !r.corrected_positions.is_empty());
     let envelope = RepairJson {
         schema_version: "1",
         kind: "ms1",
+        verdict: if any_correction {
+            "candidate"
+        } else {
+            "blessed"
+        },
         corrected_chunks,
         repairs: reports
             .iter()
