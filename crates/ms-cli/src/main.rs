@@ -126,14 +126,16 @@ enum Command {
     )]
     GenMan(cmd::gen_man::GenManArgs),
 
-    /// Repair an ms1 string via BCH error correction (exit 5 = REPAIR_APPLIED).
+    /// Repair an ms1 string via BCH error correction (exit 4 = VERIFY-ME candidate).
     ///
     /// Single-HRP context: no `--hrp` flag. Up to BCH(93,80,8) t=4 single-chunk
     /// correction capacity via `ms_codec::decode_with_correction`. The corrected
     /// ms1 is emitted on stdout (with a stderr `PrivateKeyMaterial` advisory
-    /// per D9 — ms1 is BIP-39 entropy and sensitive). Exit 5 on
-    /// correction-applied (D26); exit 0 if input was already valid; exit 2
-    /// if BCH-uncorrectable (`TooManyErrors`).
+    /// per D9 — ms1 is BIP-39 entropy and sensitive). Exit 4 on
+    /// correction-applied (Cycle F demotion — a corrected ms1 is an UNVERIFIED
+    /// candidate that cannot self-verify; confirm independently before use; D26);
+    /// exit 0 if input was already valid; exit 2 if BCH-uncorrectable
+    /// (`TooManyErrors`).
     #[command(
         after_long_help = "EXAMPLES:\n  ms repair --ms1 ms10entrsqq...        # text-form report on stdout\n  ms repair --ms1 - < broken.txt        # read ms1 from stdin\n  ms repair --ms1 ms10entrsqq... --json # JSON envelope on stdout"
     )]

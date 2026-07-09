@@ -140,8 +140,8 @@ pub fn run(args: RepairArgs) -> Result<u8> {
     // substitution correction is a VERIFY-ME candidate (exit 4), never a
     // silent exit-5 "recovered" — an ms1 is a single-string bearer secret
     // with no cross-chunk hash / internal redundancy, so the correction
-    // cannot self-verify. Mirrors the toolkit engine's ms1
-    // `SetVerify::Unverified` reason text byte-for-byte (D27/D9 parity).
+    // cannot self-verify. The reason BODY mirrors the toolkit engine's ms1
+    // `SetVerify::Unverified` reason text (prefixed `repair: ` here) (D27/D9 parity).
     if any_correction {
         eprintln!(
             "repair: correction UNVERIFIED — a corrected seed card cannot be \

@@ -271,18 +271,25 @@ fn repair_json_envelope_shape() {
         "verdict must equal \"candidate\" for a touched substitution correction"
     );
 
-    // D27 field-order pin: `"kind"` must appear before `"verdict"`, which
-    // must appear before `"corrected_chunks"`, in the raw serialized text
-    // (serde preserves struct field declaration order in the default JSON
+    // D27 field-order pin: the FULL 5-field order `schema_version < kind <
+    // verdict < corrected_chunks < repairs` must hold in the raw serialized
+    // text (serde preserves struct field declaration order in the default JSON
     // serializer — byte-match with the toolkit's field order).
+    let schema_version_pos = raw
+        .find("\"schema_version\"")
+        .expect("schema_version key present");
     let kind_pos = raw.find("\"kind\"").expect("kind key present");
     let verdict_pos = raw.find("\"verdict\"").expect("verdict key present");
     let corrected_chunks_pos = raw
         .find("\"corrected_chunks\"")
         .expect("corrected_chunks key present");
+    let repairs_pos = raw.find("\"repairs\"").expect("repairs key present");
     assert!(
-        kind_pos < verdict_pos && verdict_pos < corrected_chunks_pos,
-        "expected field order kind < verdict < corrected_chunks; raw={raw:?}"
+        schema_version_pos < kind_pos
+            && kind_pos < verdict_pos
+            && verdict_pos < corrected_chunks_pos
+            && corrected_chunks_pos < repairs_pos,
+        "expected field order schema_version < kind < verdict < corrected_chunks < repairs; raw={raw:?}"
     );
 
     let corrected_chunks = envelope["corrected_chunks"]
