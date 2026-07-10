@@ -4,6 +4,26 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.14.1] — 2026-07-09
+
+**SemVer-PATCH — mlock Miri-test robustness (cross-repo g6 lockstep with `mnemonic-toolkit`). Test-only: no `ms` binary / `ms-codec` / API / `--json` / CLI-flag / subcommand change. NOT published to crates.io (test-only PATCH; the tag ships the binary, matching the `[0.13.2]` precedent).**
+
+The `g4_a_pin_and_zeroize_compose_without_panic` unit test in `crates/ms-cli/src/mlock.rs` hardcoded `assert_eq!(pin.page_count, 1, "64-byte buf pins exactly one page")` — a fragile allocator-placement assumption. `pin_pages_for` correctly pins *every* page a buffer touches, so a 64-byte buffer that straddles a page boundary pins 2 pages (correct, fail-safe). Under a real-OS allocator the 64-byte `Vec` is page-internal (1 page); under Miri's deterministic allocator it can straddle, so the assertion flips to a hard failure on any lib-layout change. It surfaced in `mnemonic-toolkit` (whose `mlock.rs` is byte-synced with this one via the g6 invariant) when v0.82.0's unrelated `SecretString` field-layout change shifted the allocation. Miri found **no undefined behavior** — the two unsafe blocks pass; only the over-strict test assertion tripped.
+
+### Changed
+
+- **`g4_a` asserts the actual contract, not an allocator accident** (`crates/ms-cli/src/mlock.rs`). Replaces the hardcoded `== 1` with `expected = round_to_pages(v.as_ptr() as usize, v.len(), page_size()).1` compute-equality (pin covers exactly the pages the buffer touches) plus a `(1..=2).contains(&pin.page_count)` range bound (a sub-page buffer touches 1 or 2 pages). Layout-independent, so it is green under any allocator. **Byte-synced identically into `mnemonic-toolkit/src/mlock.rs` per the g6 invariant** (both edits are g6 normalized-byte-equal). Fable architect ruling (verdict B) + scoped Fable R0.
+
+## ms-cli [0.14.0] — 2026-07-09
+
+**SemVer-MINOR — CRITICAL funds-safety fix: an `ms1` seed-card BCH repair is now a VERIFY-ME candidate, never a silent "recovered" (constellation-eval F4, ms1 leg). Backfilled changelog entry (the release shipped 2026-07-09 in lockstep with `mnemonic-toolkit` v0.81.0; the CHANGELOG entry was omitted at ship time). `ms-codec` NO-BUMP.**
+
+An `ms1` card is a single-string BIP-39-entropy bearer secret with no cross-chunk hash and no internal redundancy, so a >4-error codex32 BCH substitution "correction" can alias onto a DIFFERENT valid seed with zero downstream signal that it is wrong. Previously `ms repair` returned exit 5 (REPAIR_APPLIED) on any successful substitution-correction — presenting a possibly-wrong seed as recovered.
+
+### Changed
+
+- **`ms repair` demotes every ms1 substitution-correction to an exit-4 VERIFY-ME candidate** (`crates/ms-cli/src/cmd/repair.rs`). Any correction where `repairs` is non-empty now returns exit 4 (was exit 5) with an "UNVERIFIED — confirm independently before use; BIP-93 recommends confirming a corrected codex32 string" advisory, never a silent exit-5 "recovered". The `--json` repair envelope gains a `verdict` field (`"blessed"`/`"candidate"`, inserted after `kind`). A unique full-checksum-revalidated recovery still blesses. Shipped in lockstep with `mnemonic-toolkit` v0.81.0 (`mnemonic repair --ms1` + `verify-bundle` ground-truth compare). Full R0 pipeline GREEN (Fable spec ×3, plan ×3, per-phase P0/P1/P2, whole-diff).
+
 ## ms-cli [0.13.2] — 2026-06-23
 
 **SemVer-PATCH — musl static-binary release asset + musl build/test CI leg. Ships the first fully-static, dependency-free `ms` Linux binaries (`x86_64-unknown-linux-musl` + `aarch64-unknown-linux-musl`) as GitHub-release tarballs on the `ms-cli-v*` tag, each with a per-arch `SHA256SUMS.<arch>` for offline / air-gapped verification. Also adds a musl compile/test CI leg to `rust.yml` (a separate `musl-check` job). `ms-codec` UNTOUCHED. No crate source / API / `--json` / CLI-flag / subcommand change. NOT published to crates.io (binary-asset-only PATCH; the tag ships the binary). The shipped guarantee is *static + checksummed*, not bit-for-bit reproducible.**
