@@ -26,12 +26,13 @@ on:
       - 'Cargo.lock'
       - '.github/workflows/rust.yml'
   pull_request:
-    paths:
-      - 'crates/ms-cli/**'
-      - 'crates/ms-codec/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/rust.yml'
+    # NO paths — this workflow's test/clippy contexts are REQUIRED status
+    # checks (branch protection), and a path-filtered required check wedges a
+    # docs-only PR forever at "Expected — waiting for status" (mirror the
+    # toolkit examples.yml/rust.yml ruling). Running the full matrix on a
+    # docs-only PR is green (unchanged code). The push-side path filter above
+    # keeps code-push efficiency; docs-only direct pushes to master are
+    # covered by admin bypass (enforce_admins:false).
 
 jobs:
   # Dedicated rustfmt gate, pinned to a CANONICAL formatter version (1.95.0,
