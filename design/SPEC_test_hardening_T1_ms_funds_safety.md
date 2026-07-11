@@ -1,0 +1,33 @@
+# SPEC — Test-hardening T1 (ms funds-safety): #12 secret-disclosure + #10 purpose pins + #11 language mapping
+
+**Repo:** `mnemonic-secret` (ms-codec + ms-cli). Source SHA at authoring: `master 9a24999`.
+**Origin:** constellation-eval §2 test program items #12, #10, #11 (`mnemonic-toolkit/design/agent-reports/constellation-eval-2026-07-06.md`). First of five funds-safety-first test-hardening sub-cycles (T1→T5, user 2026-07-10).
+**Nature:** additive TEST code only — no production/wire/behavior change is intended. Each new test must be **RED under the exact named mutation** and use an oracle **independent of the code under test** (the whole point: the current suites are same-stack/tautological). If a test surfaces a real bug, STOP and treat it as a funds finding.
+
+## T1-a (#12) — K-of-N share-index pool secret-disclosure (FUNDS-CRITICAL)
+**Gap:** `crates/ms-codec/src/shares.rs::non_s_index_pool` (:28) excludes the codex32 `'s'` char (the secret-at-S index). Dropping the `!= 's'` filter makes `pool[16] == 's'`, and for **n ≥ 17** `encode_shares` (:101) would emit the secret index `'s'` as a distributed share — one engraved plate reveals the whole seed. The mutation survives the ENTIRE suite today (M-2: Fable empirically confirmed — applying the filter-drop in a scratch copy left `cargo test -p ms-codec` = **163/163 GREEN**; max n in any existing test is ~11; n=32 is only the reject test at :451-458; the n=17 RED boundary was proven by execution, `left: 's'`).
+**Fix (test):** add an `n = 31` (max) K-of-N split test — assert: (i) **every emitted share-index char ≠ `'s'`**, (ii) all 31 share-index chars **distinct**, (iii) arbitrary k-subsets (spot several) **recover the exact payload**. **Oracle = direct wire-position parse of the share-index char** (independent of `non_s_index_pool`; use the existing `extract_wire_fields`/re-parse helper at :239/:384, NOT the pool). RED-proof: dropping the `!= 's'` filter must make (i) FAIL at n≥17.
+**Also:** a boundary cell at `n = 16` (last index below the `'s'` position) and `n = 17` (first n that would touch `'s'` under the mutation) to pin the exact threshold.
+
+## T1-b (#10) — derive purpose-constant pins
+**Gap:** `crates/ms-cli/src/cmd/derive.rs::Template::purpose()` (:79-84) returns 44/49/84/86, consumed by BOTH the path string and the derivation (:327/:341) via one call — so a wrong constant (e.g. `Bip44 => 45`) is self-consistent and ships silently. Only bip84 is pinned today.
+**Fix (test):** for EACH of bip44/49/84/86, pin an **end-to-end** `ms derive` result — the emitted **master fingerprint + account xpub + path string** (M-1: `ms derive` emits NO addresses, `derive.rs:351-385`; these three are the CLI-assertable surface) — against an **independent oracle**:
+- **bip86** from its BIP-86 spec vector (the published `abandon×11 about` account-0 **xpub**).
+- **bip84** from BIP-84's published vector — the repo already carries the equivalent xpub-form constant (`cli_derive.rs:17 BIP84_ACCT_XPUB`); extend/keep.
+- **bip44 / bip49** from an independent implementation's account-0 xpub for the `abandon×11 about` seed under 44'/49'; hardcode the expected xpub, do NOT compute it via the same `purpose()`.
+`Template::purpose()` is **private** (M-1): the direct `Bip44.purpose() == 44` etc. asserts (if kept) must live in an in-file `#[cfg(test)] mod` in `derive.rs` (precedent: `scrub_tests`), OR drop them in favor of the e2e pins — the e2e derived-xpub pin is the load-bearing check (it's what a wrong constant actually corrupts). RED-proof: `Bip44 => 45` → path `m/45'/0'/0'` → different xpub → the bip44 e2e pin fails.
+
+## T1-c (#11) — all-10-language wordlist-selection pin
+**Gap:** `crates/ms-cli/src/language.rs` — name↔code mapping is tested (:87-112), but the actual **wordlist selection** per `CliLanguage` is not pinned against the official BIP-39 wordlists. Swapping the Czech↔Portuguese `From<CliLanguage>`/wordlist arms produces the wrong wordlist yet round-trips green (symmetric across encode/decode) while the wire language byte lies.
+**Fix (test):** for ALL 10 languages (English, Japanese, Korean, Spanish, ChineseSimplified, ChineseTraditional, French, Italian, Czech, Portuguese), assert the **first word** of the wordlist that `CliLanguage::<L>` selects equals the **hardcoded official BIP-39 first word** for that language (independent oracle — the literal first-word strings from the official wordlists, NOT looked up via the `bip39` crate). RED-proof: swapping the Czech↔Portuguese arms must fail (Czech's first word `abdikace` ≠ Portuguese's `abacate`). Confirm the official first words at write time.
+**I-1 fold — the Chinese pair is DEGENERATE at word[0]:** ChineseSimplified and ChineseTraditional both officially begin with `的`, so a first-word-only oracle CANNOT distinguish them (a CN-Simplified↔CN-Traditional wordlist swap stays green — the same class as the named Czech↔Portuguese one). **Additionally pin a differing-index word for BOTH Chinese languages** — the lists first diverge at **index 9**: simplified `这`, traditional `這` (confirm both against the official lists at write time). Extend the RED-proof: a ChineseSimplified↔ChineseTraditional swap must ALSO fail (via the index-9 pin). This makes "pin the actual wordlist selection for ALL 10 languages" genuinely met, not just 8 of 10.
+
+## Acceptance
+1. Three new tests (or test modules) added; each RED-proven under its named mutation (report the mutation + the failure).
+2. Oracles independent of the code under test (wire-position parse for #12; hardcoded spec/official values for #10/#11).
+3. Full suites green: `cargo test -p ms-codec` + `cargo test -p ms-cli`. Zero production-code change (unless a real bug surfaces → STOP + report).
+4. fmt/clippy per the repo's gates. **M-3 (confirmed):** the fmt gate is `rust.yml` pinned **1.95.0** `cargo fmt --all -- --check` with `crates/ms-cli/src/mlock.rs` **filtered out of the failure set** (g6 cross-repo byte-identity — mlock.rs is frozen/byte-identical across repos). `mlock.rs` lives INSIDE ms-cli, so even `cargo fmt -p ms-cli` can reformat it and CI would pass silently while breaking g6. **Rule: after ANY fmt, `git diff crates/ms-cli/src/mlock.rs` MUST be empty — revert it if touched.** Prefer formatting only the new test files.
+5. **Release: NO-BUMP (R0 ruling).** Test-only, zero wire/behavior/consumer-visible change → no version bump, no tag, no crates.io publish, no toolkit re-pin, no GUI schema mirror, no manual lockstep (repo precedent: the BCH conformance-pin NO-BUMP). **If the STOP clause fires (a real bug surfaces), that fix re-rules its own version.**
+
+## Phasing
+Single implementer, TDD (RED-under-mutation first). P0 #12 (funds-critical) → P1 #10 → P2 #11. Per-phase + post-impl R0.

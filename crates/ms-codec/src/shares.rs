@@ -472,6 +472,102 @@ mod tests {
         }
     }
 
+    // --- T1-a (#12, funds-critical): n=31 (max) K-of-N split-index secret-
+    // disclosure hardening. `non_s_index_pool` (:28) is the code under test;
+    // the oracle here is a DIRECT wire-position re-parse via
+    // `extract_wire_fields` (envelope.rs) — independent of the pool helper —
+    // so a regression in the pool's `!= 's'` filter cannot escape undetected
+    // via a same-stack tautology. See SPEC_test_hardening_T1_ms_funds_safety.md.
+
+    /// n=31 (max n): every emitted distributed-share index char must never be
+    /// the secret-at-S index `'s'`, all 31 indices must be distinct, and
+    /// several k-subsets must recover the exact payload — for entr and mnem,
+    /// across a spread of thresholds (k=2 min, k=5 mid, k=9 max).
+    #[test]
+    fn encode_shares_n31_max_no_secret_index_leak() {
+        for p in [entr_p(), mnem_p()] {
+            for k in [2u8, 5, 9] {
+                let n = 31usize;
+                let shares = encode_shares(Tag::ENTR, Threshold::new(k).unwrap(), n, &p).unwrap();
+                assert_eq!(shares.len(), n, "k={k} n={n} must emit exactly n shares");
+
+                // (i) every emitted share-index char != 's' — oracle is the
+                // direct wire-position parse, NOT non_s_index_pool.
+                let mut indices: Vec<u8> = Vec::with_capacity(n);
+                for s in &shares {
+                    let fields = extract_wire_fields(s).unwrap();
+                    assert_ne!(
+                        fields.share_index_byte, b's',
+                        "k={k} n={n}: a distributed share must never carry the \
+                         secret-at-S index; share={s}"
+                    );
+                    indices.push(fields.share_index_byte);
+                }
+
+                // (ii) all 31 share-index chars distinct.
+                let mut sorted = indices.clone();
+                sorted.sort_unstable();
+                sorted.dedup();
+                assert_eq!(
+                    sorted.len(),
+                    n,
+                    "k={k} n={n}: all {n} share indices must be distinct, got {indices:?}"
+                );
+
+                // (iii) several k-subsets recover the exact payload.
+                let k_usize = k as usize;
+                let mid = (n - k_usize) / 2;
+                for subset in [
+                    &shares[..k_usize],
+                    &shares[n - k_usize..],
+                    &shares[mid..mid + k_usize],
+                ] {
+                    let (tag, recovered) = combine_shares(subset).unwrap();
+                    assert_eq!(tag, Tag::ENTR, "combine always returns Tag::ENTR");
+                    assert_eq!(
+                        recovered, p,
+                        "k={k} n={n}: k-subset must recover the exact payload"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Boundary n=16: the LAST n whose distributed-share loop never reaches
+    /// codex32-alphabet pool position 16 (the position `'s'` occupies before
+    /// `non_s_index_pool`'s filter removes it) — safe even under the RED-proof
+    /// mutation below. Pins the exact threshold alongside the n=17 test.
+    #[test]
+    fn encode_shares_n16_boundary_below_s_pool_position() {
+        let p = entr_p();
+        let n = 16usize;
+        let shares = encode_shares(Tag::ENTR, Threshold::new(2).unwrap(), n, &p).unwrap();
+        assert_eq!(shares.len(), n);
+        for s in &shares {
+            let fields = extract_wire_fields(s).unwrap();
+            assert_ne!(fields.share_index_byte, b's', "n=16 boundary: share={s}");
+        }
+    }
+
+    /// Boundary n=17: the FIRST n whose distributed-share loop touches
+    /// codex32-alphabet pool position 16. Under unmutated code this still
+    /// passes (the filter already excludes `'s'` from the pool); this test
+    /// exists to pin the exact threshold and is the RED-proof boundary case
+    /// (see the mutation note on `encode_shares_n31_max_no_secret_index_leak`
+    /// and the SPEC): dropping `non_s_index_pool`'s `!= 's'` filter makes
+    /// assertion (i) fail FIRST at this n.
+    #[test]
+    fn encode_shares_n17_boundary_touches_s_pool_position() {
+        let p = entr_p();
+        let n = 17usize;
+        let shares = encode_shares(Tag::ENTR, Threshold::new(2).unwrap(), n, &p).unwrap();
+        assert_eq!(shares.len(), n);
+        for s in &shares {
+            let fields = extract_wire_fields(s).unwrap();
+            assert_ne!(fields.share_index_byte, b's', "n=17 boundary: share={s}");
+        }
+    }
+
     /// Inline round-trip (combine_shares lands in Task 1.4): any k of the n
     /// distributed shares, interpolated at S, recover the secret wire bytes.
     #[test]

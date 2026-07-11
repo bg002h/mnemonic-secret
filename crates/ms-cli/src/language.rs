@@ -163,4 +163,83 @@ mod tests {
             bip39::Language::SimplifiedChinese
         );
     }
+
+    // --- T1-c (#11): pin the actual WORDLIST SELECTION (not just the
+    // name<->code map above) against hardcoded official BIP-39 first words —
+    // an oracle INDEPENDENT of `From<CliLanguage> for bip39::Language` (the
+    // code under test): swapping a match arm there selects a different
+    // `bip39::Language`, hence a different `word_list()`, which a literal
+    // hardcoded expectation catches even though encode/decode stay
+    // symmetric (same bug class as a name<->code swap, but on the wordlist
+    // axis). First words confirmed at write time (2026-07-10) against the
+    // embedded `bip39` 2.2.2 crate's official wordlists
+    // (bip39-2.2.2/src/language/*.rs — the literal WORDS arrays).
+
+    /// All 10 languages: the wordlist `CliLanguage::<L>` selects (via
+    /// `From<CliLanguage> for bip39::Language`) must have the correct
+    /// official BIP-39 first word.
+    #[test]
+    fn all_10_languages_select_wordlist_with_correct_first_word() {
+        let cases = [
+            (CliLanguage::English, "abandon"),
+            (CliLanguage::Japanese, "あいこくしん"),
+            // Korean word[0] is written as explicit codepoint escapes, NOT
+            // literal glyphs: the embedded bip39 crate's Korean wordlist
+            // stores this word as DECOMPOSED conjoining jamo (U+1100 U+1161
+            // U+1100 U+1167 U+11A8), not the precomposed Hangul syllable
+            // block (U+AC00 U+ACA9) a typed "가격" normalizes to — visually
+            // identical, byte-different. Confirmed via hex dump of the
+            // embedded bip39-2.2.2/src/language/korean.rs at write time.
+            (
+                CliLanguage::Korean,
+                "\u{1100}\u{1161}\u{1100}\u{1167}\u{11A8}",
+            ),
+            // Spanish word[0] is written with an explicit codepoint escape,
+            // NOT a literal glyph: the embedded bip39 crate's Spanish
+            // wordlist stores the accent as a DECOMPOSED combining acute
+            // (U+0061 'a' + U+0301 COMBINING ACUTE ACCENT), not the
+            // precomposed 'á' (U+00E1) a typed "ábaco" normalizes to —
+            // visually identical, byte-different. Confirmed via hex dump of
+            // the embedded bip39-2.2.2/src/language/spanish.rs at write time.
+            (CliLanguage::Spanish, "a\u{301}baco"),
+            (CliLanguage::ChineseSimplified, "的"),
+            (CliLanguage::ChineseTraditional, "的"),
+            (CliLanguage::French, "abaisser"),
+            (CliLanguage::Italian, "abaco"),
+            (CliLanguage::Czech, "abdikace"),
+            (CliLanguage::Portuguese, "abacate"),
+        ];
+        for (lang, expected_first_word) in cases {
+            let bip39_lang: bip39::Language = lang.into();
+            assert_eq!(
+                bip39_lang.word_list()[0],
+                expected_first_word,
+                "CliLanguage::{lang:?} selected the wrong wordlist (word[0] mismatch)"
+            );
+        }
+    }
+
+    /// I-1 fold: ChineseSimplified and ChineseTraditional both officially
+    /// begin with "的" — the first-word oracle above CANNOT distinguish a
+    /// ChineseSimplified<->ChineseTraditional arm swap. The two lists first
+    /// diverge at index 9 (simplified "这" / traditional "這", confirmed
+    /// against the embedded bip39 2.2.2 wordlists at write time). This
+    /// pins the ONLY currently-degenerate pair on a differing index, making
+    /// "pin the actual wordlist selection for ALL 10 languages" genuinely
+    /// met (not just 8 of 10).
+    #[test]
+    fn chinese_simplified_and_traditional_disambiguated_at_index_9() {
+        let simplified: bip39::Language = CliLanguage::ChineseSimplified.into();
+        let traditional: bip39::Language = CliLanguage::ChineseTraditional.into();
+        assert_eq!(
+            simplified.word_list()[9],
+            "这",
+            "ChineseSimplified word[9] mismatch"
+        );
+        assert_eq!(
+            traditional.word_list()[9],
+            "這",
+            "ChineseTraditional word[9] mismatch"
+        );
+    }
 }

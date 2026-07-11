@@ -15,6 +15,19 @@ const ABANDON: &str =
 const MASTER_FP_EN: &str = "73c5da0a";
 const MASTER_FP_FR: &str = "7d53dc37";
 const BIP84_ACCT_XPUB: &str = "xpub6CatWdiZiodmUeTDp8LT5or8nmbKNcuyvz7WyksVFkKB4RHwCD3XyuvPEbvqAQY3rAPshWcMLoP2fMFMKHPJ4ZeZXYVUhLv1VMrjPC7PW6V";
+// T1-b (#10, SPEC_test_hardening_T1_ms_funds_safety.md): independent-oracle
+// account-0 xpubs for bip44/49/86, cross-checked at write time (2026-07-10)
+// via TWO independent from-scratch derivations (bip32utils, a pure-Python
+// BIP32 lib; and a hand-rolled HMAC-SHA512+secp256k1 derivation using only
+// the `ecdsa` package's curve arithmetic) — neither touches rust-bitcoin or
+// this crate's `purpose()`. bip86 additionally matches the published BIP-86
+// spec test vector verbatim (github.com/bitcoin/bips bip-0086.mediawiki,
+// "abandon x11 about" account-0 xpub). bip84 already carried an oracled pin
+// (BIP84_ACCT_XPUB above); both independent derivations reproduced it
+// byte-identically, confirming the oracle methodology.
+const BIP44_ACCT_XPUB: &str = "xpub6BosfCnifzxcFwrSzQiqu2DBVTshkCXacvNsWGYJVVhhawA7d4R5WSWGFNbi8Aw6ZRc1brxMyWMzG3DSSSSoekkudhUd9yLb6qx39T9nMdj";
+const BIP49_ACCT_XPUB: &str = "xpub6C6nQwHaWbSrzs5tZ1q7m5R9cPK9eYpNMFesiXsYrgc1P8bvLLAet9JfHjYXKjToD8cBRswJXXbbFpXgwsswVPAZzKMa1jUp2kVkGVUaJa7";
+const BIP86_ACCT_XPUB: &str = "xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ";
 
 fn ms(args: &[&str]) -> Output {
     Command::cargo_bin("ms")
@@ -65,8 +78,51 @@ fn account_xpub_bip84_matches_oracle() {
     let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip84"]);
     assert_eq!(code(&o), 0, "{}", err(&o));
     let s = out(&o);
+    assert!(s.contains(MASTER_FP_EN), "{s}");
     assert!(s.contains(BIP84_ACCT_XPUB), "{s}");
     assert!(s.contains("m/84'/0'/0'"), "{s}");
+}
+
+/// T1-b (#10, funds-safety): pin the bip44 end-to-end derive result (master
+/// fingerprint + account xpub + path) against an INDEPENDENT oracle (see
+/// BIP44_ACCT_XPUB doc comment) — NOT computed via this crate's `purpose()`.
+/// `Template::purpose()` is private; this e2e pin is the load-bearing check
+/// per SPEC T1-b (a wrong constant corrupts the derived xpub, which this test
+/// catches; a wrong constant does NOT corrupt the path string, which mirrors
+/// whatever `purpose()` returns — so the xpub is what actually matters).
+#[test]
+fn account_xpub_bip44_matches_independent_oracle() {
+    let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip44"]);
+    assert_eq!(code(&o), 0, "{}", err(&o));
+    let s = out(&o);
+    assert!(s.contains(MASTER_FP_EN), "{s}");
+    assert!(s.contains(BIP44_ACCT_XPUB), "{s}");
+    assert!(s.contains("m/44'/0'/0'"), "{s}");
+}
+
+/// T1-b (#10): bip49 end-to-end pin against an independent oracle (see
+/// BIP49_ACCT_XPUB doc comment).
+#[test]
+fn account_xpub_bip49_matches_independent_oracle() {
+    let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip49"]);
+    assert_eq!(code(&o), 0, "{}", err(&o));
+    let s = out(&o);
+    assert!(s.contains(MASTER_FP_EN), "{s}");
+    assert!(s.contains(BIP49_ACCT_XPUB), "{s}");
+    assert!(s.contains("m/49'/0'/0'"), "{s}");
+}
+
+/// T1-b (#10): bip86 end-to-end pin against the PUBLISHED BIP-86 spec test
+/// vector (see BIP86_ACCT_XPUB doc comment) — the strongest-available oracle
+/// (an official BIP test vector, not a third-party re-derivation).
+#[test]
+fn account_xpub_bip86_matches_bip86_spec_vector() {
+    let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip86"]);
+    assert_eq!(code(&o), 0, "{}", err(&o));
+    let s = out(&o);
+    assert!(s.contains(MASTER_FP_EN), "{s}");
+    assert!(s.contains(BIP86_ACCT_XPUB), "{s}");
+    assert!(s.contains("m/86'/0'/0'"), "{s}");
 }
 
 #[test]
