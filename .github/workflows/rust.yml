@@ -18,21 +18,39 @@ name: rust
 
 on:
   push:
-    branches: [main, master]
-    paths:
-      - 'crates/ms-cli/**'
-      - 'crates/ms-codec/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/rust.yml'
+    branches: [main, master, 'ci/**']
+    # NO paths on push either, as of 2026-08-15 — this now MIRRORS the PR
+    # trigger below, and for the same reason one step further along.
+    #
+    # The filter's stated rationale was "docs-only direct pushes to master are
+    # covered by admin bypass (enforce_admins:false)". That is TRUE FOR THE
+    # MAINTAINER and remains so — the bypass is their deliberate escape hatch,
+    # ruled 2026-08-15: "You are not permitted to bypass, but I am."
+    #
+    # It is false for AUTOMATION, which may not bypass. A path-filtered push
+    # wedges an agent exactly as it would wedge a docs-only PR: the staged SHA
+    # never builds, never earns its four required contexts, and the agent has no
+    # compliant way to land the commit. The same argument the PR side already
+    # accepted therefore applies here, so the same answer is used. Running the
+    # full matrix on a docs-only push is green (unchanged code).
+    #
+    # WHY ci/** IS BUILT. A required status check binds to a COMMIT SHA, not to
+    # a branch, so a commit pushed straight to master carries no check when the
+    # protection rule is evaluated: it reports "expected" and the push is
+    # BYPASSED rather than satisfied. `strict: false` makes it fixable — GitHub
+    # asks only whether the commit carries a passing context, so the SHA earns
+    # one first:
+    #
+    #     git push origin master:refs/heads/ci/staging
+    #     gh run watch <id> --repo bg002h/mnemonic-secret
+    #     git push origin master        # no bypass message = satisfied
+    #     git push origin --delete ci/staging
   pull_request:
     # NO paths — this workflow's test/clippy contexts are REQUIRED status
     # checks (branch protection), and a path-filtered required check wedges a
     # docs-only PR forever at "Expected — waiting for status" (mirror the
     # toolkit examples.yml/rust.yml ruling). Running the full matrix on a
-    # docs-only PR is green (unchanged code). The push-side path filter above
-    # keeps code-push efficiency; docs-only direct pushes to master are
-    # covered by admin bypass (enforce_admins:false).
+    # docs-only PR is green (unchanged code).
 
 jobs:
   # Dedicated rustfmt gate, pinned to a CANONICAL formatter version (1.95.0,

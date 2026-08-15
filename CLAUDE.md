@@ -54,3 +54,40 @@ Four-way star: `descriptor-mnemonic` (md1) ↔ `mnemonic-key` (mk1) ↔ `mnemoni
 - `cargo test -p ms-codec` runs all tests.
 - `cargo clippy --all-targets -D warnings` and `cargo fmt --check` are CI gates.
 - Wire format SHA is pinned at v0.1.0 release per `design/RELEASE_PROCESS.md`.
+
+## Pushing `master` — agents stage, the maintainer may not have to
+
+**A required status check binds to a COMMIT SHA, not a branch.** So a commit
+pushed straight to `master` carries no check when branch protection is evaluated:
+it reports "expected", and the push is **bypassed** rather than satisfied. That
+is a chicken-and-egg in the rule, not a lapse. `strict: false` is what makes it
+fixable — GitHub asks only whether the commit carries a *passing context*, so let
+the SHA earn one first:
+
+```sh
+git push origin master:refs/heads/ci/staging     # builds this exact SHA
+gh run watch <id> --repo bg002h/mnemonic-secret  # wait for ALL FOUR contexts
+git push origin master                           # no bypass message = satisfied
+git push origin --delete ci/staging
+```
+
+**Four contexts are required here, and all four must pass**: `test
+(ubuntu-latest)`, `clippy`, `test (ms-codec)`, `clippy (ms-codec)`. That is a
+different set from sibling repos — `mnemonic-key` requires one context and
+`mnemonic-engrave` requires `test (rust + go)`, so copying either block here
+would wait on checks that never report.
+
+**The push-side `paths:` filter was dropped on 2026-08-15**, making the push
+trigger mirror the PR trigger. Its old rationale — *"docs-only direct pushes to
+master are covered by admin bypass"* — is still true for the maintainer and false
+for automation, which may not bypass: a path-filtered push wedges an agent
+exactly as it wedged docs-only PRs, because the staged SHA never builds and never
+earns its four contexts. Running the full matrix on a docs-only push is green
+(unchanged code).
+
+**The asymmetry is deliberate** (ruled 2026-08-15: *"You are not permitted to
+bypass, but I am."*). `enforce_admins` is `false` here on purpose — it is the
+maintainer's own escape hatch, and **it is not to be flipped**. The no-bypass
+rule binds **automation**: an agent uses the staging path above every time, and
+reports a "Bypassed rule violations" message as a failure rather than papering
+over it.
