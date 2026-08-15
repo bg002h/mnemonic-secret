@@ -4,6 +4,31 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.15.0] — 2026-08-14
+
+**SemVer-MINOR — new `--template` values for multisig. Purely additive: no wire, codec, or existing-flag behaviour change; `bip44`/`bip49`/`bip84`/`bip86` are untouched.**
+
+`ms derive --template` offered only single-sig templates and accepted no literal path, so there was **no way to get a multisig account xpub out of `ms` at all**. The one tool in the constellation that turns a seed into an account xpub could not serve the format the constellation exists to back up — an operator building a multisig backup had to know that native segwit multisig lives at `m/48'/0'/0'/2'` and derive it elsewhere.
+
+An operator knows their wallet's **script type**, not its derivation path. They should say the former and get the latter.
+
+### Added
+
+- **`--template bip48-p2wsh`** — BIP-48 native segwit multisig, `script_type` `2'` (the BIP's recommended default).
+- **`--template bip48-p2sh-p2wsh`** — BIP-48 nested segwit multisig, `script_type` `1'`.
+
+  BIP-48's path is `m / purpose' / coin_type' / account' / script_type' / change / address_index`, and it registers exactly those two script types. `--account` continues to move the `account'` level; `--network testnet` continues to select `coin_type` `1'`.
+
+  **Named by script type rather than offering a bare `bip48`**, which is refused: BIP-48 registers two script types and silently choosing one would put a multisig cosigner key at a path the operator did not pick. The refusal lists both, so it teaches the choice. **No `bip48-p2tr`** — BIP-48 registers no Taproot script type, and inventing one would derive to a path no other wallet looks at.
+
+### Changed
+
+- The account path is now built **once** (`Template::account_path`) and both derived from and printed from that one string. It was previously `format!`-ed twice, which is a standing invitation for the printed path to stop describing the key beside it.
+
+### Verification
+
+Pins are derived through the SeedHammer II fork's **independent Go implementation**, which shares no code with this crate. The methodology is self-checked: the same run reproduced `m/48'/0'/0'/2'` byte-for-byte against a value **engraved on steel** in that fork's committed gate record and independently decoded by `mk decode`. Tests additionally pin that the two script types do not collapse onto one path, that `--account` moves the account level and not `script_type`, and that the four single-sig template names did not get renamed as collateral damage. 384 tests pass.
+
 ## ms-cli [0.14.1] — 2026-07-09
 
 **SemVer-PATCH — mlock Miri-test robustness (cross-repo g6 lockstep with `mnemonic-toolkit`). Test-only: no `ms` binary / `ms-codec` / API / `--json` / CLI-flag / subcommand change. NOT published to crates.io (test-only PATCH; the tag ships the binary, matching the `[0.13.2]` precedent).**

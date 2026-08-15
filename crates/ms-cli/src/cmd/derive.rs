@@ -65,7 +65,18 @@ pub struct DeriveArgs {
     pub json: bool,
 }
 
-/// Single-sig account-path template.
+/// Account-path template: the BIP-defined default keypath for a script type.
+///
+/// An operator knows their wallet's SCRIPT TYPE, not its derivation path. These
+/// names let them say the former and get the latter, which is the whole point —
+/// nobody should have to remember that native segwit multisig lives at
+/// `m/48'/0'/0'/2'`.
+///
+/// The `bip48-*` variants are named by script type rather than offering a bare
+/// `bip48`, because BIP-48 registers TWO and choosing one silently would put a
+/// multisig cosigner key at a path the operator did not pick. There is no
+/// `bip48-p2tr`: BIP-48 registers no Taproot script type, and inventing one
+/// would mean deriving to a path no other wallet looks at.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
 #[clap(rename_all = "lower")]
 pub enum Template {
@@ -73,6 +84,13 @@ pub enum Template {
     Bip49,
     Bip84,
     Bip86,
+    /// BIP-48 native segwit multisig (script_type 2'), the BIP's recommended
+    /// default.
+    #[value(name = "bip48-p2wsh")]
+    Bip48P2wsh,
+    /// BIP-48 nested segwit multisig (script_type 1').
+    #[value(name = "bip48-p2sh-p2wsh")]
+    Bip48P2shP2wsh,
 }
 
 impl Template {
@@ -82,7 +100,34 @@ impl Template {
             Template::Bip49 => 49,
             Template::Bip84 => 84,
             Template::Bip86 => 86,
+            Template::Bip48P2wsh | Template::Bip48P2shP2wsh => 48,
         }
+    }
+
+    /// The BIP-48 `script_type'` level, or `None` for the single-sig templates
+    /// whose account path stops at `account'`.
+    ///
+    /// BIP-48: `m / purpose' / coin_type' / account' / script_type' / change /
+    /// address_index`, registering `1'` = p2sh-p2wsh and `2'` = p2wsh.
+    fn script_type(self) -> Option<u32> {
+        match self {
+            Template::Bip48P2wsh => Some(2),
+            Template::Bip48P2shP2wsh => Some(1),
+            _ => None,
+        }
+    }
+
+    /// The full account path for this template.
+    ///
+    /// SINGLE source of the path string. It used to be `format!`-ed twice —
+    /// once to derive and once to print — which is a standing invitation for
+    /// the printed path to stop describing the key beside it.
+    fn account_path(self, coin: u32, account: u32) -> String {
+        let mut p = format!("m/{}'/{}'/{}'", self.purpose(), coin, account);
+        if let Some(st) = self.script_type() {
+            p.push_str(&format!("/{st}'"));
+        }
+        p
     }
 }
 
@@ -322,28 +367,18 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
     let master_fp = master.fingerprint(&secp);
 
     let account: Option<(String, String)> = if let Some(t) = args.template {
-        let path = DerivationPath::from_str(&format!(
-            "m/{}'/{}'/{}'",
-            t.purpose(),
-            args.network.coin(),
-            args.account
-        ))
-        .map_err(|e| CliError::BadInput(format!("account path: {e}")))?;
+        // Derived and printed from ONE string, so the path shown can never
+        // describe a different key than the xpub beside it.
+        let path_str = t.account_path(args.network.coin(), args.account);
+        let path = DerivationPath::from_str(&path_str)
+            .map_err(|e| CliError::BadInput(format!("account path: {e}")))?;
         let acct_xpriv = ScrubbedXpriv::new(
             master
                 .derive_priv(&secp, &path)
                 .map_err(|e| CliError::BadInput(format!("account derive: {e}")))?,
         );
         let acct_xpub = acct_xpriv.xpub(&secp);
-        Some((
-            format!(
-                "m/{}'/{}'/{}'",
-                t.purpose(),
-                args.network.coin(),
-                args.account
-            ),
-            acct_xpub.to_string(),
-        ))
+        Some((path_str, acct_xpub.to_string()))
     } else {
         None
     };
