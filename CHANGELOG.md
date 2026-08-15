@@ -4,6 +4,28 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.16.0] — 2026-08-15
+
+**SemVer-MINOR — reverses 0.15.0's refusal of a bare `--template bip48`. Purely additive: a new accepted value and a new `--json` field.**
+
+0.15.0 made a bare `bip48` REFUSE, reasoning that BIP-48 registers two script types and choosing one silently could place a cosigner key at a path the operator did not pick. That was the wrong call, and this crate's own `--language` handling is the proof.
+
+`--language` makes a **more** dangerous assumption — the wordlist changes both the master fingerprint and the xpub — and `ms` does not refuse it. It assumes english, annotates `(DEFAULT)` on stdout, emits a loud note on stderr, and exposes `language_defaulted` in `--json`. Refusing `bip48` broke an established house pattern, in the same file, for a smaller assumption.
+
+The product rule is: **permissive on input, expressive on output, and say loudly when a common assumption had to be made.** An operator who knows they have a multisig should not be stopped for not knowing a level of a derivation path. BIP-48 itself names `2'` (p2wsh) the recommended default, so assuming it is not a guess — it is the BIP's own answer, announced.
+
+### Added
+
+- **`--template bip48`** — accepted, derives `script_type` `2'` (p2wsh), and announces it:
+  - stdout gains `script_type:  2' p2wsh (native segwit) (DEFAULT)`;
+  - stderr carries a note naming the assumption, the other registered choice (`bip48-p2sh-p2wsh`), and why it matters (a cosigner key at the wrong script type will not match the wallet);
+  - `--json` gains **`script_type_defaulted`**, mirroring `language_defaulted`, so a caller can see the assumption without scraping stderr.
+- An **explicitly** chosen script type announces nothing. A tool that cries "DEFAULT" when the operator chose is a tool whose warnings get ignored.
+
+### Where permissiveness still stops
+
+There is still no `bip48-p2tr`. BIP-48 registers no Taproot script type, so inventing one would derive to a path no other wallet looks at. **Assuming a documented default is service; inventing an unregistered path is data loss.** That is the boundary.
+
 ## ms-cli [0.15.0] — 2026-08-14
 
 **SemVer-MINOR — new `--template` values for multisig. Purely additive: no wire, codec, or existing-flag behaviour change; `bip44`/`bip49`/`bip84`/`bip86` are untouched.**

@@ -57,6 +57,15 @@ Single source of truth for items that surfaced during a review or implementation
 
 ## Open items
 
+### `parity-smoke-toolkit-version-drift` — `parity_smoke_ms_against_toolkit_v0_22_1` has been RED against the installed toolkit
+
+- **Surfaced 2026-08-15**, and it is **pre-existing**: it fails at `bf77f89`, i.e. before the BIP-48 template work. Not caused by that cycle; found by it.
+- **What happens:** the test shells out to the installed `mnemonic` toolkit and asserts `toolkit_out.status.success() || code == Some(5)` (`crates/ms-codec/tests/parity_smoke.rs:102`). The installed toolkit is **0.97.0** and exits **4** — the documented VERIFY-ME-candidate code — where the test allows only 0 or 5. The test's own name pins **v0.22.1**, so this is version drift between a test's expectation and whatever toolkit happens to be on PATH.
+- **Why it went unnoticed:** it is the LAST target `cargo test` runs, and a summary that counts `test result:` lines can trivially mis-sum a `FAILED.` line to zero. It was reported as "384 passed, 0 failed" twice on 2026-08-14 before being caught. **A red suite is a blocking finding, so two commits landed on a red tree.**
+- **Fix (pick one):** (a) accept exit 4 as a success shape if VERIFY-ME is a legitimate outcome for the corrupted vector it feeds — most likely correct, since a corrected seed card genuinely cannot be self-verified; (b) pin the toolkit version the test requires and SKIP when the installed one differs, so environmental drift stops presenting as a code defect; (c) feed a vector whose repair is verifiable. **(b) plus (a) is the honest pair** — a cross-binary parity test that silently depends on whatever is on PATH is not reproducible.
+- **Status:** OPEN. **Tier:** `test-infra`. Blocks nothing in the codec; it does make `cargo test` red, which masks real regressions.
+
+
 ### `sibling-gui-schema-v5-default-value-emission` — `ms gui-schema` emits version-1 JSON (no `default_value`), so mnemonic-gui cannot two-side its `ms` defaults drift gate (companion)
 
 - **Surfaced:** 2026-07-11, mnemonic-gui FOLLOWUP-burndown batch (S2 / constellation-eval #6 extension). mnemonic-gui's `tests/schema_mirror_defaults_drift.rs` gates the toolkit (`mnemonic`, whose `gui-schema` is version 5 — per-flag `default_value` populated) two-sidedly (`default_value` + `choices`), but `ms gui-schema` is still **version 1**: it OMITS the `default_value` key on every flag (R0-verified live at pinned `ms-cli-v0.13.0` — 0 flags carry it). The GUI batch could therefore only extend the gate to `ms` **CHOICES-only** (8 `ms` dropdown flags) plus a SELF-ARMING one-sided guard ("IF the JSON ever carries a non-null `default_value` it must equal the hand mirror"), vacuously green until `ms` emits v5. A true two-sided `ms` defaults gate (catching a silent mirror omission the way `mnemonic`'s does) is infeasible until then.

@@ -178,25 +178,6 @@ fn an_unregistered_script_type_is_refused() {
     );
 }
 
-/// A bare `bip48` names no script type. Refusing it teaches the choice; picking
-/// one silently would put a multisig cosigner key at a path the operator did
-/// not choose.
-#[test]
-fn a_bare_bip48_is_refused_rather_than_guessed() {
-    let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip48"]);
-    assert_ne!(
-        code(&o),
-        0,
-        "bare bip48 must be refused; stdout={}",
-        out(&o)
-    );
-    let e = err(&o);
-    assert!(
-        e.contains("bip48-p2wsh") && e.contains("bip48-p2sh-p2wsh"),
-        "the refusal must list the two registered script types; stderr={e}"
-    );
-}
-
 /// The existing single-sig template names must not have been renamed as
 /// collateral damage of adding a hyphenated variant.
 #[test]
@@ -205,4 +186,123 @@ fn the_single_sig_template_names_are_unchanged() {
         let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", t]);
         assert_eq!(code(&o), 0, "template {t} stopped working: {}", err(&o));
     }
+}
+
+// ─── permissive input, loud output ───────────────────────────────────────────
+//
+// A bare `bip48` used to be REFUSED, on the reasoning that BIP-48 registers two
+// script types and choosing one silently could place a cosigner key at a path
+// the operator did not pick.
+//
+// That was the wrong call, and this file's own neighbour proves it: `--language`
+// makes a MORE dangerous assumption — the wordlist changes both the fingerprint
+// and the xpub — and `ms` does not refuse it. It assumes english, annotates
+// `(DEFAULT)` on stdout, emits a loud note on stderr, and exposes
+// `language_defaulted` in JSON. Refusing here broke an established house pattern
+// for a smaller assumption.
+//
+// The rule the product wants: be permissive on input, expressive on output, and
+// say loudly when a common assumption had to be made. BIP-48 itself names 2'
+// (p2wsh) the recommended default, so assuming it is not a guess — it is the
+// BIP's own answer, announced.
+
+const P2WSH_SCRIPT_TYPE_NOTE: &str = "script_type";
+
+#[test]
+fn a_bare_bip48_is_accepted_and_assumes_the_bip_recommended_default() {
+    let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip48"]);
+    assert_eq!(
+        code(&o),
+        0,
+        "a bare bip48 must be ACCEPTED; stderr={}",
+        err(&o)
+    );
+    let s = out(&o);
+    // It must land on 2' (p2wsh) — the script type BIP-48 recommends.
+    assert!(s.contains(P2WSH_ACCT0), "{s}");
+    assert!(s.contains("m/48'/0'/0'/2'"), "{s}");
+}
+
+#[test]
+fn the_assumption_is_announced_on_stdout_and_stderr() {
+    let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip48"]);
+    let s = out(&o);
+    let e = err(&o);
+    assert!(
+        s.contains("DEFAULT"),
+        "stdout must annotate the assumed script type, as --language does; stdout={s}"
+    );
+    assert!(
+        e.to_lowercase().contains("p2wsh") && e.contains(P2WSH_SCRIPT_TYPE_NOTE),
+        "stderr must say loudly which script type was assumed; stderr={e}"
+    );
+    // The note must be actionable: it has to name the alternative, or the
+    // operator cannot tell they had a choice.
+    assert!(
+        e.contains("bip48-p2sh-p2wsh"),
+        "the note must name the other registered script type; stderr={e}"
+    );
+}
+
+/// An EXPLICIT script type is not an assumption, so it must NOT be annotated.
+/// A tool that cries "DEFAULT" when the operator chose is a tool whose warnings
+/// get ignored.
+#[test]
+fn an_explicit_script_type_announces_nothing() {
+    let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip48-p2wsh"]);
+    let s = out(&o);
+    let e = err(&o);
+    assert!(
+        !s.contains("DEFAULT") || !s.contains(P2WSH_SCRIPT_TYPE_NOTE),
+        "an explicitly chosen script type must not be annotated as a default; stdout={s}"
+    );
+    assert!(
+        !e.contains("bip48-p2sh-p2wsh"),
+        "no assumption note is due when the operator chose; stderr={e}"
+    );
+}
+
+/// Machine-readable, mirroring `language_defaulted`. A caller parsing --json
+/// must be able to see that an assumption was made without scraping stderr.
+#[test]
+fn json_carries_the_assumption_flag() {
+    let bare = out(&ms(&[
+        "derive",
+        "--hex",
+        ZEROS_HEX,
+        "--template",
+        "bip48",
+        "--json",
+    ]));
+    assert!(
+        bare.contains("\"script_type_defaulted\":true"),
+        "--json must expose the assumption; got {bare}"
+    );
+    let explicit = out(&ms(&[
+        "derive",
+        "--hex",
+        ZEROS_HEX,
+        "--template",
+        "bip48-p2wsh",
+        "--json",
+    ]));
+    assert!(
+        explicit.contains("\"script_type_defaulted\":false"),
+        "--json must report false when the operator chose; got {explicit}"
+    );
+}
+
+/// Single-sig templates make no script-type assumption at all, so the flag must
+/// be false rather than vacuously true.
+#[test]
+fn single_sig_templates_report_no_script_type_assumption() {
+    let s = out(&ms(&[
+        "derive",
+        "--hex",
+        ZEROS_HEX,
+        "--template",
+        "bip84",
+        "--json",
+    ]));
+    assert!(s.contains("\"script_type_defaulted\":false"), "got {s}");
 }

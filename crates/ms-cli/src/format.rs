@@ -114,6 +114,11 @@ pub struct DeriveJson<'a> {
     pub account_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account_xpub: Option<String>,
+    /// True when the operator named a BIP-48 purpose without naming a script
+    /// type, so `2'` (p2wsh) was ASSUMED — BIP-48's own recommended default.
+    /// Mirrors `language_defaulted`: a caller parsing JSON must be able to see
+    /// that an assumption was made without scraping stderr.
+    pub script_type_defaulted: bool,
     pub language: &'a str,
     pub language_defaulted: bool,
 }

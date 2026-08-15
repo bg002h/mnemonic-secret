@@ -72,11 +72,17 @@ pub struct DeriveArgs {
 /// nobody should have to remember that native segwit multisig lives at
 /// `m/48'/0'/0'/2'`.
 ///
-/// The `bip48-*` variants are named by script type rather than offering a bare
-/// `bip48`, because BIP-48 registers TWO and choosing one silently would put a
-/// multisig cosigner key at a path the operator did not pick. There is no
-/// `bip48-p2tr`: BIP-48 registers no Taproot script type, and inventing one
-/// would mean deriving to a path no other wallet looks at.
+/// A bare `bip48` is ACCEPTED and assumes `2'` (p2wsh), which BIP-48 itself
+/// names the recommended default — and the assumption is announced loudly, the
+/// way `--language` already announces its own. Refusing it would be the more
+/// cautious-looking choice and the worse one: an operator who knows they have a
+/// multisig should not be stopped for not knowing a level of a derivation path.
+/// Permissive on input, expressive on output.
+///
+/// There is no `bip48-p2tr`: BIP-48 registers no Taproot script type, and
+/// inventing one would derive to a path no other wallet looks at. That is where
+/// permissiveness STOPS — assuming a documented default is service, inventing an
+/// unregistered path is data loss.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
 #[clap(rename_all = "lower")]
 pub enum Template {
@@ -91,6 +97,9 @@ pub enum Template {
     /// BIP-48 nested segwit multisig (script_type 1').
     #[value(name = "bip48-p2sh-p2wsh")]
     Bip48P2shP2wsh,
+    /// BIP-48 with no script type named: assumes `2'` (p2wsh) and says so.
+    #[value(name = "bip48")]
+    Bip48,
 }
 
 impl Template {
@@ -100,7 +109,7 @@ impl Template {
             Template::Bip49 => 49,
             Template::Bip84 => 84,
             Template::Bip86 => 86,
-            Template::Bip48P2wsh | Template::Bip48P2shP2wsh => 48,
+            Template::Bip48P2wsh | Template::Bip48P2shP2wsh | Template::Bip48 => 48,
         }
     }
 
@@ -111,9 +120,30 @@ impl Template {
     /// address_index`, registering `1'` = p2sh-p2wsh and `2'` = p2wsh.
     fn script_type(self) -> Option<u32> {
         match self {
-            Template::Bip48P2wsh => Some(2),
+            // A bare bip48 lands on the SAME path as bip48-p2wsh; the only
+            // difference is that this one was assumed rather than chosen, which
+            // is what script_type_defaulted reports.
+            Template::Bip48P2wsh | Template::Bip48 => Some(2),
             Template::Bip48P2shP2wsh => Some(1),
             _ => None,
+        }
+    }
+
+    /// True when the script-type level was ASSUMED rather than named.
+    ///
+    /// Only a bare `bip48` assumes. An explicitly chosen script type is not an
+    /// assumption and must not be annotated as one — a tool that cries
+    /// "DEFAULT" when the operator chose is a tool whose warnings get ignored.
+    fn script_type_defaulted(self) -> bool {
+        matches!(self, Template::Bip48)
+    }
+
+    /// Human label for the script type, for the assumption notice.
+    fn script_type_label(self) -> &'static str {
+        match self.script_type() {
+            Some(2) => "2' p2wsh (native segwit)",
+            Some(1) => "1' p2sh-p2wsh (nested segwit)",
+            _ => "",
         }
     }
 
@@ -390,6 +420,7 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
             network: args.network.as_str(),
             account_path: account.as_ref().map(|(p, _)| p.clone()),
             account_xpub: account.as_ref().map(|(_, x)| x.clone()),
+            script_type_defaulted: args.template.is_some_and(|t| t.script_type_defaulted()),
             language: effective_lang.as_str(),
             language_defaulted: effective_lang_defaulted,
         };
@@ -402,6 +433,25 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
         if let Some((path, xpub)) = &account {
             writeln!(stdout, "account_path:        {path}").ok();
             writeln!(stdout, "account_xpub:        {xpub}").ok();
+        }
+        // The ASSUMPTION notice, mirroring --language's. Loud on purpose: the
+        // operator asked for "a BIP-48 multisig" and got a specific script type
+        // they did not name, and that choice decides where their funds live.
+        if let Some(t) = args.template.filter(|t| t.script_type_defaulted()) {
+            writeln!(
+                stdout,
+                "script_type:         {} (DEFAULT)",
+                t.script_type_label()
+            )
+            .ok();
+            let _ = writeln!(
+                stderr,
+                "note: --template bip48 named no script type, so script_type {} was ASSUMED \
+                 (BIP-48 recommends it). The other registered choice is --template \
+                 bip48-p2sh-p2wsh; a cosigner key derived at the wrong script type will not \
+                 match your wallet, so record which one this backup used",
+                t.script_type_label()
+            );
         }
         if effective_lang_defaulted {
             writeln!(
