@@ -14,6 +14,13 @@
 
 use ms_codec::decode_with_correction;
 
+/// The ONE toolkit version this parity guard is meaningful against: the last
+/// one that carried its own independent vendored BCH decoder. Anything newer
+/// delegates to this crate, making the comparison tautological.
+///
+/// Matched as a substring of `mnemonic --version` output.
+const PARITY_TOOLKIT_VERSION: &str = "0.22.1";
+
 /// Codex32 alphabet for synthesizing deterministic single-char corruptions.
 const CODEX32_ALPHABET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 
@@ -63,17 +70,43 @@ fn parity_smoke_ms_against_toolkit_v0_22_1() {
         return;
     }
 
-    // Verify the toolkit binary version (best-effort — if it's a different
-    // version the parity guarantee weakens but we don't hard-fail). The
-    // parity is meaningful against ANY toolkit version that has a working
-    // vendored BCH decoder, so we just log mismatches.
+    // The version gate this test's own header has always described — "if the
+    // binary is missing or its version doesn't match, the test SKIPS
+    // gracefully" — and which the code did not implement.
+    //
+    // The comment that used to sit here said the opposite: "parity is
+    // meaningful against ANY toolkit version that has a working vendored BCH
+    // decoder, so we just log mismatches". That reasoning EXPIRED. It held only
+    // while the toolkit carried its own INDEPENDENT vendored copy. It no longer
+    // does — `mnemonic-toolkit` depends on `ms-codec = "0.7"` and its repair
+    // path calls `ms_codec::decode_with_correction` (`src/repair.rs:8`), this
+    // crate's own function. Against a post-migration toolkit the comparison is
+    // ms-codec against ms-codec: precisely the tautology the header warned
+    // about for "post-B.7".
+    //
+    // Measured 2026-08-15: the installed toolkit is 0.97.0 and exits 4
+    // (VERIFY-ME) where the assertion below allows 0 or 5, so this test had
+    // been RED. Loosening that assertion was the tempting repair and the wrong
+    // one — it would turn a tautological comparison green and let it read as
+    // coverage.
     let version_out = std::process::Command::new(&toolkit_bin)
         .arg("--version")
         .output();
     match version_out {
         Ok(out) => {
-            let v = String::from_utf8_lossy(&out.stdout);
-            eprintln!("parity_smoke: toolkit binary reports: {}", v.trim());
+            let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            eprintln!("parity_smoke: toolkit binary reports: {v}");
+            if !v.contains(PARITY_TOOLKIT_VERSION) {
+                eprintln!(
+                    "parity_smoke: SKIPPING — this guard is only meaningful against toolkit \
+                     {PARITY_TOOLKIT_VERSION}, which carried its OWN vendored BCH decoder. \
+                     Found {v:?}, which delegates to ms_codec::decode_with_correction, so the \
+                     comparison would be this crate against itself. The parity guard is \
+                     DORMANT, not passing — see design/FOLLOWUPS.md \
+                     `parity-smoke-toolkit-version-drift`."
+                );
+                return;
+            }
         }
         Err(e) => {
             eprintln!("parity_smoke: --version failed: {e}; skipping");
