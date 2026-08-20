@@ -172,3 +172,104 @@ fn parity_smoke_ms_against_toolkit_v0_22_1() {
         codec_correction.position, codec_correction.was, codec_correction.now
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The toolkit-INDEPENDENT half, freed from the version gate (P1, 2026-08-19).
+//
+// The parity test above returns early three times -- HOME unset, binary absent,
+// version mismatch -- and every early return happens BEFORE its step 1, which
+// asserts that ms-codec itself corrects a corrupted ms1 and reports exactly one
+// correction. That assertion never needed the toolkit, and the constellation
+// recon measured the consequence: the whole file printed `ok` while executing
+// no assertion at all, because the installed toolkit is 0.97.0 and the guard is
+// meaningful only against 0.22.1.
+//
+// So the codec coverage was hostage to a binary that will never be present.
+// It runs unconditionally here, and is widened from one corruption to a battery
+// -- strictly more than the gated version ever asserted.
+//
+// The cross-validation ABOVE is deliberately left dormant rather than deleted
+// or forced green: it is meaningful only against a toolkit that carried its own
+// independent BCH decoder, and no current toolkit does. That gap is real and is
+// reported, not papered over.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The original data-part character at `pos`, for asserting what a correction
+/// restored.
+fn original_char_at(pos: usize) -> char {
+    VALID_MS1
+        .chars()
+        .nth(3 + pos)
+        .expect("position within the string")
+}
+
+/// Rebuild a string with `pos` of the data part set to `c`.
+fn with_char_at(s: &str, pos: usize, c: char) -> String {
+    let mut chars: Vec<char> = s.chars().collect();
+    chars[3 + pos] = c;
+    chars.into_iter().collect()
+}
+
+#[test]
+fn ms_codec_corrects_single_char_corruptions() {
+    // Positions spread across the data part, each with a different xor mask so
+    // the battery is not one corruption repeated.
+    let cases: &[(usize, u8)] = &[
+        (0, 0b10110),
+        (4, 0b10110),
+        (4, 0b00001),
+        (9, 0b01101),
+        (17, 0b11111),
+        (30, 0b00110),
+    ];
+
+    for &(pos, mask) in cases {
+        let bad = corrupt_at(VALID_MS1, pos, mask);
+        assert_ne!(
+            bad, VALID_MS1,
+            "pos {pos} mask {mask:#07b}: corruption must change the string"
+        );
+
+        let (_tag, _payload, details) = decode_with_correction(&bad)
+            .unwrap_or_else(|e| panic!("pos {pos} mask {mask:#07b}: must decode: {e:?}"));
+
+        assert_eq!(
+            details.len(),
+            1,
+            "pos {pos} mask {mask:#07b}: exactly 1 correction, got {details:?}"
+        );
+        let c = &details[0];
+        assert_eq!(c.position, pos, "correction reported at the wrong position");
+        assert_eq!(
+            c.was,
+            bad.chars().nth(3 + pos).unwrap(),
+            "pos {pos}: `was` must be the corrupted character"
+        );
+        assert_eq!(
+            c.now,
+            original_char_at(pos),
+            "pos {pos}: `now` must restore the ORIGINAL character"
+        );
+
+        // The whole point, and what the gated version could only check by
+        // shelling out to the toolkit: applying the reported correction
+        // reconstructs the original codeword exactly.
+        assert_eq!(
+            with_char_at(&bad, pos, c.now),
+            VALID_MS1,
+            "pos {pos} mask {mask:#07b}: applying the correction must restore the original"
+        );
+    }
+}
+
+/// A clean string must report NO corrections. Without this, a decoder that
+/// always "corrected" something would satisfy every case above.
+#[test]
+fn ms_codec_reports_no_correction_for_a_clean_string() {
+    let (_tag, _payload, details) =
+        decode_with_correction(VALID_MS1).expect("the canonical vector must decode");
+    assert!(
+        details.is_empty(),
+        "a clean ms1 must need no correction, got {details:?}"
+    );
+}
