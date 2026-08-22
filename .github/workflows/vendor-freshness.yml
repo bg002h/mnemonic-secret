@@ -20,7 +20,16 @@ name: vendor-freshness
 
 on:
   push:
-    branches: [main, master]
+    # `ci/**` so the ci/staging push ritual can gate this BEFORE the commit
+    # lands on master. The `pull_request:` trigger below already makes this a
+    # leading gate for a PR flow — but this constellation pushes directly to
+    # master via scripts/push-master.sh and opens no PRs, so that trigger never
+    # fires here and the gate could only ever report on work already published.
+    #
+    # Third repo with this gap. descriptor-mnemonic's went red on a dependency
+    # pin and the failure sat unacted-on for two days, because the only moment
+    # it could speak was after the fact (F-226).
+    branches: [main, master, 'ci/**']
     paths:
       - 'Cargo.lock'
       - 'Cargo.toml'
