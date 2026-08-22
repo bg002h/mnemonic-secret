@@ -306,3 +306,72 @@ fn single_sig_templates_report_no_script_type_assumption() {
     ]));
     assert!(s.contains("\"script_type_defaulted\":false"), "got {s}");
 }
+
+/// The constellation's own path is derivable by its own tool.
+///
+/// `m/270028'/coin'/account'/script'` was ruled 2026-08-18 with `0'` = tr and
+/// `1'` = wsh, and for a while nothing could derive at it: `ms derive` offered
+/// only the BIP templates and `mk derive --path` is unhardened-only. A ruled
+/// path no tool implements is a ruling in name only.
+#[test]
+fn bg002h_templates_derive_the_ruled_path() {
+    const PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    for (template, want) in [
+        ("bg002h-tr", "m/270028'/0'/0'/0'"),
+        ("bg002h-wsh", "m/270028'/0'/0'/1'"),
+    ] {
+        let out = Command::cargo_bin("ms")
+            .unwrap()
+            .args([
+                "derive",
+                "--phrase",
+                PHRASE,
+                "--template",
+                template,
+                "--account",
+                "0",
+            ])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{template} must derive");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            stdout.contains(want),
+            "{template} must derive at {want}, got: {stdout}"
+        );
+        // An explicitly chosen script type is a choice, not an assumption.
+        assert!(
+            !String::from_utf8_lossy(&out.stderr).contains("ASSUMED"),
+            "{template} names its script type explicitly and must not be annotated as assumed"
+        );
+    }
+}
+
+/// bg002h-wsh and bip48-p2sh-p2wsh both sit at level-4 value `1'`, so a label
+/// derived from the NUMBER alone would describe one as the other.
+#[test]
+fn bg002h_wsh_is_not_labelled_as_nested_segwit() {
+    const PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    let out = Command::cargo_bin("ms")
+        .unwrap()
+        .args([
+            "derive",
+            "--phrase",
+            PHRASE,
+            "--template",
+            "bg002h-wsh",
+            "--account",
+            "0",
+        ])
+        .output()
+        .unwrap();
+    let all = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !all.contains("p2sh-p2wsh"),
+        "bg002h-wsh must never be described as nested segwit: {all}"
+    );
+}

@@ -100,6 +100,26 @@ pub enum Template {
     /// BIP-48 with no script type named: assumes `2'` (p2wsh) and says so.
     #[value(name = "bip48")]
     Bip48,
+    /// The constellation's own path for TAPROOT keys:
+    /// `m/270028'/coin'/account'/0'`.
+    ///
+    /// This is the answer to the gap the type doc above describes. BIP-48
+    /// registers no taproot script type, so a `tr()` multisig key has no
+    /// standard 4-level home -- and md requires depth 4 for any multisig
+    /// script context. Purpose `270028'` reads as `bg002h` in a single
+    /// component (`27`->bg, `00`, `2`, `8`->h) and sits permanently outside
+    /// any plausible BIP number, so it cannot collide with a future
+    /// registration the way a bare `270'` could. Level 4 is the script type:
+    /// `0'` = tr, `1'` = wsh. Ruled 2026-08-18.
+    #[value(name = "bg002h-tr")]
+    Bg002hTr,
+    /// The constellation's own path for WSH keys:
+    /// `m/270028'/coin'/account'/1'`. See `bg002h-tr`.
+    ///
+    /// Deliberately does NOT reuse BIP-48's `1'`/`2'` script values, so nothing
+    /// can mistake this layout for BIP-48.
+    #[value(name = "bg002h-wsh")]
+    Bg002hWsh,
 }
 
 impl Template {
@@ -110,6 +130,7 @@ impl Template {
             Template::Bip84 => 84,
             Template::Bip86 => 86,
             Template::Bip48P2wsh | Template::Bip48P2shP2wsh | Template::Bip48 => 48,
+            Template::Bg002hTr | Template::Bg002hWsh => 270_028,
         }
     }
 
@@ -125,6 +146,11 @@ impl Template {
             // is what script_type_defaulted reports.
             Template::Bip48P2wsh | Template::Bip48 => Some(2),
             Template::Bip48P2shP2wsh => Some(1),
+            // The constellation's own level-4 script values: 0' = tr, 1' = wsh.
+            // Not BIP-48's 1'/2' -- reusing those would let the layout be
+            // mistaken for BIP-48.
+            Template::Bg002hTr => Some(0),
+            Template::Bg002hWsh => Some(1),
             _ => None,
         }
     }
@@ -140,9 +166,14 @@ impl Template {
 
     /// Human label for the script type, for the assumption notice.
     fn script_type_label(self) -> &'static str {
-        match self.script_type() {
-            Some(2) => "2' p2wsh (native segwit)",
-            Some(1) => "1' p2sh-p2wsh (nested segwit)",
+        // Matches on the TEMPLATE, not on script_type()'s number: bg002h-wsh
+        // and bip48-p2sh-p2wsh both sit at level-4 value 1', and labelling by
+        // the number alone would describe one as the other.
+        match self {
+            Template::Bip48P2wsh | Template::Bip48 => "2' p2wsh (native segwit)",
+            Template::Bip48P2shP2wsh => "1' p2sh-p2wsh (nested segwit)",
+            Template::Bg002hTr => "0' tr (taproot)",
+            Template::Bg002hWsh => "1' wsh (native segwit multisig)",
             _ => "",
         }
     }
