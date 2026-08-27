@@ -25,7 +25,7 @@ use crate::language::CliLanguage;
 /// `--phrase` and `--hex` form a required mutually-exclusive group (mirrors
 /// `ms encode`). `-k`/`-n` carry the K-of-N threshold + share count.
 #[derive(Args, Debug)]
-#[command(group = clap::ArgGroup::new("split_input").required(true).args(["phrase", "hex"]))]
+#[command(group = clap::ArgGroup::new("split_input").required(true).args(["phrase", "hex", "in_path"]))]
 pub struct SplitArgs {
     /// BIP-39 mnemonic to split. Use `-` to read from stdin.
     #[arg(long)]
@@ -34,6 +34,12 @@ pub struct SplitArgs {
     /// Hex-encoded entropy bytes to split (16/20/24/28/32 B = 32/40/48/56/64 hex chars).
     #[arg(long)]
     pub hex: Option<String>,
+
+    /// Read the BIP-39 PHRASE from FILE (never hex — use `--hex - < FILE`).
+    ///
+    /// Same ruling as `ms encode --in`: one kind, no sniffing. See that flag.
+    #[arg(long = "in", value_name = "FILE")]
+    pub in_path: Option<std::path::PathBuf>,
 
     /// BIP-39 wordlist for the input phrase. Ignored under --hex.
     #[arg(long, default_value = "english")]
@@ -75,7 +81,9 @@ pub fn run(mut args: SplitArgs) -> Result<u8> {
     let (payload, _language_for_card) = resolve_secret_payload(
         phrase_arg.as_ref().map(|p| p.as_str()),
         hex_arg.as_ref().map(|h| h.as_str()),
+        args.in_path.as_deref(),
         args.language,
+        "split",
     )?;
 
     // K-of-N split. `Threshold::new` rejects k ∉ 2..=9 (→ InvalidThreshold →

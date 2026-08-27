@@ -24,7 +24,7 @@ use crate::parse::{read_input, read_phrase_input, Source};
 /// to just `phrase` + `hex`; encode_arg_group_violations.rs (Phase 4) tests
 /// this with exit 64 on both-supplied and neither-supplied inputs.
 #[derive(Args, Debug)]
-#[command(group = clap::ArgGroup::new("input").required(true).args(["phrase", "hex"]))]
+#[command(group = clap::ArgGroup::new("input").required(true).args(["phrase", "hex", "in_path"]))]
 pub struct EncodeArgs {
     /// BIP-39 mnemonic. Use `-` to read from stdin.
     #[arg(long)]
@@ -33,6 +33,17 @@ pub struct EncodeArgs {
     /// Hex-encoded entropy bytes (16/20/24/28/32 B = 32/40/48/56/64 hex chars).
     #[arg(long)]
     pub hex: Option<String>,
+
+    /// Read the BIP-39 PHRASE from FILE (never hex — use `--hex - < FILE`).
+    ///
+    /// **`--in` means a phrase, and refuses to sniff.** A sniffing `--in` would
+    /// be safe today only because a phrase always contains whitespace, and that
+    /// restraint is invisible: a later maintainer being liberal with whitespace
+    /// turns a hex-alphabet BIP-39 phrase into valid entropy for a DIFFERENT
+    /// wallet — a valid, wrong plate. The phrase-only rule has no input that
+    /// both parses as BIP-39 and reads as entropy.
+    #[arg(long = "in", value_name = "FILE")]
+    pub in_path: Option<std::path::PathBuf>,
 
     /// BIP-39 wordlist for the input phrase. Ignored under --hex.
     #[arg(long, default_value = "english")]
@@ -77,7 +88,9 @@ pub struct EncodeArgs {
 pub(crate) fn resolve_secret_payload(
     phrase: Option<&str>,
     hex: Option<&str>,
+    in_path: Option<&std::path::Path>,
     language: CliLanguage,
+    verb: &'static str,
 ) -> Result<(Payload, Option<&'static str>)> {
     use zeroize::Zeroizing;
 
@@ -85,14 +98,24 @@ pub(crate) fn resolve_secret_payload(
     // `entropy` is the secret byte buffer; `language_for_card` is the 2nd
     // element returned to the caller. Both are bound here (lint anchor:
     // `let (entropy, language_for_card): (Zeroizing<Vec<u8>>`).
+    // `--in` and `--phrase` are ONE channel -- the phrase channel -- reached
+    // from two places. clap's required group already guarantees at most one is
+    // present, so this is a routing decision and not a precedence one.
+    let phrase_source: Option<crate::parse::Source> = match (in_path, phrase) {
+        (Some(p), _) => Some(Source::new(None, Some(p))),
+        (None, Some(a)) => Some(Source::new(Some(a), None)),
+        (None, None) => None,
+    };
+
     let (entropy, language_for_card): (Zeroizing<Vec<u8>>, Option<&'static str>) =
-        if let Some(phrase_arg) = phrase {
-            let phrase: Zeroizing<String> = read_phrase_input(Source::new(Some(phrase_arg), None))?;
+        if let Some(src) = phrase_source {
+            let phrase: Zeroizing<String> = read_phrase_input(src)?;
             let lang: Language = language.into();
             // SAFETY: third-party-blocked — `bip39::Mnemonic` has no Drop+
             // Zeroize; tracked at FOLLOWUP `rust-bip39-mnemonic-zeroize-upstream`
             // (companion of the mnemonic-toolkit cycle entry).
-            let mnemonic = Mnemonic::parse_in(lang, phrase.as_str())?;
+            let mnemonic = Mnemonic::parse_in(lang, phrase.as_str())
+                .map_err(|e| phrase_parse_error(e, in_path, verb))?;
             (
                 Zeroizing::new(mnemonic.to_entropy()),
                 Some(language.as_str()),
@@ -114,7 +137,7 @@ pub(crate) fn resolve_secret_payload(
     // caller-wrap-contract shapes; clone the wrapped buffer's contents into the
     // public Vec at the call boundary. The original `entropy` Zeroizing<Vec<u8>>
     // scrubs on drop at function exit.
-    let payload = if language != CliLanguage::English && phrase.is_some() {
+    let payload = if language != CliLanguage::English && phrase_source.is_some() {
         Payload::Mnem {
             language: language.code(),
             entropy: (*entropy).clone(),
@@ -142,7 +165,9 @@ pub fn run(mut args: EncodeArgs) -> Result<u8> {
     let (payload, language_for_card) = resolve_secret_payload(
         phrase_arg.as_ref().map(|p| p.as_str()),
         hex_arg.as_ref().map(|h| h.as_str()),
+        args.in_path.as_deref(),
         args.language,
+        "encode",
     )?;
 
     let ms1 = ms_codec::encode(Tag::ENTR, &payload)?;
@@ -169,6 +194,31 @@ pub fn run(mut args: EncodeArgs) -> Result<u8> {
         &mut std::io::stderr().lock(),
     );
     Ok(0)
+}
+
+/// The BIP-39 parse failure, and — when the material arrived through `--in` —
+/// the executable command that reads the OTHER kind from the same file.
+///
+/// **§6h: remedy text names channels that exist and commands that RUN.** An
+/// operator who points `--in` at a file of hex gets a wordlist error today and
+/// no way forward except `--allow-argv-secret`, which is the exposure this
+/// phase exists to close. The redirect is the whole reason `--in` is allowed to
+/// mean exactly one kind.
+fn phrase_parse_error(
+    e: bip39::Error,
+    in_path: Option<&std::path::Path>,
+    verb: &'static str,
+) -> CliError {
+    match in_path {
+        Some(p) => CliError::BadInput(format!(
+            "--in {path} is not a BIP-39 phrase ({e}).\n      \
+             `--in` reads a PHRASE and never sniffs the file's contents. If that \
+             file holds hex entropy, use the hex channel:\n      \
+             \x20   ms {verb} --hex - < {path}",
+            path = p.display()
+        )),
+        None => CliError::Bip39(e),
+    }
 }
 
 pub(crate) fn parse_hex_entropy(hex_str: &str) -> Result<Vec<u8>> {
