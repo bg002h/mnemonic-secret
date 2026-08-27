@@ -18,23 +18,22 @@
 //! sufficient: bytes can match while derivation is broken, and a derivation can
 //! coincide while the secret silently changed.
 
-use assert_cmd::Command;
 use serde_json::Value;
+
+mod support;
 
 /// BIP-39's own published all-zero-entropy vector. Public by construction.
 const ABANDON: &str =
     "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
 fn ms(args: &[&str]) -> String {
-    let out = Command::cargo_bin("ms")
-        .unwrap()
-        .args(args)
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    String::from_utf8(out).unwrap()
+    let out = support::run(args);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).unwrap()
 }
 
 /// `ms split --json` → the share strings.

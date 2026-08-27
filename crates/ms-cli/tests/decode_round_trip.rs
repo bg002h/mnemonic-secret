@@ -6,7 +6,7 @@ use predicates::prelude::*;
 #[test]
 fn decode_canonical_12_word_round_trip() {
     Command::cargo_bin("ms").unwrap()
-        .args(["decode", "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f"])
+        .args(["decode", "-"]).write_stdin(("ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f").to_string())
         .assert()
         .success()
         .stdout(predicate::str::contains("entropy: 00000000000000000000000000000000"))
@@ -20,11 +20,8 @@ fn decode_canonical_12_word_round_trip() {
 fn decode_json_schema() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args([
-            "decode",
-            "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f",
-            "--json",
-        ])
+        .args(["decode", "-", "--json"])
+        .write_stdin(("ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f").to_string())
         .assert()
         .success()
         .stdout(predicate::str::contains("\"schema_version\":\"1\""))

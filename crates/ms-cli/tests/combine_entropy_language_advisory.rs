@@ -11,6 +11,8 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::Value;
 
+mod support;
+
 const ENGLISH_12: &str =
     "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
@@ -27,14 +29,9 @@ fn split_shares(source_args: &[&str], k: &str, n: &str) -> Vec<String> {
     let mut args = vec!["split"];
     args.extend_from_slice(source_args);
     args.extend_from_slice(&["-k", k, "-n", n, "--json"]);
-    let out = Command::cargo_bin("ms")
-        .unwrap()
-        .args(&args)
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
+    let o = support::run(&args);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let out = o.stdout;
     let v: Value = serde_json::from_slice(&out).unwrap();
     v["shares"]
         .as_array()
@@ -53,7 +50,8 @@ fn japanese_to_entropy_emits_advisory() {
     let expected_hex = "ab".repeat(16);
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["combine", &shares[0], &shares[2], "--to", "entropy"])
+        .args(["combine", "-", "--to", "entropy"])
+        .write_stdin([shares[0].to_string(), shares[2].to_string()].join("\n"))
         .assert()
         .success()
         .stdout(predicate::str::contains(&expected_hex))
@@ -67,7 +65,8 @@ fn japanese_to_phrase_no_advisory() {
     let shares = split_shares(&["--language", "japanese", "--phrase", &ja], "2", "3");
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["combine", &shares[0], &shares[1], "--to", "phrase"])
+        .args(["combine", "-", "--to", "phrase"])
+        .write_stdin([shares[0].to_string(), shares[1].to_string()].join("\n"))
         .assert()
         .success()
         .stdout(predicate::str::contains(&ja))
@@ -81,7 +80,8 @@ fn japanese_to_ms1_no_advisory() {
     let shares = split_shares(&["--language", "japanese", "--phrase", &ja], "2", "3");
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["combine", &shares[0], &shares[1], "--to", "ms1"])
+        .args(["combine", "-", "--to", "ms1"])
+        .write_stdin([shares[0].to_string(), shares[1].to_string()].join("\n"))
         .assert()
         .success()
         .stderr(predicate::str::contains(ADVISORY_SUBSTR).not());
@@ -97,7 +97,8 @@ fn japanese_to_ms1_preserves_language_byte() {
     // Re-emitted ms1 via --json.
     let out = Command::cargo_bin("ms")
         .unwrap()
-        .args(["combine", &shares[0], &shares[1], "--to", "ms1", "--json"])
+        .args(["combine", "-", "--to", "ms1", "--json"])
+        .write_stdin([shares[0].to_string(), shares[1].to_string()].join("\n"))
         .assert()
         .success()
         .get_output()
@@ -109,7 +110,8 @@ fn japanese_to_ms1_preserves_language_byte() {
     // Decode it back — must still be a Japanese mnem card.
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["decode", ms1])
+        .args(["decode", "-"])
+        .write_stdin((ms1).to_string())
         .assert()
         .success()
         .stdout(predicate::str::contains("language: japanese"))
@@ -122,7 +124,8 @@ fn english_to_entropy_no_advisory() {
     let shares = split_shares(&["--phrase", ENGLISH_12], "2", "3");
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["combine", &shares[0], &shares[1], "--to", "entropy"])
+        .args(["combine", "-", "--to", "entropy"])
+        .write_stdin([shares[0].to_string(), shares[1].to_string()].join("\n"))
         .assert()
         .success()
         .stderr(predicate::str::contains("BIP-39 seed as raw entropy").not());
@@ -136,9 +139,8 @@ fn json_wire_shape_unchanged_advisory_on_stderr() {
     let shares = split_shares(&["--language", "japanese", "--phrase", &ja], "2", "3");
     let assert = Command::cargo_bin("ms")
         .unwrap()
-        .args([
-            "combine", &shares[0], &shares[2], "--to", "entropy", "--json",
-        ])
+        .args(["combine", "-", "--to", "entropy", "--json"])
+        .write_stdin([shares[0].to_string(), shares[2].to_string()].join("\n"))
         .assert()
         .success()
         .stderr(predicate::str::contains(ADVISORY_SUBSTR));

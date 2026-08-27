@@ -1,19 +1,18 @@
 //! For each CliError `kind`, verify JSON-mode error output matches §5.4 schema.
 
-use assert_cmd::Command;
 use ms_codec::codex32::{Codex32String, Fe};
 use serde_json::Value;
 
+mod support;
+
 fn run_and_parse(args: &[&str]) -> Value {
-    let out = Command::cargo_bin("ms")
-        .unwrap()
-        .args(args)
-        .assert()
-        .failure()
-        .get_output()
-        .stdout
-        .clone();
-    serde_json::from_slice(&out).expect("error envelope is valid JSON")
+    let out = support::run(args);
+    assert!(
+        !out.status.success(),
+        "expected a failure envelope; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).expect("error envelope is valid JSON")
 }
 
 #[test]

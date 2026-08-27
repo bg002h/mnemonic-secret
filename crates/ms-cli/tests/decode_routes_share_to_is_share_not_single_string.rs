@@ -31,7 +31,8 @@ fn decode_routes_share_to_is_share_not_single_string() {
         .to_string();
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["decode", &s])
+        .args(["decode", "-"])
+        .write_stdin(s.to_string())
         .assert()
         .failure()
         .code(2)
@@ -50,7 +51,8 @@ fn decode_routes_share_to_is_share_not_single_string_json_envelope() {
         .to_string();
     let out = Command::cargo_bin("ms")
         .unwrap()
-        .args(["decode", &s, "--json"])
+        .args(["decode", "-", "--json"])
+        .write_stdin(s.to_string())
         .assert()
         .failure()
         .code(2)

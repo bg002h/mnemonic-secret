@@ -36,7 +36,7 @@ fn split_english_phrase_emits_n_shares_text() {
         .args([
             "split",
             "--phrase",
-            ENGLISH_12,
+            "-",
             "-k",
             "2",
             "-n",
@@ -44,6 +44,7 @@ fn split_english_phrase_emits_n_shares_text() {
             "--group-size",
             "0",
         ])
+        .write_stdin((ENGLISH_12).to_string())
         .assert()
         .success()
         .get_output()
@@ -76,7 +77,8 @@ fn split_english_phrase_emits_n_shares_text() {
 fn split_emits_private_key_material_advisory() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["split", "--phrase", ENGLISH_12, "-k", "2", "-n", "3"])
+        .args(["split", "--phrase", "-", "-k", "2", "-n", "3"])
+        .write_stdin((ENGLISH_12).to_string())
         .assert()
         .success()
         .stderr(predicate::str::contains("private key material"));
@@ -86,16 +88,8 @@ fn split_emits_private_key_material_advisory() {
 fn split_json_shape() {
     let out = Command::cargo_bin("ms")
         .unwrap()
-        .args([
-            "split",
-            "--hex",
-            &"ab".repeat(16),
-            "-k",
-            "3",
-            "-n",
-            "5",
-            "--json",
-        ])
+        .args(["split", "--hex", "-", "-k", "3", "-n", "5", "--json"])
+        .write_stdin("ab".repeat(16))
         .assert()
         .success()
         .get_output()
@@ -122,13 +116,14 @@ fn split_japanese_phrase_json_has_language_and_mnem_kind() {
             "--language",
             "japanese",
             "--phrase",
-            &ja,
+            "-",
             "-k",
             "2",
             "-n",
             "3",
             "--json",
         ])
+        .write_stdin(ja.to_string())
         .assert()
         .success()
         .get_output()
@@ -144,7 +139,8 @@ fn split_japanese_phrase_json_has_language_and_mnem_kind() {
 fn split_k_below_2_rejected() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["split", "--phrase", ENGLISH_12, "-k", "1", "-n", "3"])
+        .args(["split", "--phrase", "-", "-k", "1", "-n", "3"])
+        .write_stdin((ENGLISH_12).to_string())
         .assert()
         .failure()
         .code(1); // InvalidThreshold → BadInput (exit 1)
@@ -154,7 +150,8 @@ fn split_k_below_2_rejected() {
 fn split_n_below_k_rejected() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["split", "--phrase", ENGLISH_12, "-k", "3", "-n", "2"])
+        .args(["split", "--phrase", "-", "-k", "3", "-n", "2"])
+        .write_stdin((ENGLISH_12).to_string())
         .assert()
         .failure()
         .code(1); // InvalidShareCount → BadInput (exit 1)
@@ -164,7 +161,8 @@ fn split_n_below_k_rejected() {
 fn split_n_above_31_rejected() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["split", "--phrase", ENGLISH_12, "-k", "2", "-n", "32"])
+        .args(["split", "--phrase", "-", "-k", "2", "-n", "32"])
+        .write_stdin((ENGLISH_12).to_string())
         .assert()
         .failure()
         .code(1); // InvalidShareCount → BadInput (exit 1)

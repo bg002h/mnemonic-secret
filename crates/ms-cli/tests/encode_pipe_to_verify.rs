@@ -7,7 +7,8 @@ fn encode_pipe_to_verify() {
     let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
     let encoded = Command::cargo_bin("ms")
         .unwrap()
-        .args(["encode", "--phrase", phrase])
+        .args(["encode", "--phrase", "-"])
+        .write_stdin((phrase).to_string())
         .assert()
         .success()
         .get_output()

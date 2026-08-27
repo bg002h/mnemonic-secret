@@ -8,7 +8,7 @@
 //! English-phrase/hex → Entr and non-English-phrase → Mnem auto-route plus the
 //! `language` card/json field.
 
-use assert_cmd::Command;
+mod support;
 
 const ENGLISH_12: &str =
     "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -21,15 +21,13 @@ fn japanese_12_word() -> String {
 }
 
 fn stdout_of(args: &[&str]) -> String {
-    let out = Command::cargo_bin("ms")
-        .unwrap()
-        .args(args)
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    String::from_utf8(out).expect("stdout is utf-8")
+    let out = support::run(args);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).expect("stdout is utf-8")
 }
 
 #[test]

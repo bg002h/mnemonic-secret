@@ -14,7 +14,8 @@ fn verify_non_zero_prefix_exits_2() {
 
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["verify", &s])
+        .args(["verify", "-"])
+        .write_stdin(s.to_string())
         .assert()
         .failure()
         .code(2)

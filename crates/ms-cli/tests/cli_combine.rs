@@ -10,6 +10,8 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::Value;
 
+mod support;
+
 const ENGLISH_12: &str =
     "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
@@ -24,14 +26,9 @@ fn split_shares(source_args: &[&str], k: &str, n: &str) -> Vec<String> {
     let mut args = vec!["split"];
     args.extend_from_slice(source_args);
     args.extend_from_slice(&["-k", k, "-n", n, "--json"]);
-    let out = Command::cargo_bin("ms")
-        .unwrap()
-        .args(&args)
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
+    let o = support::run(&args);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let out = o.stdout;
     let v: Value = serde_json::from_slice(&out).unwrap();
     v["shares"]
         .as_array()
@@ -54,18 +51,47 @@ fn comma5(s: &str) -> String {
     out
 }
 
+/// **RENAMED AND STRENGTHENED, because P2 removed the path the old name
+/// described.** The subject was *"grouped POSITIONAL shares re-ingest"*
+/// (mstring-grouping P2, SPEC §15 C3). A grouped share is the same secret as an
+/// unbroken one — `ms` strips display separators on intake — so after P2's argv
+/// guard the positional spelling is REFUSED, and a test that kept using it
+/// would pin a refusal rather than the re-ingest it exists for.
+///
+/// So both halves are asserted: the re-ingest survives on the private channels,
+/// and the argv spelling is refused. **The second half is a leak this phase
+/// found and closed**: a first draft of the guard classified the RAW token, so
+/// `ms combine <a comma-grouped share>` was not recognised as material while the
+/// unbroken spelling of the identical secret was.
 #[test]
-fn combine_accepts_comma_grouped_positional_shares() {
-    // mstring-grouping P2 (SPEC §15 C3): grouped positional shares re-ingest.
+fn grouped_shares_re_ingest_privately_and_are_refused_on_argv() {
     let shares = split_shares(&["--phrase", ENGLISH_12], "2", "3");
     let g0 = comma5(&shares[0]);
     let g2 = comma5(&shares[2]);
+
+    // Private, and the grouping is stripped on intake exactly as before.
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["combine", &g0, &g2])
+        .args(["combine", "-"])
+        .write_stdin([g0.to_string(), g2.to_string()].join("\n"))
         .assert()
         .success()
         .stdout(predicate::str::contains(ENGLISH_12));
+
+    // ...and on argv the same bytes are refused, grouped or not.
+    for spelling in [(&g0, &g2), (&shares[0], &shares[2])] {
+        let out = Command::cargo_bin("ms")
+            .unwrap()
+            .args(["combine", spelling.0, spelling.1])
+            .write_stdin("")
+            .output()
+            .unwrap();
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            err.contains("Refused BEFORE the command line was parsed"),
+            "a share on argv is secret material whether or not it is grouped: {err}"
+        );
+    }
 }
 
 #[test]
@@ -86,13 +112,12 @@ fn combine_dash_stdin_round_trips() {
 #[test]
 fn combine_english_round_trip_to_phrase() {
     let shares = split_shares(&["--phrase", ENGLISH_12], "2", "3");
-    // Any 2 of 3 recover the english phrase (default --to phrase).
-    Command::cargo_bin("ms")
-        .unwrap()
-        .args(["combine", &shares[0], &shares[2]])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(ENGLISH_12));
+    // Any 2 of 3 recover the english phrase (default --to phrase). P2: shares
+    // are secret material, so they arrive through `--in` (one per line) rather
+    // than on argv -- `support::run` performs exactly that rewrite.
+    let o = support::run(&["combine", &shares[0], &shares[2]]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(String::from_utf8_lossy(&o.stdout).contains(ENGLISH_12));
 }
 
 #[test]
@@ -102,7 +127,8 @@ fn combine_japanese_round_trip_preserves_language() {
     // mnem share-set → recovered phrase is in the wire language (japanese).
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["combine", &shares[1], &shares[2]])
+        .args(["combine", "-"])
+        .write_stdin([shares[1].to_string(), shares[2].to_string()].join("\n"))
         .assert()
         .success()
         .stdout(predicate::str::contains(&ja))
@@ -114,7 +140,8 @@ fn combine_to_entropy_emits_hex() {
     let shares = split_shares(&["--hex", &"ab".repeat(16)], "2", "3");
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["combine", &shares[0], &shares[1], "--to", "entropy"])
+        .args(["combine", "-", "--to", "entropy"])
+        .write_stdin([shares[0].to_string(), shares[1].to_string()].join("\n"))
         .assert()
         .success()
         .stdout(predicate::str::contains("abababababababababababababababab"));
@@ -125,7 +152,8 @@ fn combine_to_ms1_emits_single_string_that_decodes() {
     let shares = split_shares(&["--phrase", ENGLISH_12], "2", "3");
     let out = Command::cargo_bin("ms")
         .unwrap()
-        .args(["combine", &shares[0], &shares[1], "--to", "ms1"])
+        .args(["combine", "-", "--to", "ms1"])
+        .write_stdin([shares[0].to_string(), shares[1].to_string()].join("\n"))
         .assert()
         .success()
         .get_output()
@@ -139,7 +167,8 @@ fn combine_to_ms1_emits_single_string_that_decodes() {
     // The recovered single ms1 must decode back to the english phrase.
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["decode", ms1])
+        .args(["decode", "-"])
+        .write_stdin((ms1).to_string())
         .assert()
         .success()
         .stdout(predicate::str::contains(ENGLISH_12));
@@ -150,7 +179,8 @@ fn combine_json_shape_entr() {
     let shares = split_shares(&["--hex", &"ab".repeat(16)], "2", "3");
     let out = Command::cargo_bin("ms")
         .unwrap()
-        .args(["combine", &shares[0], &shares[1], "--json"])
+        .args(["combine", "-", "--json"])
+        .write_stdin([shares[0].to_string(), shares[1].to_string()].join("\n"))
         .assert()
         .success()
         .get_output()
@@ -171,7 +201,8 @@ fn combine_below_threshold_friendly_error() {
     // Only 2 of a 3-of-4 set → ThresholdNotPassed friendly message.
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["combine", &shares[0], &shares[1]])
+        .args(["combine", "-"])
+        .write_stdin([shares[0].to_string(), shares[1].to_string()].join("\n"))
         .assert()
         .failure()
         .stderr(predicate::str::contains("not enough shares"));
@@ -200,7 +231,8 @@ fn combine_secret_share_index_s_rejected() {
             .to_string();
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["combine", &secret_s, &shares[0]])
+        .args(["combine", "-"])
+        .write_stdin([secret_s.to_string(), shares[0].to_string()].join("\n"))
         .assert()
         .failure()
         .code(2)
@@ -213,7 +245,8 @@ fn combine_duplicate_index_rejected() {
     // Same share twice → RepeatedIndex friendly message.
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["combine", &shares[0], &shares[0]])
+        .args(["combine", "-"])
+        .write_stdin([shares[0].to_string(), shares[0].to_string()].join("\n"))
         .assert()
         .failure()
         .stderr(predicate::str::contains("repeated"));

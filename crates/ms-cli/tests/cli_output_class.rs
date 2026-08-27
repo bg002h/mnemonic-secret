@@ -27,9 +27,7 @@
 //! toolkit's `secret_advisory.rs` lines. The `byte_parity_advisory_lines` test
 //! asserts this by comparing against hard-coded literals.
 
-use std::process::Command;
-
-use assert_cmd::cargo::CommandCargoExt;
+mod support;
 
 // ─── Canonical fixtures ───────────────────────────────────────────────────────
 
@@ -86,11 +84,7 @@ fn byte_parity_advisory_lines() {
 
 #[test]
 fn ms_encode_emits_private_key_material_text_mode() {
-    let out = Command::cargo_bin("ms")
-        .unwrap()
-        .args(["encode", "--hex", ABANDON_HEX, "--no-engraving-card"])
-        .output()
-        .expect("invoke ms encode");
+    let out = support::run(&["encode", "--hex", ABANDON_HEX, "--no-engraving-card"]);
     assert!(
         out.status.success(),
         "expected exit 0; stderr={}",
@@ -105,11 +99,7 @@ fn ms_encode_emits_private_key_material_text_mode() {
 
 #[test]
 fn ms_encode_emits_private_key_material_json_mode() {
-    let out = Command::cargo_bin("ms")
-        .unwrap()
-        .args(["encode", "--hex", ABANDON_HEX, "--json"])
-        .output()
-        .expect("invoke ms encode --json");
+    let out = support::run(&["encode", "--hex", ABANDON_HEX, "--json"]);
     assert!(
         out.status.success(),
         "expected exit 0; stderr={}",
@@ -126,11 +116,7 @@ fn ms_encode_emits_private_key_material_json_mode() {
 
 #[test]
 fn ms_decode_emits_private_key_material_text_mode() {
-    let out = Command::cargo_bin("ms")
-        .unwrap()
-        .args(["decode", ABANDON_MS1])
-        .output()
-        .expect("invoke ms decode");
+    let out = support::run(&["decode", ABANDON_MS1]);
     assert!(
         out.status.success(),
         "expected exit 0; stderr={}",
@@ -145,11 +131,7 @@ fn ms_decode_emits_private_key_material_text_mode() {
 
 #[test]
 fn ms_decode_emits_private_key_material_json_mode() {
-    let out = Command::cargo_bin("ms")
-        .unwrap()
-        .args(["decode", ABANDON_MS1, "--json"])
-        .output()
-        .expect("invoke ms decode --json");
+    let out = support::run(&["decode", ABANDON_MS1, "--json"]);
     assert!(
         out.status.success(),
         "expected exit 0; stderr={}",
@@ -169,11 +151,7 @@ fn ms_decode_emits_private_key_material_json_mode() {
 #[test]
 fn ms_derive_emits_watch_only_and_language_note_text_mode() {
     // No --language → defaulted → language note appears on stderr too.
-    let out = Command::cargo_bin("ms")
-        .unwrap()
-        .args(["derive", ABANDON_MS1])
-        .output()
-        .expect("invoke ms derive");
+    let out = support::run(&["derive", ABANDON_MS1]);
     assert!(
         out.status.success(),
         "expected exit 0; stderr={}",
@@ -194,11 +172,7 @@ fn ms_derive_emits_watch_only_and_language_note_text_mode() {
 #[test]
 fn ms_derive_emits_watch_only_json_mode() {
     // --json path also emits W; no language note in this case (--language supplied).
-    let out = Command::cargo_bin("ms")
-        .unwrap()
-        .args(["derive", ABANDON_MS1, "--language", "english", "--json"])
-        .output()
-        .expect("invoke ms derive --json");
+    let out = support::run(&["derive", ABANDON_MS1, "--language", "english", "--json"]);
     assert!(
         out.status.success(),
         "expected exit 0; stderr={}",
@@ -214,18 +188,14 @@ fn ms_derive_emits_watch_only_json_mode() {
 #[test]
 fn ms_derive_emits_watch_only_with_template() {
     // --template path: still W (account xpub is public key, cannot spend).
-    let out = Command::cargo_bin("ms")
-        .unwrap()
-        .args([
-            "derive",
-            ABANDON_MS1,
-            "--language",
-            "english",
-            "--template",
-            "bip84",
-        ])
-        .output()
-        .expect("invoke ms derive --template");
+    let out = support::run(&[
+        "derive",
+        ABANDON_MS1,
+        "--language",
+        "english",
+        "--template",
+        "bip84",
+    ]);
     assert!(
         out.status.success(),
         "expected exit 0; stderr={}",
@@ -244,11 +214,7 @@ fn ms_derive_emits_watch_only_with_template() {
 /// The new canonical line is emitted via emit_output_class_advisory(PrivateKeyMaterial).
 #[test]
 fn ms_repair_emits_private_key_material() {
-    let out = Command::cargo_bin("ms")
-        .unwrap()
-        .args(["repair", "--ms1", ABANDON_MS1])
-        .output()
-        .expect("invoke ms repair");
+    let out = support::run(&["repair", "--ms1", ABANDON_MS1]);
     assert!(
         out.status.success(),
         "expected exit 0; stderr={}",
@@ -266,11 +232,7 @@ fn ms_repair_emits_private_key_material() {
 /// `ms inspect` outputs structural fields only — no key material on stdout.
 #[test]
 fn ms_inspect_is_inert_no_advisory() {
-    let out = Command::cargo_bin("ms")
-        .unwrap()
-        .args(["inspect", ABANDON_MS1])
-        .output()
-        .expect("invoke ms inspect");
+    let out = support::run(&["inspect", ABANDON_MS1]);
     assert!(
         out.status.success(),
         "expected exit 0; stderr={}",
@@ -286,11 +248,7 @@ fn ms_inspect_is_inert_no_advisory() {
 /// `ms verify` outputs a verdict only — no key material on stdout.
 #[test]
 fn ms_verify_is_inert_no_advisory() {
-    let out = Command::cargo_bin("ms")
-        .unwrap()
-        .args(["verify", ABANDON_MS1])
-        .output()
-        .expect("invoke ms verify");
+    let out = support::run(&["verify", ABANDON_MS1]);
     assert!(
         out.status.success(),
         "expected exit 0; stderr={}",
@@ -306,11 +264,7 @@ fn ms_verify_is_inert_no_advisory() {
 /// `ms vectors` outputs public test vectors — no advisory.
 #[test]
 fn ms_vectors_is_inert_no_advisory() {
-    let out = Command::cargo_bin("ms")
-        .unwrap()
-        .args(["vectors"])
-        .output()
-        .expect("invoke ms vectors");
+    let out = support::run(&["vectors"]);
     assert!(
         out.status.success(),
         "expected exit 0; stderr={}",

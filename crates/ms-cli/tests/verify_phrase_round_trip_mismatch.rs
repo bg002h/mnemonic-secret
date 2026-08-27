@@ -7,12 +7,8 @@ fn verify_round_trip_with_wrong_phrase_exit_4() {
     let wrong = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon ability";
     let assertion = Command::cargo_bin("ms")
         .unwrap()
-        .args([
-            "verify",
-            "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f",
-            "--phrase",
-            wrong,
-        ])
+        .args(["verify", "-", "--phrase", "-"])
+        .write_stdin((wrong).to_string())
         .assert()
         .failure();
 

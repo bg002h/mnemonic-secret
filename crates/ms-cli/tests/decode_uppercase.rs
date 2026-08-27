@@ -11,7 +11,7 @@ fn decode_uppercase_ms1_succeeds() {
     // The all-uppercase twin of decode_round_trip.rs's canonical 12-word vector.
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["decode", "MS10ENTRSQQQQQQQQQQQQQQQQQQQQQQQQQQQQCJ9SXRAQ34V7F"])
+        .args(["decode", "-"]).write_stdin(("MS10ENTRSQQQQQQQQQQQQQQQQQQQQQQQQQQQQCJ9SXRAQ34V7F").to_string())
         .assert()
         .success()
         .stdout(predicate::str::contains(

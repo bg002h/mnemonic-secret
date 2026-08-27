@@ -7,10 +7,8 @@ use predicates::prelude::*;
 fn inspect_valid_canonical_v01_string() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args([
-            "inspect",
-            "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f",
-        ])
+        .args(["inspect", "-"])
+        .write_stdin(("ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f").to_string())
         .assert()
         .success()
         .stdout(predicate::str::starts_with("OK: would decode v0.1"))
@@ -26,11 +24,8 @@ fn inspect_valid_canonical_v01_string() {
 fn inspect_valid_string_json_schema() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args([
-            "inspect",
-            "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f",
-            "--json",
-        ])
+        .args(["inspect", "-", "--json"])
+        .write_stdin(("ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f").to_string())
         .assert()
         .success()
         .stdout(predicate::str::contains("\"schema_version\":\"1\""))

@@ -14,7 +14,8 @@ fn inspect_bad_checksum_exits_1_with_friendly_error() {
 
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["inspect", &bad])
+        .args(["inspect", "-"])
+        .write_stdin(bad.to_string())
         .assert()
         .failure()
         .code(1)
@@ -30,7 +31,8 @@ fn inspect_bad_checksum_json_envelope() {
 
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["inspect", &bad, "--json"])
+        .args(["inspect", "-", "--json"])
+        .write_stdin(bad.to_string())
         .assert()
         .failure()
         .code(1)

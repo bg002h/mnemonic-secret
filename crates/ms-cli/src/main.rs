@@ -6,6 +6,7 @@
 #![allow(missing_docs)] // ms-cli is binary-only; field-level docs are pretty but not load-bearing for a non-published lib API. Mirror md-cli precedent at crates/md-cli/src/main.rs:1.
 
 mod advisory;
+mod argv_guard;
 mod bip39_friendly;
 mod cmd;
 mod codex32_friendly;
@@ -167,6 +168,23 @@ enum Command {
 fn main() -> ExitCode {
     // argv-hardening: deny other-UID /proc/$PID/cmdline reads + core dumps.
     process_hardening::set_non_dumpable();
+
+    // §6d, AND THE ORDERING IS THE FIX. This must decide before
+    // `Cli::try_parse()` below: clap names the offending VALUE in its error for
+    // every shape with no declared flag to blame, so a guard placed one line
+    // lower has already lost -- it would put the material in a SECOND public
+    // place while refusing it. `ms encode --nosuchflag --phrase <seed>` is the
+    // invocation that tells the two apart.
+    //
+    // Exit 1 is `ms`'s user-input code (SPEC §6). No code is renumbered here:
+    // §6f rules `mk`'s invalid-artifact 2 the only code this cycle changes, and
+    // that is P3's.
+    let argv: Vec<String> = std::env::args().collect();
+    if let Some(msg) = argv_guard::argv_secret_guard(&argv) {
+        eprintln!("ms: {msg}");
+        return ExitCode::from(1);
+    }
+
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(e) => {

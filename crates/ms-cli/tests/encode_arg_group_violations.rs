@@ -7,14 +7,13 @@ use assert_cmd::Command;
 
 #[test]
 fn encode_rejects_both_phrase_and_hex() {
-    Command::cargo_bin("ms").unwrap()
-        .args([
-            "encode",
-            "--phrase",
-            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-            "--hex",
-            "00000000000000000000000000000000",
-        ])
+    Command::cargo_bin("ms")
+        .unwrap()
+        // P2: the values are the stdin sentinel, not material. The SUBJECT is
+        // the group violation, and clap reaches it before either value is read
+        // -- putting a seed here now trips the argv guard at exit 1 and the test
+        // would pin the wrong refusal.
+        .args(["encode", "--phrase", "-", "--hex", "-"])
         .assert()
         .failure()
         .code(64);

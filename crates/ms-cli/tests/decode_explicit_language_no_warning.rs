@@ -7,12 +7,8 @@ use predicates::prelude::*;
 fn decode_explicit_english_removes_warnings() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args([
-            "decode",
-            "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f",
-            "--language",
-            "english",
-        ])
+        .args(["decode", "-", "--language", "english"])
+        .write_stdin(("ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f").to_string())
         .assert()
         .success()
         .stdout(predicate::str::contains("default —").not())

@@ -27,10 +27,11 @@ fn encode_japanese_phrase_produces_mnem_ms1_of_expected_length() {
             "--language",
             "japanese",
             "--phrase",
-            &ja,
+            "-",
             "--group-size",
             "0",
         ])
+        .write_stdin(ja.to_string())
         .assert()
         .success()
         .stdout(predicate::function(|s: &str| {
@@ -50,10 +51,11 @@ fn encode_japanese_phrase_decode_round_trip() {
             "--language",
             "japanese",
             "--phrase",
-            &ja,
+            "-",
             "--group-size",
             "0",
         ])
+        .write_stdin(ja.to_string())
         .assert()
         .success()
         .get_output()
@@ -70,7 +72,8 @@ fn encode_japanese_phrase_decode_round_trip() {
     // Decode back — should recover the Japanese phrase
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["decode", &ms1])
+        .args(["decode", "-"])
+        .write_stdin(ms1.to_string())
         .assert()
         .success()
         .stdout(predicate::str::contains(&ja));
@@ -82,7 +85,8 @@ fn encode_english_phrase_stays_entr_payload_length() {
     let english = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["encode", "--phrase", english, "--group-size", "0"])
+        .args(["encode", "--phrase", "-", "--group-size", "0"])
+        .write_stdin((english).to_string())
         .assert()
         .success()
         .stdout(predicate::function(|s: &str| {
@@ -97,7 +101,8 @@ fn encode_hex_stays_entr_payload_length() {
     let hex32 = "ab".repeat(16);
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["encode", "--hex", &hex32, "--group-size", "0"])
+        .args(["encode", "--hex", "-", "--group-size", "0"])
+        .write_stdin(hex32.to_string())
         .assert()
         .success()
         .stdout(predicate::function(|s: &str| {

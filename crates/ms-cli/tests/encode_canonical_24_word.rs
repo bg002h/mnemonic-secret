@@ -9,7 +9,8 @@ fn encode_24_word_abandon_art() {
     // `--group-size 0` keeps the exact unbroken prefix (default is now space/5).
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["encode", "--phrase", phrase, "--group-size", "0"])
+        .args(["encode", "--phrase", "-", "--group-size", "0"])
+        .write_stdin((phrase).to_string())
         .assert()
         .success()
         .stdout(predicate::str::starts_with("ms10entrsqqqq"))

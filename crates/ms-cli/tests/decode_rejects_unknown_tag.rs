@@ -18,7 +18,8 @@ fn decode_rejects_unknown_tag() {
         .to_string();
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["decode", &s])
+        .args(["decode", "-"])
+        .write_stdin(s.to_string())
         .assert()
         .failure()
         .code(2)
@@ -34,7 +35,8 @@ fn decode_rejects_unknown_tag_json_envelope() {
         .to_string();
     let out = Command::cargo_bin("ms")
         .unwrap()
-        .args(["decode", &s, "--json"])
+        .args(["decode", "-", "--json"])
+        .write_stdin(s.to_string())
         .assert()
         .failure()
         .code(2)

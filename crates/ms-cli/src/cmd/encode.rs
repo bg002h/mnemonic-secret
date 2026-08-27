@@ -196,29 +196,37 @@ pub fn run(mut args: EncodeArgs) -> Result<u8> {
     Ok(0)
 }
 
-/// The BIP-39 parse failure, and — when the material arrived through `--in` —
-/// the executable command that reads the OTHER kind from the same file.
+/// The BIP-39 parse failure — **and, when the material arrived through
+/// `--in`, an executable redirect printed beside it.**
 ///
-/// **§6h: remedy text names channels that exist and commands that RUN.** An
-/// operator who points `--in` at a file of hex gets a wordlist error today and
-/// no way forward except `--allow-argv-secret`, which is the exposure this
-/// phase exists to close. The redirect is the whole reason `--in` is allowed to
-/// mean exactly one kind.
+/// **The error KIND and exit code are unchanged, deliberately.** An earlier
+/// draft returned `BadInput` here so the redirect could be part of the message,
+/// which made the same file report `Bip39` through `--phrase -` and `BadInput`
+/// through `--in` — one input, two error kinds, and `--json`'s envelope
+/// disagreeing with itself depending on which private channel was used. The
+/// note goes to stderr instead, which is where `ms`'s other advisories go, so
+/// `error.kind` stays a property of the INPUT.
+///
+/// §6h: remedy text names channels that exist and commands that RUN. An
+/// operator who points `--in` at a file of hex otherwise gets a wordlist error
+/// and no way forward except `--allow-argv-secret`, which is the exposure this
+/// phase exists to close.
 fn phrase_parse_error(
     e: bip39::Error,
     in_path: Option<&std::path::Path>,
     verb: &'static str,
 ) -> CliError {
-    match in_path {
-        Some(p) => CliError::BadInput(format!(
-            "--in {path} is not a BIP-39 phrase ({e}).\n      \
-             `--in` reads a PHRASE and never sniffs the file's contents. If that \
-             file holds hex entropy, use the hex channel:\n      \
+    if let Some(p) = in_path {
+        let mut stderr = std::io::stderr().lock();
+        let _ = writeln!(
+            stderr,
+            "note: --in reads a PHRASE and never sniffs the file's contents. If \
+             {path} holds hex entropy, use the hex channel:\n      \
              \x20   ms {verb} --hex - < {path}",
             path = p.display()
-        )),
-        None => CliError::Bip39(e),
+        );
     }
+    CliError::Bip39(e)
 }
 
 pub(crate) fn parse_hex_entropy(hex_str: &str) -> Result<Vec<u8>> {

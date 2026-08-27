@@ -9,6 +9,8 @@ use std::process::Output;
 
 use assert_cmd::Command;
 
+mod support;
+
 const ZEROS_HEX: &str = "00000000000000000000000000000000";
 const ABANDON: &str =
     "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -30,11 +32,11 @@ const BIP49_ACCT_XPUB: &str = "xpub6C6nQwHaWbSrzs5tZ1q7m5R9cPK9eYpNMFesiXsYrgc1P
 const BIP86_ACCT_XPUB: &str = "xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ";
 
 fn ms(args: &[&str]) -> Output {
-    Command::cargo_bin("ms")
-        .unwrap()
-        .args(args)
-        .output()
-        .unwrap()
+    // P2: material never rides on argv. `support::run` rewrites the invocation
+    // onto `--in FILE` / `-` / `--passphrase-stdin` -- the channels an operator
+    // uses -- rather than appending `--allow-argv-secret`, which would leave the
+    // suite exercising a path the operator never takes.
+    support::run(args)
 }
 fn out(o: &Output) -> String {
     String::from_utf8(o.stdout.clone()).unwrap()
@@ -182,8 +184,12 @@ fn default_language_annotated() {
 
 #[test]
 fn passphrase_changes_fingerprint() {
-    let plain = ms(&["derive", "--hex", ZEROS_HEX]);
-    let with_pp = ms(&["derive", "--hex", ZEROS_HEX, "--passphrase", "TREZOR"]);
+    // P2: entropy AND a passphrase are two secret channels and there is one
+    // stdin, so the entropy goes through the ms1 card -- the two-command route
+    // the argv refusal itself advises.
+    let card = ms1_of(ZEROS_HEX);
+    let plain = ms(&["derive", &card]);
+    let with_pp = ms(&["derive", &card, "--passphrase", "TREZOR"]);
     assert!(out(&plain).contains(MASTER_FP_EN));
     assert!(
         !out(&with_pp).contains(MASTER_FP_EN),
@@ -194,12 +200,8 @@ fn passphrase_changes_fingerprint() {
 
 #[test]
 fn passphrase_stdin_reads_stdin() {
-    let o = Command::cargo_bin("ms")
-        .unwrap()
-        .args(["derive", "--hex", ZEROS_HEX, "--passphrase-stdin"])
-        .write_stdin("TREZOR")
-        .output()
-        .unwrap();
+    let card = ms1_of(ZEROS_HEX);
+    let o = support::run_stdin(&["derive", &card, "--passphrase-stdin"], "TREZOR");
     assert_eq!(
         o.status.code().unwrap(),
         0,
@@ -216,20 +218,12 @@ fn passphrase_stdin_reads_stdin() {
 fn passphrase_stdin_preserves_multiword_matches_inline() {
     // C1 regression: a multi-word passphrase via stdin must NOT be whitespace-
     // stripped — it must equal the inline --passphrase result for the same bytes.
-    let inline = ms(&[
-        "derive",
-        "--hex",
-        ZEROS_HEX,
-        "--passphrase",
-        "a b c",
-        "--json",
-    ]);
-    let from_stdin = Command::cargo_bin("ms")
-        .unwrap()
-        .args(["derive", "--hex", ZEROS_HEX, "--passphrase-stdin", "--json"])
-        .write_stdin("a b c\n")
-        .output()
-        .unwrap();
+    let card = ms1_of(ZEROS_HEX);
+    let inline = ms(&["derive", &card, "--passphrase", "a b c", "--json"]);
+    let from_stdin = support::run_stdin(
+        &["derive", &card, "--passphrase-stdin", "--json"],
+        "a b c\n",
+    );
     let vi: serde_json::Value = serde_json::from_str(&out(&inline)).unwrap();
     let vs: serde_json::Value =
         serde_json::from_str(&String::from_utf8(from_stdin.stdout).unwrap()).unwrap();
@@ -343,13 +337,36 @@ fn no_secret_on_stdout() {
     assert!(!s.contains("tprv"), "{s}");
 }
 
+/// **REWRITTEN, not deleted.** This test's subject was the stderr advisory
+/// `derive` printed while proceeding: `ms derive --hex <entropy>` exited 0 and
+/// warned. P2 replaces warn-and-proceed with a refusal that decides before the
+/// parser, so the subject is now the refusal — and the assertion is stronger,
+/// because a warning that still exits 0 is what this phase exists to remove.
 #[test]
-fn inline_secret_argv_advisory() {
-    let o = ms(&["derive", "--hex", ZEROS_HEX]);
+fn inline_secret_on_argv_is_now_refused_not_merely_advised() {
+    let o = Command::cargo_bin("ms")
+        .unwrap()
+        .args(["derive", "--hex", ZEROS_HEX])
+        .output()
+        .unwrap();
+    assert_eq!(
+        o.status.code(),
+        Some(1),
+        "argv material must be REFUSED, not warned about: {}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let e = String::from_utf8_lossy(&o.stderr);
     assert!(
-        err(&o).contains("secret material on argv (--hex)"),
-        "{}",
-        err(&o)
+        e.contains("Refused BEFORE the command line was parsed"),
+        "{e}"
+    );
+    assert!(
+        !e.contains(ZEROS_HEX),
+        "the refusal must name the CLASS and the LENGTH, never the value: {e}"
+    );
+    assert!(
+        String::from_utf8_lossy(&o.stdout).is_empty(),
+        "nothing was read and nothing was written"
     );
 }
 

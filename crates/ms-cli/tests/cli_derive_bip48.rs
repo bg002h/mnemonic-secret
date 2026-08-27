@@ -40,6 +40,8 @@ use std::process::Output;
 
 use assert_cmd::Command;
 
+mod support;
+
 const ZEROS_HEX: &str = "00000000000000000000000000000000";
 const ABANDON: &str =
     "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -57,11 +59,11 @@ const P2WSH_ACCT1: &str = "xpub6DzhyrnFFYQ1HimDiM388xHnDiRPNdZJFBmmxge3Y1WWcHLtM
 const P2WSH_TESTNET_ACCT0: &str = "tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGfnqFrD4NqyaTVGKbvEW54tsvPTK2UoSbCC1PJY8iCNiwTL3RWZEheQ";
 
 fn ms(args: &[&str]) -> Output {
-    Command::cargo_bin("ms")
-        .unwrap()
-        .args(args)
-        .output()
-        .unwrap()
+    // P2: material never rides on argv. `support::run` rewrites the invocation
+    // onto `--in FILE` / `-` / `--passphrase-stdin` -- the channels an operator
+    // uses -- rather than appending `--allow-argv-secret`, which would leave the
+    // suite exercising a path the operator never takes.
+    support::run(args)
 }
 fn out(o: &Output) -> String {
     String::from_utf8(o.stdout.clone()).unwrap()
@@ -325,12 +327,13 @@ fn bg002h_templates_derive_the_ruled_path() {
             .args([
                 "derive",
                 "--phrase",
-                PHRASE,
+                "-",
                 "--template",
                 template,
                 "--account",
                 "0",
             ])
+            .write_stdin((PHRASE).to_string())
             .output()
             .unwrap();
         assert!(out.status.success(), "{template} must derive");
@@ -357,12 +360,13 @@ fn bg002h_wsh_is_not_labelled_as_nested_segwit() {
         .args([
             "derive",
             "--phrase",
-            PHRASE,
+            "-",
             "--template",
             "bg002h-wsh",
             "--account",
             "0",
         ])
+        .write_stdin((PHRASE).to_string())
         .output()
         .unwrap();
     let all = format!(

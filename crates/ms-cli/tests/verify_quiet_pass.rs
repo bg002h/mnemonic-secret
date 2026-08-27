@@ -7,10 +7,8 @@ use predicates::prelude::*;
 fn verify_valid_v01_exit_0() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args([
-            "verify",
-            "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f",
-        ])
+        .args(["verify", "-"])
+        .write_stdin(("ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f").to_string())
         .assert()
         .success()
         .stdout(predicate::str::contains(

@@ -14,7 +14,8 @@ fn inspect_multiple_failures_sorted() {
 
     let output = Command::cargo_bin("ms")
         .unwrap()
-        .args(["inspect", &s])
+        .args(["inspect", "-"])
+        .write_stdin(s.to_string())
         .assert()
         .success()
         .get_output()

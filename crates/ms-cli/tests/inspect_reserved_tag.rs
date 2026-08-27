@@ -14,7 +14,8 @@ fn inspect_reserved_seed_tag_reports_rule_7() {
 
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["inspect", &s])
+        .args(["inspect", "-"])
+        .write_stdin(s.to_string())
         .assert()
         .success()
         .stdout(predicate::str::contains("FAIL"))

@@ -7,6 +7,8 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 
+mod support;
+
 /// Build a valid Japanese mnem ms1 from 16 entropy bytes (0xAB repeated).
 fn japanese_mnem_ms1() -> String {
     let ja = bip39::Mnemonic::from_entropy_in(bip39::Language::Japanese, &[0xABu8; 16])
@@ -14,7 +16,8 @@ fn japanese_mnem_ms1() -> String {
         .to_string();
     let encode_out = Command::cargo_bin("ms")
         .unwrap()
-        .args(["encode", "--language", "japanese", "--phrase", &ja])
+        .args(["encode", "--language", "japanese", "--phrase", "-"])
+        .write_stdin(ja.to_string())
         .assert()
         .success()
         .get_output()
@@ -33,7 +36,8 @@ fn inspect_mnem_string_text_mode_ok() {
     let ms1 = japanese_mnem_ms1();
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["inspect", &ms1])
+        .args(["inspect", "-"])
+        .write_stdin(ms1.to_string())
         .assert()
         .success()
         .stdout(predicate::str::starts_with("OK:"))
@@ -48,15 +52,17 @@ fn inspect_mnem_string_text_mode_ok() {
 #[test]
 fn inspect_mnem_string_json_mode_ok() {
     let ms1 = japanese_mnem_ms1();
-    Command::cargo_bin("ms")
-        .unwrap()
-        .args(["inspect", "--json", &ms1])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("\"would_decode\":true"))
-        .stdout(predicate::str::contains("\"failure_reasons\":[]"))
-        .stdout(predicate::str::contains("\"kind\":\"mnem\""))
-        .stdout(predicate::str::contains("\"language\":\"japanese\""));
+    let o = support::run(&["inspect", "--json", &ms1]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let so = String::from_utf8_lossy(&o.stdout);
+    for want in [
+        "\"would_decode\":true",
+        "\"failure_reasons\":[]",
+        "\"kind\":\"mnem\"",
+        "\"language\":\"japanese\"",
+    ] {
+        assert!(so.contains(want), "missing {want} in {so}");
+    }
 }
 
 /// Existing v0.1 entr string → inspect unchanged (kind: entr, no language field).
@@ -64,10 +70,8 @@ fn inspect_mnem_string_json_mode_ok() {
 fn inspect_entr_string_unchanged() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args([
-            "inspect",
-            "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f",
-        ])
+        .args(["inspect", "-"])
+        .write_stdin(("ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f").to_string())
         .assert()
         .success()
         .stdout(predicate::str::starts_with("OK:"))

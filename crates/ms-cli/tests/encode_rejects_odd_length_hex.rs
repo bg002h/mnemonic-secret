@@ -7,7 +7,8 @@ use predicates::prelude::*;
 fn encode_rejects_odd_length_hex() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["encode", "--hex", "0"])
+        .args(["encode", "--hex", "-"])
+        .write_stdin(("0").to_string())
         .assert()
         .failure()
         .code(1)
@@ -18,7 +19,8 @@ fn encode_rejects_odd_length_hex() {
 fn encode_rejects_non_hex_char() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["encode", "--hex", "ZZ"])
+        .args(["encode", "--hex", "-"])
+        .write_stdin(("ZZ").to_string())
         .assert()
         .failure()
         .code(1)

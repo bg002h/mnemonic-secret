@@ -208,19 +208,18 @@ fn the_phrase_plus_passphrase_shape_has_a_private_two_command_route() {
     );
 }
 
-/// The one-command argv form, run for its fingerprint alone.
+/// The one-command argv form's fingerprint, as the oracle.
+///
+/// **Measured, then pinned.** Before the guard landed,
+/// `ms derive --phrase <PHRASE> --passphrase <PASSPHRASE>` exited 0 and printed
+/// `master_fingerprint:  6090b661`; the same run through the two-command route
+/// printed the same value. The guard now refuses that invocation, so the live
+/// oracle is reinstated by the override work, which re-runs it under
+/// `--allow-argv-secret` and asserts it still equals this constant.
+const ONE_COMMAND_ARGV_FINGERPRINT: &str = "6090b661";
+
 fn one_command_argv_oracle() -> String {
-    let out = ms()
-        .args(["derive", "--phrase", PHRASE, "--passphrase", PASSPHRASE])
-        .output()
-        .unwrap();
-    assert_eq!(
-        out.status.code(),
-        Some(0),
-        "the oracle must run: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8_lossy(&out.stdout).to_string()
+    format!("master_fingerprint:  {ONE_COMMAND_ARGV_FINGERPRINT}")
 }
 
 fn fingerprint_of(stdout: &str) -> String {

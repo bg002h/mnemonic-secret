@@ -11,11 +11,10 @@ fn encode_no_engraving_card_suppresses_engraving_block() {
         .args([
             "encode",
             "--phrase",
-            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+            "-",
             "--no-engraving-card",
             "--group-size",
-            "0",
-        ])
+            "0"]).write_stdin(("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about").to_string())
         .assert()
         .success()
         .stdout(predicate::str::starts_with("ms10entrsqqqq"))

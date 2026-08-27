@@ -7,13 +7,8 @@ use predicates::prelude::*;
 fn encode_hex_zeros_16_bytes() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args([
-            "encode",
-            "--hex",
-            "00000000000000000000000000000000",
-            "--group-size",
-            "0",
-        ])
+        .args(["encode", "--hex", "-", "--group-size", "0"])
+        .write_stdin(("00000000000000000000000000000000").to_string())
         .assert()
         .success()
         .stdout(predicate::str::starts_with("ms10entrsqqqq"));
@@ -23,7 +18,8 @@ fn encode_hex_zeros_16_bytes() {
 fn encode_hex_omits_language_in_engraving_card() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["encode", "--hex", "00000000000000000000000000000000"])
+        .args(["encode", "--hex", "-"])
+        .write_stdin(("00000000000000000000000000000000").to_string())
         .assert()
         .success()
         .stderr(predicate::str::contains("word count: 12"))

@@ -25,7 +25,8 @@ fn inspect_share_text_reports_kind_share_no_fail() {
     let s = a_share();
     let out = Command::cargo_bin("ms")
         .unwrap()
-        .args(["inspect", &s])
+        .args(["inspect", "-"])
+        .write_stdin(s.to_string())
         .assert()
         .success() // exit 0 — a share is a valid read, not a failure
         .get_output()
@@ -70,7 +71,8 @@ fn inspect_share_text_says_would_combine() {
     let s = a_share();
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["inspect", &s])
+        .args(["inspect", "-"])
+        .write_stdin(s.to_string())
         .assert()
         .success()
         .stdout(predicate::str::contains("combine"));
@@ -81,7 +83,8 @@ fn inspect_share_json_reports_kind_share() {
     let s = a_share();
     let out = Command::cargo_bin("ms")
         .unwrap()
-        .args(["inspect", &s, "--json"])
+        .args(["inspect", "-", "--json"])
+        .write_stdin(s.to_string())
         .assert()
         .success()
         .get_output()
@@ -118,7 +121,8 @@ fn inspect_v01_single_string_still_works() {
         .to_string();
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["inspect", &s])
+        .args(["inspect", "-"])
+        .write_stdin(s.to_string())
         .assert()
         .success()
         .stdout(predicate::str::contains("threshold: 0"))

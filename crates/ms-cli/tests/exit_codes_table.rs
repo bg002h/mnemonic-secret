@@ -7,7 +7,8 @@ fn exit_code_table_user_input() {
     // Odd-length hex → exit 1.
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["encode", "--hex", "0"])
+        .args(["encode", "--hex", "-"])
+        .write_stdin(("0").to_string())
         .assert()
         .failure()
         .code(1);
@@ -17,10 +18,8 @@ fn exit_code_table_user_input() {
 fn exit_code_table_format_violation() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args([
-            "decode",
-            "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7p",
-        ]) // bad cksum → Codex32 → exit 1
+        .args(["decode", "-"])
+        .write_stdin(("ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7p").to_string()) // bad cksum → Codex32 → exit 1
         .assert()
         .failure()
         .code(1);

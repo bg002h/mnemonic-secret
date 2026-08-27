@@ -33,6 +33,8 @@ use std::process::{Command, Stdio};
 
 use assert_cmd::cargo::CommandCargoExt;
 
+mod support;
+
 /// Canonical 12-word abandon ms1 from `crates/ms-codec/tests/vectors/v0.1.json`
 /// entry 0 (`description: "12-word abandon canonical (BIP-39 [0; 16])"`).
 /// Total length 50 chars; data part (post-`ms1`) is 47 chars.
@@ -75,11 +77,7 @@ fn flip_many(chunk: &str, positions: &[usize]) -> String {
 // ──────────────────────────────────────────────────────────────────────────
 #[test]
 fn repair_already_valid_input_exits_0() {
-    let mut cmd = Command::cargo_bin("ms").expect("ms binary");
-    let out = cmd
-        .args(["repair", "--ms1", ABANDON_MS1])
-        .output()
-        .expect("invoke ms repair");
+    let out = support::run(&["repair", "--ms1", ABANDON_MS1]);
     let code = out.status.code().expect("exited normally");
     assert_eq!(
         code,
@@ -121,11 +119,7 @@ fn repair_one_substitution_exits_4_candidate() {
     // the abandon ms1 has 47 data-part chars and 13 chars of BCH tail).
     let corrupted = flip_at(ABANDON_MS1, 9);
 
-    let mut cmd = Command::cargo_bin("ms").expect("ms binary");
-    let out = cmd
-        .args(["repair", "--ms1", &corrupted])
-        .output()
-        .expect("invoke ms repair");
+    let out = support::run(&["repair", "--ms1", &corrupted]);
     let code = out.status.code().expect("exited normally");
     assert_eq!(
         code,
@@ -177,11 +171,7 @@ fn repair_one_substitution_exits_4_candidate() {
 // ──────────────────────────────────────────────────────────────────────────
 #[test]
 fn repair_clean_ms1_stays_exit_0_no_advisory() {
-    let mut cmd = Command::cargo_bin("ms").expect("ms binary");
-    let out = cmd
-        .args(["repair", "--ms1", ABANDON_MS1])
-        .output()
-        .expect("invoke ms repair");
+    let out = support::run(&["repair", "--ms1", ABANDON_MS1]);
     let code = out.status.code().expect("exited normally");
     assert_eq!(code, 0, "expected exit 0 for clean input");
     let stderr = String::from_utf8(out.stderr).expect("stderr utf-8");
@@ -201,11 +191,7 @@ fn repair_unrepairable_exits_2() {
     // distributed across the data part (47 chars).
     let irreparable = flip_many(ABANDON_MS1, &[3, 11, 19, 27, 35]);
 
-    let mut cmd = Command::cargo_bin("ms").expect("ms binary");
-    let out = cmd
-        .args(["repair", "--ms1", &irreparable])
-        .output()
-        .expect("invoke ms repair");
+    let out = support::run(&["repair", "--ms1", &irreparable]);
     let code = out.status.code().expect("exited normally");
     assert_eq!(
         code,
@@ -235,13 +221,7 @@ fn repair_unrepairable_exits_2() {
 fn repair_json_envelope_shape() {
     let corrupted = flip_at(ABANDON_MS1, 9);
 
-    let mut cmd = Command::cargo_bin("ms").expect("ms binary");
-    let out = cmd
-        .args(["repair", "--ms1", &corrupted, "--json"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .expect("invoke ms repair --json");
+    let out = support::run(&["repair", "--ms1", &corrupted, "--json"]);
     let code = out.status.code().expect("exited normally");
     assert_eq!(
         code,
@@ -350,11 +330,7 @@ fn repair_json_envelope_shape() {
 // ──────────────────────────────────────────────────────────────────────────
 #[test]
 fn repair_json_clean_input_verdict_blessed() {
-    let mut cmd = Command::cargo_bin("ms").expect("ms binary");
-    let out = cmd
-        .args(["repair", "--ms1", ABANDON_MS1, "--json"])
-        .output()
-        .expect("invoke ms repair --json");
+    let out = support::run(&["repair", "--ms1", ABANDON_MS1, "--json"]);
     let code = out.status.code().expect("exited normally");
     assert_eq!(code, 0, "expected exit 0 for clean JSON-mode repair");
 

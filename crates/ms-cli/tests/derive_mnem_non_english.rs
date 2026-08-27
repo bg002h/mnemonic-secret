@@ -11,18 +11,14 @@
 
 use std::process::Output;
 
-use assert_cmd::Command;
+mod support;
 
 const ZEROS_HEX: &str = "00000000000000000000000000000000";
 const MASTER_FP_EN: &str = "73c5da0a";
 const MASTER_FP_FR: &str = "7d53dc37";
 
 fn ms(args: &[&str]) -> Output {
-    Command::cargo_bin("ms")
-        .unwrap()
-        .args(args)
-        .output()
-        .unwrap()
+    support::run(args)
 }
 fn out(o: &Output) -> String {
     String::from_utf8(o.stdout.clone()).unwrap()

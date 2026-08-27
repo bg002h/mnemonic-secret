@@ -10,8 +10,7 @@ fn encode_emits_passphrase_warning_on_stderr() {
         .args([
             "encode",
             "--phrase",
-            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-        ])
+            "-"]).write_stdin(("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about").to_string())
         .assert()
         .success()
         .stderr(predicate::str::contains(

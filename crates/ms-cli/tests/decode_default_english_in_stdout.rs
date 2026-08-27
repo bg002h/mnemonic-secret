@@ -8,10 +8,8 @@ use predicates::prelude::*;
 fn decode_default_english_warns_on_both_streams() {
     Command::cargo_bin("ms")
         .unwrap()
-        .args([
-            "decode",
-            "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f",
-        ])
+        .args(["decode", "-"])
+        .write_stdin(("ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f").to_string())
         .assert()
         .success()
         .stdout(predicate::str::contains(

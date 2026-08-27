@@ -17,7 +17,8 @@ fn inspect_non_zero_prefix_reports_rule_8() {
     let s = build_with_prefix_0x01();
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["inspect", &s])
+        .args(["inspect", "-"])
+        .write_stdin(s.to_string())
         .assert()
         .success()
         .stdout(predicate::str::starts_with("FAIL: would NOT decode v0.1"))

@@ -9,7 +9,8 @@ fn encode_rejects_bad_bip39_checksum() {
     let bad = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon ability";
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["encode", "--phrase", bad])
+        .args(["encode", "--phrase", "-"])
+        .write_stdin((bad).to_string())
         .assert()
         .failure()
         .code(1)

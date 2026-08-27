@@ -11,8 +11,7 @@ fn encode_12_word_abandon_about() {
         .args([
             "encode",
             "--phrase",
-            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-        ])
+            "-"]).write_stdin(("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about").to_string())
         .output()
         .unwrap();
     assert!(out.status.success());

@@ -11,15 +11,12 @@
 
 use std::process::Output;
 
-use assert_cmd::Command;
 use ms_codec::codex32::{Codex32String, Fe};
 
+mod support;
+
 fn ms(args: &[&str]) -> Output {
-    Command::cargo_bin("ms")
-        .unwrap()
-        .args(args)
-        .output()
-        .unwrap()
+    support::run(args)
 }
 fn out(o: &Output) -> String {
     String::from_utf8(o.stdout.clone()).unwrap()

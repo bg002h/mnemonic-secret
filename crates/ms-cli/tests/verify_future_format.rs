@@ -14,7 +14,8 @@ fn verify_reserved_seed_tag_exits_3() {
 
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["verify", &s])
+        .args(["verify", "-"])
+        .write_stdin(s.to_string())
         .assert()
         .failure()
         .code(3)

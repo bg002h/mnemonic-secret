@@ -3,17 +3,15 @@
 
 use assert_cmd::Command;
 
+mod support;
+
 const Z12: &str =
     "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 /// Canonical unbroken ms1 for the 12-word all-zeros phrase (wire canary).
 const CANON: &str = "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f";
 
 fn stdout_of(args: &[&str]) -> String {
-    let out = Command::cargo_bin("ms")
-        .unwrap()
-        .args(args)
-        .output()
-        .unwrap();
+    let out = support::run(args);
     assert!(
         out.status.success(),
         "command failed: {}",
@@ -66,7 +64,8 @@ fn encode_rejects_bad_separator() {
     // ms maps clap parse errors to exit 64 (main.rs).
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["encode", "--phrase", Z12, "--separator", "bogus"])
+        .args(["encode", "--phrase", "-", "--separator", "bogus"])
+        .write_stdin((Z12).to_string())
         .assert()
         .code(64);
 }
@@ -76,7 +75,8 @@ fn split_grouped_default_labels_on_stderr() {
     // Default-grouped split: stdout = N grouped share lines; labels → stderr.
     let out = Command::cargo_bin("ms")
         .unwrap()
-        .args(["split", "--phrase", Z12, "-k", "2", "-n", "3"])
+        .args(["split", "--phrase", "-", "-k", "2", "-n", "3"])
+        .write_stdin((Z12).to_string())
         .output()
         .unwrap();
     assert!(out.status.success());

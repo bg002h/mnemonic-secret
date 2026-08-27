@@ -25,7 +25,8 @@ fn decode_accepts_comma_grouped() {
     // Encode unbroken, then comma-group it and decode — must recover the entropy.
     let enc = Command::cargo_bin("ms")
         .unwrap()
-        .args(["encode", "--phrase", Z12, "--group-size", "0"])
+        .args(["encode", "--phrase", "-", "--group-size", "0"])
+        .write_stdin((Z12).to_string())
         .output()
         .unwrap();
     let ms1 = String::from_utf8(enc.stdout)
@@ -37,7 +38,8 @@ fn decode_accepts_comma_grouped() {
     let grouped = comma5(&ms1);
     Command::cargo_bin("ms")
         .unwrap()
-        .args(["decode", &grouped])
+        .args(["decode", "-"])
+        .write_stdin(grouped.to_string())
         .assert()
         .success()
         .stdout(predicate::str::contains(
