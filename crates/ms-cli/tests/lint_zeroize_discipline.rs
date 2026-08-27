@@ -53,7 +53,7 @@ const ZEROIZE_ROWS: &[ZeroizeRow] = &[
     ZeroizeRow {
         label: "parse::read_phrase_input returns Zeroizing<String>",
         source_file: "src/parse.rs",
-        evidence: &["pub fn read_phrase_input(arg: Option<&str>) -> Result<Zeroizing<String>>"],
+        evidence: &["pub fn read_phrase_input(src: Source) -> Result<Zeroizing<String>>"],
     },
     ZeroizeRow {
         label: "parse::read_stdin raw buffer wrapped",

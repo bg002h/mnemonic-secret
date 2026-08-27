@@ -14,13 +14,21 @@ use crate::advisory::{emit_output_class_advisory, OutputClass};
 use crate::error::Result;
 use crate::format::DecodeJson;
 use crate::language::CliLanguage;
-use crate::parse::read_input;
+use crate::parse::{read_input, Source};
 
 /// `ms decode` arguments.
 #[derive(Args, Debug)]
 pub struct DecodeArgs {
     /// ms1 string to decode. Use `-` or omit to read from stdin.
     pub ms1: Option<String>,
+
+    /// Read the ms1 string from FILE instead of argv or stdin.
+    ///
+    /// The private channel that frees stdin: argv is public (/proc, `ps`, shell
+    /// history), and before P2 `-` was the only alternative, so two private
+    /// values could not be supplied in one invocation.
+    #[arg(long = "in", value_name = "FILE", conflicts_with = "ms1")]
+    pub in_path: Option<std::path::PathBuf>,
 
     /// BIP-39 wordlist for the recovered phrase. Default `english`.
     /// SPEC §6.3: when defaulted, both stderr AND the stdout language
@@ -39,7 +47,10 @@ pub fn run(args: DecodeArgs) -> Result<u8> {
     // Note: `ms1` is the codex32 string, not directly secret-bearing,
     // but it's encrypted-form-equivalent (an attacker with this string
     // can recover the entropy). Wrap defensively.
-    let ms1: Zeroizing<String> = Zeroizing::new(read_input(args.ms1.as_deref())?);
+    let ms1: Zeroizing<String> = Zeroizing::new(read_input(Source::new(
+        args.ms1.as_deref(),
+        args.in_path.as_deref(),
+    ))?);
 
     let (cli_lang, defaulted) = match args.language {
         Some(l) => (l, false),

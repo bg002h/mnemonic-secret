@@ -32,10 +32,17 @@ pub enum CombineTo {
 
 /// `ms combine` arguments.
 #[derive(Args, Debug)]
+#[command(group = clap::ArgGroup::new("combine_input").required(true).args(["shares", "in_path"]))]
 pub struct CombineArgs {
     /// The distributed share strings to recombine (K or more, distinct indices).
-    #[arg(required = true)]
     pub shares: Vec<String>,
+
+    /// Read the shares from FILE, ONE PER LINE, instead of argv or stdin.
+    ///
+    /// Display separators are stripped per line exactly as the stdin path
+    /// already does, so a grouped card typed back off metal re-ingests.
+    #[arg(long = "in", value_name = "FILE")]
+    pub in_path: Option<std::path::PathBuf>,
 
     /// Output form for the recovered secret. Default `phrase`.
     #[arg(long, value_enum, default_value = "phrase")]
@@ -51,8 +58,36 @@ pub struct CombineArgs {
 /// and mk-cli's `read_mk1_strings`). Each share (positional OR stdin line) is
 /// stripped of mstring display separators (SPEC §3.2 / §15 C1+C3) so a grouped
 /// or unbroken card both re-ingest. Shares are secret-equivalent → Zeroizing.
-fn read_shares(args: &[String]) -> Result<Zeroizing<Vec<String>>> {
+fn read_shares(
+    args: &[String],
+    in_path: Option<&std::path::Path>,
+) -> Result<Zeroizing<Vec<String>>> {
     let mut out: Vec<String> = Vec::with_capacity(args.len());
+    // `--in` reads one share per line, separators stripped per line -- the
+    // SAME loop the `-` path runs, so a grouped card re-ingests either way.
+    if let Some(p) = in_path {
+        if !args.is_empty() {
+            return Err(CliError::BadInput(format!(
+                "cannot read shares from both --in {} and the argument channel \
+                 (one input source per invocation)",
+                p.display()
+            )));
+        }
+        let buf = crate::parse::read_in_file(p)?;
+        for line in buf.lines() {
+            let s = crate::format::strip_display_separators(line);
+            if !s.is_empty() {
+                out.push(s);
+            }
+        }
+        if out.is_empty() {
+            return Err(CliError::BadInput(format!(
+                "--in {} held no shares (expected one share per line)",
+                p.display()
+            )));
+        }
+        return Ok(Zeroizing::new(out));
+    }
     let mut consumed_stdin = false;
     for a in args {
         if a == "-" && !consumed_stdin {
@@ -82,7 +117,8 @@ fn read_shares(args: &[String]) -> Result<Zeroizing<Vec<String>>> {
 pub fn run(mut args: CombineArgs) -> Result<u8> {
     // The share strings themselves are secret-equivalent — wrap them. `-` reads
     // one share per line from stdin; display separators are stripped per share.
-    let shares: Zeroizing<Vec<String>> = read_shares(&std::mem::take(&mut args.shares))?;
+    let shares: Zeroizing<Vec<String>> =
+        read_shares(&std::mem::take(&mut args.shares), args.in_path.as_deref())?;
 
     // Recover the secret. combine_shares surfaces the §2 error taxonomy
     // (SecretShareSuppliedToCombine / Codex32(ThresholdNotPassed/Mismatched*/

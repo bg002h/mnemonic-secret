@@ -5,10 +5,80 @@
 //! engraver-typed-back chunked form, and terminal copy-paste artifacts.
 
 use std::io::{self, Read};
+use std::path::Path;
 
 use zeroize::Zeroizing;
 
 use crate::error::{CliError, Result};
+
+/// **Where one verb's material comes from.**
+///
+/// P2 gives `ms` a second private channel. Before it, every intake helper took
+/// a bare `Option<&str>` and treated `None` / `Some("-")` as stdin, so there was
+/// exactly one place material could arrive from privately. `--in FILE` is a
+/// second, and threading it as a struct rather than as a third positional
+/// parameter is what keeps the two `Option`s from being swapped at a call site.
+///
+/// `in_path` and `arg` are mutually exclusive at every call site. clap catches
+/// the collision first on every verb that declares the two in one group (or with
+/// `conflicts_with`); the runtime refusal below is the backstop, because a
+/// channel that silently WINS over another is how an operator engraves the
+/// wrong card.
+#[derive(Copy, Clone, Debug)]
+pub struct Source<'a> {
+    arg: Option<&'a str>,
+    in_path: Option<&'a Path>,
+}
+
+impl<'a> Source<'a> {
+    /// `arg` is the verb's own argv channel (`None` when omitted, `Some("-")`
+    /// for explicit stdin, `Some(v)` for a value). `in_path` is `--in`.
+    pub fn new(arg: Option<&'a str>, in_path: Option<&'a Path>) -> Self {
+        Self { arg, in_path }
+    }
+
+    /// True iff this source will consume the process's stdin.
+    ///
+    /// **`--in` is what makes this interesting.** `ms verify --in card.txt
+    /// --phrase -` used to be refused because the ms1 channel was `None` and
+    /// `None` meant stdin; with `--in` supplied it does not, so the refusal
+    /// stops firing and the round-trip check becomes performable privately for
+    /// the first time.
+    pub fn reads_stdin(&self) -> bool {
+        self.in_path.is_none() && is_stdin_arg(self.arg)
+    }
+
+    /// The raw bytes this source names, as a scrub-on-drop `String`, or the
+    /// contention refusal.
+    fn read_raw(&self) -> Result<Zeroizing<String>> {
+        match (self.in_path, self.arg) {
+            (Some(p), Some(_)) => Err(CliError::BadInput(format!(
+                "cannot read from both --in {} and the argument channel \
+                 (one input source per invocation)",
+                p.display()
+            ))),
+            (Some(p), None) => read_in_file(p),
+            (None, Some(s)) if s != "-" => Ok(Zeroizing::new(s.to_string())),
+            (None, _) => read_stdin(),
+        }
+    }
+}
+
+/// Read `path` whole, naming it on failure.
+///
+/// **It never falls back to stdin, and that is the control the row-1 gate
+/// carries.** A `--in` typo that quietly read a terminal would look like a hang;
+/// one that quietly read the previous stage of a pipeline would engrave the
+/// wrong card at exit 0.
+pub(crate) fn read_in_file(path: &Path) -> Result<Zeroizing<String>> {
+    let buf: Zeroizing<String> = Zeroizing::new(std::fs::read_to_string(path).map_err(|e| {
+        CliError::BadInput(format!("failed to read --in {}: {}", path.display(), e))
+    })?);
+    // Same treatment the stdin buffer gets: pin the freshly-read secret pages
+    // for this function's scope (Cycle B SPEC §2 row 5).
+    let _entropy_pin = crate::mlock::pin_pages_for(buf.as_bytes());
+    Ok(buf)
+}
 
 /// Read input from either the supplied arg (if `Some` and not `"-"`) or stdin.
 /// The returned String is whitespace-stripped (per `char::is_whitespace`).
@@ -18,11 +88,8 @@ use crate::error::{CliError, Result};
 ///
 /// The `arg` is `None` when the positional was omitted, `Some("-")` when the
 /// user explicitly requested stdin, or `Some(s)` when the user provided a value.
-pub fn read_input(arg: Option<&str>) -> Result<String> {
-    let raw: String = match arg {
-        Some(s) if s != "-" => s.to_string(),
-        _ => (*read_stdin()?).clone(),
-    };
+pub fn read_input(src: Source) -> Result<String> {
+    let raw: Zeroizing<String> = src.read_raw()?;
     Ok(strip_whitespace(&raw))
 }
 
@@ -33,11 +100,8 @@ pub fn read_input(arg: Option<&str>) -> Result<String> {
 ///
 /// SPEC v0.9.0 §1 item 2 — returns `Zeroizing<String>` so callers can
 /// move the secret-bearing buffer to a scrub-on-drop binding.
-pub fn read_phrase_input(arg: Option<&str>) -> Result<Zeroizing<String>> {
-    let raw: Zeroizing<String> = match arg {
-        Some(s) if s != "-" => Zeroizing::new(s.to_string()),
-        _ => read_stdin()?,
-    };
+pub fn read_phrase_input(src: Source) -> Result<Zeroizing<String>> {
+    let raw: Zeroizing<String> = src.read_raw()?;
     Ok(Zeroizing::new(normalize_phrase(&raw)))
 }
 
@@ -137,7 +201,7 @@ mod tests {
     fn read_input_with_explicit_arg_returns_stripped() {
         // Note: can't easily test stdin path in a unit test; integration tests
         // (Phase 4) cover the stdin path via `assert_cmd`'s `write_stdin`.
-        let out = read_input(Some("  ms10  ")).unwrap();
+        let out = read_input(Source::new(Some("  ms10  "), None)).unwrap();
         assert_eq!(out, "ms10");
     }
 
@@ -155,7 +219,7 @@ mod tests {
 
     #[test]
     fn read_phrase_input_with_explicit_arg_preserves_spaces() {
-        let out = read_phrase_input(Some("abandon abandon about")).unwrap();
+        let out = read_phrase_input(Source::new(Some("abandon abandon about"), None)).unwrap();
         assert_eq!(out.as_str(), "abandon abandon about");
     }
 }

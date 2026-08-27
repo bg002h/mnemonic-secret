@@ -12,13 +12,21 @@ use serde_json::to_string;
 use crate::error::{CliError, Result};
 use crate::format::VerifySuccessJson;
 use crate::language::CliLanguage;
-use crate::parse::{is_stdin_arg, read_input, read_phrase_input};
+use crate::parse::{read_input, read_phrase_input, Source};
 
 /// `ms verify` arguments.
 #[derive(Args, Debug)]
 pub struct VerifyArgs {
     /// ms1 string to verify. Use `-` or omit to read from stdin.
     pub ms1: Option<String>,
+
+    /// Read the ms1 string from FILE instead of argv or stdin.
+    ///
+    /// The private channel that frees stdin: argv is public (/proc, `ps`, shell
+    /// history), and before P2 `-` was the only alternative, so two private
+    /// values could not be supplied in one invocation.
+    #[arg(long = "in", value_name = "FILE", conflicts_with = "ms1")]
+    pub in_path: Option<std::path::PathBuf>,
 
     /// Original BIP-39 phrase to round-trip-check against the decoded entropy.
     /// When supplied, exit 4 on mismatch. Use `-` to read phrase from stdin.
@@ -48,12 +56,13 @@ pub fn run(mut args: VerifyArgs) -> Result<u8> {
 
     // Step 1: read ms1 input. Concurrent-stdin guard: if both ms1 and --phrase
     // resolve to stdin, exit immediately (clap can't catch this).
-    if is_stdin_arg(args.ms1.as_deref()) && phrase_arg.as_deref().map(|s| s.as_str()) == Some("-") {
+    let ms1_src = Source::new(args.ms1.as_deref(), args.in_path.as_deref());
+    if ms1_src.reads_stdin() && phrase_arg.as_deref().map(|s| s.as_str()) == Some("-") {
         return Err(CliError::BadInput(
             "cannot read both ms1 and --phrase from stdin".into(),
         ));
     }
-    let ms1: Zeroizing<String> = Zeroizing::new(read_input(args.ms1.as_deref())?);
+    let ms1: Zeroizing<String> = Zeroizing::new(read_input(ms1_src)?);
 
     // --language is advisory-only for a mnem ms1 (the wire byte wins). Option
     // type ⇒ omission is distinguishable from explicit `--language english`, so a
@@ -96,7 +105,7 @@ pub fn run(mut args: VerifyArgs) -> Result<u8> {
 
     // Step 3: parse --phrase if present.
     let phrase_supplied: Option<Zeroizing<String>> = match phrase_arg.as_ref() {
-        Some(p) => Some(read_phrase_input(Some(p.as_str()))?),
+        Some(p) => Some(read_phrase_input(Source::new(Some(p.as_str()), None))?),
         None => None,
     };
 

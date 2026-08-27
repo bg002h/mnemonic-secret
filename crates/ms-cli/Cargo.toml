@@ -31,5 +31,6 @@ zeroize = "1.8"
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
+tempfile = "3"
 # codex32 is vendored inside ms-codec (Cycle-B, shape A); tests reach it via the
 # `ms_codec::codex32::` re-export — no separate codex32 dep.

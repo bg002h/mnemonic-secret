@@ -18,14 +18,22 @@ use crate::advisory::{emit_output_class_advisory, secret_in_argv_warning, Output
 use crate::cmd::encode::parse_hex_entropy;
 use crate::error::{CliError, Result};
 use crate::language::CliLanguage;
-use crate::parse::{is_stdin_arg, read_input, read_phrase_input};
+use crate::parse::{is_stdin_arg, read_input, read_phrase_input, Source};
 
 /// `ms derive` arguments. At most one entropy source (ms1 / `--hex` / `--phrase`).
 #[derive(Args, Debug)]
-#[command(group = clap::ArgGroup::new("entropy_src").args(["ms1", "hex", "phrase"]))]
+#[command(group = clap::ArgGroup::new("entropy_src").args(["ms1", "hex", "phrase", "in_path"]))]
 pub struct DeriveArgs {
     /// ms1 string. Use `-` or omit to read from stdin.
     pub ms1: Option<String>,
+
+    /// Read the ms1 string from FILE instead of argv or stdin.
+    ///
+    /// The private channel that frees stdin: argv is public (/proc, `ps`, shell
+    /// history), and before P2 `-` was the only alternative, so two private
+    /// values could not be supplied in one invocation.
+    #[arg(long = "in", value_name = "FILE")]
+    pub in_path: Option<std::path::PathBuf>,
 
     /// Hex-encoded entropy (16/20/24/28/32 B), alternative to ms1.
     #[arg(long)]
@@ -338,12 +346,17 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
 
     // Single-stdin guard: the ACTIVE entropy source + --passphrase-stdin cannot
     // both consume stdin.
+    // `--in` is what makes this a live question rather than a formality: with
+    // it supplied the ms1 channel does NOT consume stdin, so
+    // `ms derive --in card.ms1 --passphrase-stdin` stops being refused and
+    // becomes the first private way to derive with a passphrase (§2.5).
+    let ms1_src = Source::new(args.ms1.as_deref(), args.in_path.as_deref());
     let entropy_reads_stdin = if hex_arg.is_some() {
         hex_arg.as_deref().map(|s| s.as_str()) == Some("-")
     } else if phrase_arg.is_some() {
         phrase_arg.as_deref().map(|s| s.as_str()) == Some("-")
     } else {
-        is_stdin_arg(args.ms1.as_deref())
+        ms1_src.reads_stdin()
     };
     if args.passphrase_stdin && entropy_reads_stdin {
         return Err(CliError::BadInput(
@@ -367,16 +380,16 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
     // consistent `(effective_lang, effective_lang_defaulted)` for the labels.
     let (mnemonic, effective_lang, effective_lang_defaulted): (Mnemonic, CliLanguage, bool) =
         if let Some(h) = &hex_arg {
-            let hex_str = Zeroizing::new(read_input(Some(h.as_str()))?);
+            let hex_str = Zeroizing::new(read_input(Source::new(Some(h.as_str()), None))?);
             let entropy = Zeroizing::new(parse_hex_entropy(&hex_str)?);
             let m = Mnemonic::from_entropy_in(lang, &entropy[..]).map_err(CliError::Bip39)?;
             (m, cli_lang, defaulted)
         } else if let Some(p) = &phrase_arg {
-            let phrase = read_phrase_input(Some(p.as_str()))?;
+            let phrase = read_phrase_input(Source::new(Some(p.as_str()), None))?;
             let m = Mnemonic::parse_in(lang, phrase.as_str()).map_err(CliError::Bip39)?;
             (m, cli_lang, defaulted)
         } else {
-            let ms1 = Zeroizing::new(read_input(args.ms1.as_deref())?);
+            let ms1 = Zeroizing::new(read_input(ms1_src)?);
             let (_tag, payload) = ms_codec::decode(&ms1)?;
             // H4: the WIRE language byte is authoritative for Payload::Mnem; a
             // --language-default fix would derive the WRONG fingerprint for a

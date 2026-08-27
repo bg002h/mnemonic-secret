@@ -55,15 +55,24 @@ use zeroize::Zeroizing;
 
 use crate::advisory::{emit_output_class_advisory, OutputClass};
 use crate::error::{CliError, Result};
-use crate::parse::read_input;
+use crate::parse::{read_input, Source};
 
 /// `ms repair` arguments.
 #[derive(Args, Debug)]
+#[command(group = clap::ArgGroup::new("repair_input").required(true).args(["ms1", "in_path"]))]
 pub struct RepairArgs {
     /// ms1 string to attempt to repair. Use `-` to read the string from
     /// stdin (a single line). Single-chunk per codex32 spec; non-repeating.
     #[arg(long, value_name = "MS1")]
-    pub ms1: String,
+    pub ms1: Option<String>,
+
+    /// Read the ms1 string from FILE instead of argv or stdin.
+    ///
+    /// The private channel that frees stdin: argv is public (/proc, `ps`, shell
+    /// history), and before P2 `-` was the only alternative, so two private
+    /// values could not be supplied in one invocation.
+    #[arg(long = "in", value_name = "FILE")]
+    pub in_path: Option<std::path::PathBuf>,
 
     /// Emit a single JSON envelope on stdout instead of the text-form
     /// report. Schema byte-matches `mnemonic repair --json`'s
@@ -94,7 +103,10 @@ struct RepairDetail {
 pub fn run(args: RepairArgs) -> Result<u8> {
     // `read_input` handles the `-` stdin sentinel (single line / trimmed).
     // cycle-15 Lane M (slug #6): the ms1 intake IS secret material — scrub on drop.
-    let original: Zeroizing<String> = Zeroizing::new(read_input(Some(args.ms1.as_str()))?);
+    let original: Zeroizing<String> = Zeroizing::new(read_input(Source::new(
+        args.ms1.as_deref(),
+        args.in_path.as_deref(),
+    ))?);
 
     // `decode_with_correction` performs BCH correction internally; HRP /
     // length / BCH-uncorrectable rejections surface as `ms_codec::Error`

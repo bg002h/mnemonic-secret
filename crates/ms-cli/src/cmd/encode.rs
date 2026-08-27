@@ -15,7 +15,7 @@ use crate::advisory::{emit_output_class_advisory, OutputClass};
 use crate::error::{CliError, Result};
 use crate::format::{render_grouped, EncodeJson};
 use crate::language::CliLanguage;
-use crate::parse::{read_input, read_phrase_input};
+use crate::parse::{read_input, read_phrase_input, Source};
 
 /// `ms encode` arguments.
 ///
@@ -87,7 +87,7 @@ pub(crate) fn resolve_secret_payload(
     // `let (entropy, language_for_card): (Zeroizing<Vec<u8>>`).
     let (entropy, language_for_card): (Zeroizing<Vec<u8>>, Option<&'static str>) =
         if let Some(phrase_arg) = phrase {
-            let phrase: Zeroizing<String> = read_phrase_input(Some(phrase_arg))?;
+            let phrase: Zeroizing<String> = read_phrase_input(Source::new(Some(phrase_arg), None))?;
             let lang: Language = language.into();
             // SAFETY: third-party-blocked — `bip39::Mnemonic` has no Drop+
             // Zeroize; tracked at FOLLOWUP `rust-bip39-mnemonic-zeroize-upstream`
@@ -98,7 +98,7 @@ pub(crate) fn resolve_secret_payload(
                 Some(language.as_str()),
             )
         } else if let Some(hex_arg) = hex {
-            let hex_str = Zeroizing::new(read_input(Some(hex_arg))?);
+            let hex_str = Zeroizing::new(read_input(Source::new(Some(hex_arg), None))?);
             let bytes = Zeroizing::new(parse_hex_entropy(&hex_str)?);
             (bytes, None)
         } else {
