@@ -20,43 +20,91 @@ fn stdout_of(args: &[&str]) -> String {
     String::from_utf8(out.stdout).unwrap()
 }
 
+/// **MOVED, not deleted: the grouping is now on the CARD.** §6a/§6b make
+/// `ms encode`'s stdout the canonical ms1 and nothing else, always ungrouped,
+/// and `--group-size` / `--separator` bind to the stderr engraving card alone.
+/// The reason is cross-tool rather than cosmetic and was measured: piped into
+/// `me sysw pack`, the grouped default exits **4** -- "record 0 ... is not a
+/// form this container can place" -- and writes no payload, while the ungrouped
+/// form exits **0** and writes a 102-byte payload at 0600.
 #[test]
-fn encode_default_groups_space_5_print_once() {
-    let s = stdout_of(&["encode", "--phrase", Z12]);
-    // print-once: no blank line / no second copy.
-    assert!(
-        !s.contains("\n\n"),
-        "print-once: stdout must not contain \\n\\n; got {s:?}"
-    );
-    let line = s.lines().next().unwrap();
+fn encode_stdout_is_the_canonical_ms1_and_the_card_carries_the_grouping() {
+    let out = support::run(&["encode", "--phrase", Z12]);
+    assert!(out.status.success());
+    let s = String::from_utf8(out.stdout).unwrap();
     assert_eq!(
-        line.chars().nth(5),
+        s,
+        format!("{CANON}\n"),
+        "stdout is the canonical artifact, ungrouped, and nothing else"
+    );
+
+    let e = String::from_utf8(out.stderr).unwrap();
+    let card = e
+        .lines()
+        .find(|l| l.starts_with("engraving card: "))
+        .unwrap_or_else(|| panic!("no engraving-card line in stderr:\n{e}"));
+    let grouped = card.trim_start_matches("engraving card: ");
+    assert_eq!(
+        grouped.chars().nth(5),
         Some(' '),
-        "expected a space after the first 5 chars; got {line:?}"
+        "the card keeps the default space/5 grouping; got {grouped:?}"
     );
-    let unbroken: String = line.chars().filter(|c| *c != ' ').collect();
     assert_eq!(
-        unbroken, CANON,
-        "space-stripped grouped form must equal canonical ms1"
+        grouped.chars().filter(|c| *c != ' ').collect::<String>(),
+        CANON,
+        "and the grouped form is the same artifact"
     );
 }
 
+/// The flags still WORK; they just work on the card.
 #[test]
-fn encode_unbroken_group_size_0() {
-    let s = stdout_of(&["encode", "--phrase", Z12, "--group-size", "0"]);
-    let line = s.lines().next().unwrap();
-    assert_eq!(line, CANON);
+fn group_size_zero_collapses_the_card_and_leaves_stdout_alone() {
+    let out = support::run(&["encode", "--phrase", Z12, "--group-size", "0"]);
+    let s = String::from_utf8(out.stdout).unwrap();
+    let e = String::from_utf8(out.stderr).unwrap();
+    assert_eq!(s, format!("{CANON}\n"));
+    assert!(
+        e.contains(&format!("engraving card: {CANON}")),
+        "at group-size 0 the card is the unbroken string too:\n{e}"
+    );
 }
 
+/// **`--no-engraving-card` now throws away the form an engraver reads**, and so
+/// does any `2>/dev/null`. §6c names this as a real change rather than a
+/// cosmetic one, and this pins it so nobody re-discovers it on a plate.
 #[test]
-fn encode_separator_hyphen() {
-    let s = stdout_of(&["encode", "--phrase", Z12, "--separator", "hyphen"]);
-    let line = s.lines().next().unwrap();
-    assert_eq!(
-        line.chars().nth(5),
-        Some('-'),
-        "expected hyphen at idx 5; got {line:?}"
+fn no_engraving_card_removes_the_only_grouped_form_there_is() {
+    let out = support::run(&["encode", "--phrase", Z12, "--no-engraving-card"]);
+    let s = String::from_utf8(out.stdout).unwrap();
+    let e = String::from_utf8(out.stderr).unwrap();
+    assert_eq!(s, format!("{CANON}\n"));
+    assert!(
+        !e.contains("engraving card:"),
+        "the card is suppressed:\n{e}"
     );
+    assert!(
+        !e.contains("ms10e ntrsq"),
+        "and with it the grouped form, which exists nowhere else now:\n{e}"
+    );
+}
+
+/// `ms encode`'s stdout does not move, whatever the display flags say.
+#[test]
+fn no_display_flag_can_change_encode_stdout() {
+    for extra in [
+        vec![],
+        vec!["--group-size", "0"],
+        vec!["--group-size", "7"],
+        vec!["--separator", "space"],
+    ] {
+        let mut argv = vec!["encode", "--phrase", Z12];
+        argv.extend(extra.iter().copied());
+        assert_eq!(
+            stdout_of(&argv),
+            format!("{CANON}\n"),
+            "{argv:?} changed the ARTIFACT, which is not a display property"
+        );
+    }
 }
 
 #[test]

@@ -20,20 +20,18 @@ fn encode_12_word_abandon_about() {
         !stdout.contains("\n\n"),
         "print-once: no blank line; got {stdout:?}"
     );
+    // §6a/§6b: stdout is the CANONICAL ms1, always ungrouped. The default
+    // space/5 grouping moved to the stderr engraving card.
     let line = stdout.lines().next().unwrap();
     assert_eq!(
-        line.chars().nth(5),
-        Some(' '),
-        "default space/5; got {line:?}"
-    );
-    assert!(
-        line.chars()
-            .filter(|c| *c != ' ')
-            .collect::<String>()
-            .starts_with("ms10entrsqqqq"),
-        "space-stripped form starts with the canonical prefix; got {line:?}"
+        line, "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f",
+        "stdout is the artifact, not a display form; got {line:?}"
     );
     let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(
+        stderr.contains("engraving card: ms10e ntrsq"),
+        "the default space/5 grouping is on the card now; got {stderr:?}"
+    );
     assert!(stderr.contains("language: english"));
     assert!(stderr.contains("word count: 12"));
     assert!(stderr.contains("passphrase: not stored"));

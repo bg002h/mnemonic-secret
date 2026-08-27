@@ -320,13 +320,29 @@ fn emit_text(
     separator: char,
     artifact_went_to_a_file: bool,
 ) -> Result<()> {
-    // Print-once stdout: the ms1 in the flag-controlled grouped form (SPEC §6).
+    // **stdout carries the CANONICAL ms1 and nothing else, always ungrouped**
+    // (§6a, §6b). Grouping is a display property of a card a human reads off
+    // metal; it is not a property of the artifact, and putting it on stdout made
+    // `ms encode | me sysw pack` unclassifiable. Measured before this change:
+    // the grouped default exits 4 -- "record 0 ... is not a form this container
+    // can place" -- and writes no payload, while the same pipeline with
+    // `--group-size 0` exits 0 and writes 102 bytes at 0600.
     if !artifact_went_to_a_file {
-        println!("{}", render_grouped(ms1, group_size, separator));
+        println!("{ms1}");
     }
 
     if !no_engraving_card {
         let mut stderr = std::io::stderr().lock();
+        // `--group-size` and `--separator` now bind HERE, and nowhere else. The
+        // card gains the grouped string, which after this is the only place it
+        // exists -- so `--no-engraving-card`, and any `2>/dev/null`, now throws
+        // away the form an engraver actually reads (§6c).
+        writeln!(
+            stderr,
+            "engraving card: {}",
+            render_grouped(ms1, group_size, separator)
+        )
+        .ok();
         writeln!(stderr, "word count: {}", word_count).ok();
         if let Some(lang) = language {
             writeln!(stderr, "language: {} (BIP-39 checksum valid)", lang).ok();
