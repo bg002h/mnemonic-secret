@@ -69,12 +69,30 @@ jobs:
   # IDENTICAL container the gate measured.
   #
   # ms does NOT depend on the miniscript [patch.crates-io] fork (it has no
-  # miniscript dep at all) → it passes `miniscript_rev: ""` to select the
+  # miniscript dep at all) → it passes `miniscript_rev: ""`, which selects the
   # TWO-block `--config` form (crates-io + vendored-sources only; NO git-fork
-  # stanza). Empirically verified offline: the two-block form resolves ms-cli
-  # fully from committed `vendor/` (EXIT 0), and dropping
-  # `vendored-sources.directory` REDs (EXIT 101) — the directory block is
-  # load-bearing.
+  # stanza).
+  #
+  # ── F-324: THIS JOB IS KNOWN-RED AFTER P2, AND THE FIX IS NOT IN THIS REPO ──
+  # P2 pins `mnemonic-io-lib` by git rev, so Cargo.lock now carries a
+  # `git+https://github.com/bg002h/mnemonic-engrave?rev=…` source. The reusable
+  # workflow above was read at its pinned SHA: its ONLY git-source knob is
+  # `miniscript_rev`, and the three `--config` lines it builds hard-code
+  # `https://github.com/rust-bitcoin/rust-miniscript` as the source URL. There
+  # is NO input by which a caller can declare a different git source, so this
+  # job cannot resolve mnemonic-io-lib `--offline` and will fail at the next
+  # `ms-cli-v*` tag.
+  #
+  # It is left CALLED rather than disabled: a skipped gate prints ok and exit 0,
+  # which is how an unrun gate passes for months. The two legs of
+  # `musl-binaries` below ARE fixed (three-block, rev derived from Cargo.lock),
+  # because those live here.
+  #
+  # The fix is a `git_source`/`git_rev` input on the toolkit's reusable
+  # workflow, a repo shared by md, mk and mt — cross-repo work, owned BEFORE the
+  # next ms-cli-v* tag. It must be exercised once by `workflow_dispatch` after
+  # re-pinning, so the gate has actually executed rather than merely been
+  # edited. F-324 in mnemonic-engrave's design/FOLLOWUPS.md carries it.
   #
   # run_aarch64: false — the x86_64 gate runs inline; the slow (~30-60min QEMU)
   # aarch64 byte-gate is exercised on demand via the toolkit reusable workflow's
@@ -203,6 +221,12 @@ jobs:
           # from-side is cross's internal /project mount (NOT the host path).
           REMAP="--remap-path-prefix=/project=/build --remap-path-prefix=/cargo=/cargo"
           CFMAP="-ffile-prefix-map=/project=/build -ffile-prefix-map=/cargo=/cargo"
+          # P2: ms pins mnemonic-io-lib by git rev, so Cargo.lock carries a
+          # `git+...` source that `source.crates-io` does not serve. Derived from
+          # Cargo.lock (authoritative, comment-free) so moving the pin forward
+          # cannot leave this step pointing at the old rev. Fail CLOSED.
+          IO_LIB_REV="$(grep -oE 'mnemonic-engrave\?rev=[0-9a-f]{40}' Cargo.lock | head -1 | grep -oE '[0-9a-f]{40}')"
+          IO_LIB_SRC="git+https://github.com/bg002h/mnemonic-engrave?rev=${IO_LIB_REV}"
           umask 022
           env \
             SOURCE_DATE_EPOCH="$EPOCH" \
@@ -213,6 +237,9 @@ jobs:
             cross build --locked --offline --release \
               --target "$TARGET" -p ms-cli --bin ms \
               --config 'source.crates-io.replace-with="vendored-sources"' \
+              --config "source.\"${IO_LIB_SRC}\".git=\"https://github.com/bg002h/mnemonic-engrave\"" \
+              --config "source.\"${IO_LIB_SRC}\".rev=\"${IO_LIB_REV}\"" \
+              --config "source.\"${IO_LIB_SRC}\".replace-with=\"vendored-sources\"" \
               --config 'source.vendored-sources.directory="vendor"'
           tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$EPOCH" \
             -cf - -C "target/${TARGET}/release" ms \
@@ -257,6 +284,8 @@ jobs:
           git config --global --add safe.directory "$PWD"
           VER="${REF_NAME##*-v}"
           EPOCH="$(git show -s --format=%ct HEAD)"
+          # See the aarch64 leg: the git-source stanza is derived, not written.
+          IO_LIB_REV="$(grep -oE 'mnemonic-engrave\?rev=[0-9a-f]{40}' Cargo.lock | head -1 | grep -oE '[0-9a-f]{40}')"
           docker pull "$REPRO_IMAGE"
           docker run --rm --network=none \
             -v "$PWD":/build/src -w /build/src \
@@ -268,12 +297,17 @@ jobs:
             -e CFLAGS="-ffile-prefix-map=/build/src=/build -ffile-prefix-map=/cargo=/cargo" \
             -e "CFLAGS_x86_64_unknown_linux_musl=-ffile-prefix-map=/build/src=/build -ffile-prefix-map=/cargo=/cargo" \
             -e VER="$VER" -e ARCH="$ARCH" -e TARGET="$TARGET" \
+            -e IO_LIB_REV="$IO_LIB_REV" \
             "$REPRO_IMAGE" \
             bash -euxo pipefail -c '
               umask 022
+              IO_LIB_SRC="git+https://github.com/bg002h/mnemonic-engrave?rev=${IO_LIB_REV}"
               cargo build --locked --offline --release \
                 --target "$TARGET" -p ms-cli --bin ms \
                 --config '"'"'source.crates-io.replace-with="vendored-sources"'"'"' \
+                --config "source.\"${IO_LIB_SRC}\".git=\"https://github.com/bg002h/mnemonic-engrave\"" \
+                --config "source.\"${IO_LIB_SRC}\".rev=\"${IO_LIB_REV}\"" \
+                --config "source.\"${IO_LIB_SRC}\".replace-with=\"vendored-sources\"" \
                 --config '"'"'source.vendored-sources.directory="vendor"'"'"'
               tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" \
                 -cf - -C "target/$TARGET/release" ms \

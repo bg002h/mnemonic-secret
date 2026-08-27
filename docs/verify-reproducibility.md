@@ -10,11 +10,19 @@
 > ~15-line caller stub (`.github/workflows/man-release.yml` `repro` job), the
 > re-homed `musl-binaries` build, and `Cross.toml`.
 >
-> **`ms` is fork-free.** Unlike the toolkit, `ms` does NOT depend on the
-> miniscript `[patch.crates-io]` git fork (it has no miniscript dependency at
-> all). Its `cargo vendor` graph is a clean crates.io graph, so the `[source]`
-> activation is the **TWO-block** form (crates-io + vendored-sources) — there is
-> **no git-fork `[source]` stanza** here.
+> **`ms` carries ONE git source, and it is not the miniscript fork.** `ms` does
+> NOT depend on the miniscript `[patch.crates-io]` fork (it has no miniscript
+> dependency at all). Since P2 (2026-08-27) it DOES pin `mnemonic-io-lib` — the
+> IO mechanism shared across the m-format constellation — by GitHub rev, so its
+> `cargo vendor` graph is no longer a clean crates.io graph and the `[source]`
+> activation is the **THREE-block** form: crates-io, the
+> `source."git+https://github.com/bg002h/mnemonic-engrave?rev=…"` stanza, and
+> vendored-sources. **Measured with an EMPTY `CARGO_HOME`**, so the cargo git
+> cache could not supply the dependency: three-block `cargo build --locked
+> --offline` exits **0**; the old two-block form exits **101**, `failed to load
+> source for dependency mnemonic-io-lib`. (With a populated `CARGO_HOME` the
+> two-block form ALSO succeeds, from `~/.cargo/git` — so a check run without the
+> empty-home isolation proves nothing.)
 
 ## 1. What reproducibility buys you — provenance, not just integrity
 
@@ -116,6 +124,9 @@ docker run --rm --network=none \
     cargo build --locked --offline --release \
       --target x86_64-unknown-linux-musl -p ms-cli --bin ms \
       --config '"'"'source.crates-io.replace-with="vendored-sources"'"'"' \
+      --config '"'"'source."git+https://github.com/bg002h/mnemonic-engrave?rev=<IO_LIB_REV>".git="https://github.com/bg002h/mnemonic-engrave"'"'"' \
+      --config '"'"'source."git+https://github.com/bg002h/mnemonic-engrave?rev=<IO_LIB_REV>".rev="<IO_LIB_REV>"'"'"' \
+      --config '"'"'source."git+https://github.com/bg002h/mnemonic-engrave?rev=<IO_LIB_REV>".replace-with="vendored-sources"'"'"' \
       --config '"'"'source.vendored-sources.directory="vendor"'"'"'
     tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" \
       -cf - -C target/x86_64-unknown-linux-musl/release ms \
@@ -136,17 +147,21 @@ Notes on each load-bearing flag:
 - **`CFLAGS` / `CFLAGS_<triple>` `-ffile-prefix-map`** strips absolute paths from
   the libsecp256k1 objects compiled by `cc-rs` under `musl-gcc`.
 - **`SOURCE_DATE_EPOCH`** neutralizes `cc`'s `__DATE__` / `__TIME__`.
-- **The TWO-block job-scoped `[source]` activation is mandatory.** The `vendor/`
+- **The THREE-block job-scoped `[source]` activation is mandatory.** The `vendor/`
   directory is committed but **inert** — there is **no committed `.cargo/config.toml
   [source]` block** (a repo-global `[source]` block would bleed into every other
   cargo job via cargo's directory-ancestry config discovery). The redirect is
   activated **job-scoped** on the build command via `cargo --config` (stable
-  since 1.63). Because `ms` is **fork-free**, only the two `cargo vendor`-emitted
-  blocks are needed (crates-io + vendored-sources) — there is **no git-fork
-  `source."git+…"` stanza** (that block exists only in the toolkit, which depends
-  on the miniscript fork). An external rebuilder MUST pass the same two
+  since 1.63). Since P2, `ms` pins `mnemonic-io-lib` by git rev, so the three
+  `cargo vendor`-emitted blocks are all needed: crates-io, the
+  `source."git+https://github.com/bg002h/mnemonic-engrave?rev=…"` stanza, and
+  vendored-sources. `<IO_LIB_REV>` above is the 40-hex rev, and the CI steps
+  derive it from `Cargo.lock` (`grep -oE 'mnemonic-engrave\?rev=[0-9a-f]{40}'`)
+  rather than hard-coding it, so moving the pin forward cannot leave a build step
+  pointing at the old rev. An external rebuilder MUST pass the same five
   `--config` overrides (or use an isolated `$CARGO_HOME/config.toml` carrying the
-  verbatim `cargo vendor` output).
+  verbatim `cargo vendor` output). **The miniscript git-fork stanza is still
+  absent** — that one exists only in the toolkit.
 - **`--locked --offline`** + the committed `vendor/` tree mean the compile
   touches **no live external registry or git host** at build OR vendor time.
 
@@ -216,8 +231,22 @@ effective* — when the two real paths differ.
 `man-release.yml` has a `workflow_dispatch` trigger; a bare "Run workflow" click
 runs the `repro` caller job (the toolkit gate) against the current branch — the
 man-pages build + the release-upload steps and the whole `musl-binaries` job are
-`if:`-guarded off for a manual dispatch, so only the gate runs. That proves
-`ms`'s offline two-block reproducibility BEFORE any release tag relies on it.
+`if:`-guarded off for a manual dispatch, so only the gate runs.
+
+**F-324 — that gate is KNOWN-RED as of P2, and the fix is not in this repo.**
+The `repro` caller job hands the toolkit's reusable workflow an empty
+`miniscript_rev`, which selects the two-block form. The reusable workflow was read at its
+pinned SHA: its only git-source knob is `miniscript_rev`, and the three
+`--config` lines it builds hard-code
+`https://github.com/rust-bitcoin/rust-miniscript` as the source URL — there is
+no input by which a caller can declare a different git source. So it cannot
+resolve `mnemonic-io-lib` offline. Measured with an empty `CARGO_HOME`: the
+two-block form exits **101**. The job is left CALLED rather than disabled,
+because a skipped gate prints ok and exit 0. The `musl-binaries` legs below,
+which live in THIS repo, are already on the three-block form. Owned before the
+next `ms-cli-v*` tag, and it must be exercised once by `workflow_dispatch` after
+the toolkit change is re-pinned — an edited gate that has never run is a
+hypothesis.
 
 To reproduce the two-distinct-path proof yourself, inside the container:
 
@@ -229,8 +258,8 @@ ci/repro/gzip-residue.sh ms-<VER>-x86_64-linux-musl.tar.gz 03
 ```
 
 (The `MINISCRIPT_REV` env the gate scripts read is **empty** for `ms` — that
-selects the two-block `--config` form. The toolkit passes its own fork rev to
-select three-block.)
+selects the two-block `--config` form, which is exactly the F-324 defect above:
+`ms` now needs a git-source stanza and that knob cannot express one.)
 
 ## 9. aarch64-unknown-linux-musl — built via `cross` under QEMU
 
@@ -282,6 +311,9 @@ CFLAGS_aarch64_unknown_linux_musl="-ffile-prefix-map=/project=/build -ffile-pref
 cross build --locked --offline --release \
   --target aarch64-unknown-linux-musl -p ms-cli --bin ms \
   --config 'source.crates-io.replace-with="vendored-sources"' \
+  --config 'source."git+https://github.com/bg002h/mnemonic-engrave?rev=<IO_LIB_REV>".git="https://github.com/bg002h/mnemonic-engrave"' \
+  --config 'source."git+https://github.com/bg002h/mnemonic-engrave?rev=<IO_LIB_REV>".rev="<IO_LIB_REV>"' \
+  --config 'source."git+https://github.com/bg002h/mnemonic-engrave?rev=<IO_LIB_REV>".replace-with="vendored-sources"' \
   --config 'source.vendored-sources.directory="vendor"'
 
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" \
@@ -289,7 +321,7 @@ tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH
   | gzip -n -9 > ms-<VER>-aarch64-linux-musl.tar.gz
 ```
 
-The same TWO-block `[source]` activation (ms is fork-free), the same `--locked
+The same THREE-block `[source]` activation, the same `--locked
 --offline`, the same gzip-pinned tar as the x86_64 leg. `cross` forwards the
 `--config` flags to the inner cargo; the committed `vendor/` (at
 `/project/vendor`) makes the build fully offline.

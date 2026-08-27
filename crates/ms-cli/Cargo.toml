@@ -18,6 +18,17 @@ path = "src/main.rs"
 
 [dependencies]
 ms-codec = { path = "../ms-codec", version = "=0.7.0" }
+# THE SHARED IO MECHANISM, BY GIT REV -- never `path =`.
+#
+# `ms`'s CI is wider than most: `freebsd-compile-gate` and both `musl-check`
+# targets build from a CLEAN CHECKOUT on foreign targets, so a path dep out of
+# the workspace fails there first. The rev is written out rather than left as a
+# placeholder because there is nothing left to wait for -- the crate is on
+# origin/master today. It moves FORWARD only, and whatever rev is chosen must
+# carry the four items P2 adopts: `fd::mode_of`, `remedy::history_purge_block`,
+# `remedy::history_purge_recipes`, `write::write_private`. The pin's gate is
+# `tests/crate_items_resolve.rs`, which goes RED if a rev predates any of them.
+mnemonic-io-lib = { git = "https://github.com/bg002h/mnemonic-engrave", rev = "6c24e62823e6c1ac02aa3862cd6020674bf58544" }
 bip39 = { version = "2", features = ["all-languages"] }
 bitcoin = "0.32"
 clap = { version = "4", features = ["derive"] }
