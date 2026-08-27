@@ -249,6 +249,46 @@ jobs:
       - name: cargo clippy --all-targets -- -D warnings
         run: cargo clippy --all-targets -p ms-cli -- -D warnings
 
+  history-purge:
+    # **THE PURGE RECIPES ARE RUN, NOT DESCRIBED.** P2's argv refusal ends with a
+    # recipe for removing the leaked line from shell history, and the defect class
+    # it warns about is precisely *a remedy that reports success and purges
+    # nothing* -- `history -d` on zsh prints timestamps, and `sed -i` alone edits a
+    # file the entry has not reached yet. So the gate runs the emitted recipe
+    # inside a real interactive shell on a pty and requires the entry gone, with a
+    # control that plants the entry and purges nothing.
+    #
+    # WHY THE TESTS ARE `#[ignore]`-GATED AND THIS JOB EXISTS. A pty-driven
+    # interactive zsh is not portable across the `test` matrix (macOS, and
+    # aarch64-musl under QEMU), and `script(1)`'s arguments differ between GNU and
+    # BSD. Same pattern the g6 and mlock fault-injection gates already use here: the
+    # tests are opted IN by a dedicated job that provides the environment. They are
+    # written to FAIL rather than skip when a shell is missing -- a skip prints ok
+    # and exit 0, which is how an unrun gate passes for months.
+    #
+    # THE EXACT PATHS ARE ASSERTED, NOT THE PACKAGE NAMES. An install that succeeds
+    # while placing a binary somewhere else fails identically to no install at all,
+    # one CI round later. The tests hard-code /usr/bin/<shell>, so that is what is
+    # checked. (mnemonic-engrave's CI went red the first time it saw these tests for
+    # exactly this reason, and this is the fix that worked there.)
+    name: "history purge (recipes RUN under real shells)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the shells the purge gates execute
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsh fish
+          for b in /usr/bin/zsh /usr/bin/bash /usr/bin/fish /usr/bin/script; do
+            test -x "$b" || { echo "MISSING: $b"; exit 1; }
+            echo "ok $b"
+          done
+          /usr/bin/zsh --version
+          /usr/bin/bash --version | head -1
+          /usr/bin/fish --version
+      - name: cargo test --test history_purge -- --include-ignored
+        run: cargo test -p ms-cli --test history_purge -- --include-ignored
+
   g6-invariant:
     # Cycle B SPEC §6 G6 — cross-repo mlock.rs inline-copy invariant.
     # Checks out the sibling repo (mnemonic-toolkit) to a known runner
