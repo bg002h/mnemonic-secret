@@ -27,6 +27,21 @@ use crate::language::CliLanguage;
 #[derive(Args, Debug)]
 #[command(group = clap::ArgGroup::new("split_input").required(true).args(["phrase", "hex", "in_path"]))]
 pub struct SplitArgs {
+    /// Write the canonical artifact to FILE, **owner-only (0600)**.
+    ///
+    /// Through the shared crate's `write::write_private`, which sets the mode on
+    /// the OPEN FILE as well as passing it to `OpenOptions` -- the latter binds
+    /// on CREATE only, so an existing 0644 target would otherwise stay 0644 and
+    /// the tool would report success. It OVERWRITES (§6b), and truncates, so a
+    /// shrinking rewrite leaves no tail of the old file.
+    ///
+    /// **Not to be confused with `ms gen-man --out <DIR>`**, which is shipped,
+    /// exampled, driven by this repo's `man-release.yml` and by
+    /// `scripts/install.sh` in mnemonic-toolkit, and means a DIRECTORY. P2 does
+    /// not rename it; F-282 records that one binary now carries two meanings.
+    #[arg(long, value_name = "FILE")]
+    pub out: Option<std::path::PathBuf>,
+
     /// Proceed even though secret material is on argv.
     ///
     /// **Read off RAW argv before the parser, and it is a CHANNEL rather than a
@@ -116,10 +131,25 @@ pub fn run(mut args: SplitArgs) -> Result<u8> {
         _ => ("unknown", None),
     };
 
+    // As on `encode`: `--out` receives the canonical shares, one per line,
+    // ungrouped, so `ms combine --in` reads them back unchanged.
+    if let Some(path) = args.out.as_deref() {
+        let mut body = String::new();
+        for share in &shares {
+            body.push_str(share);
+            body.push('\n');
+        }
+        let body = zeroize::Zeroizing::new(body);
+        crate::out::write_artifact(path, &body)?;
+    }
+
     if args.json {
         emit_json(&shares, args.k, args.n, &id, kind, language)?;
-    } else {
+    } else if args.out.is_none() {
         emit_text(&shares, args.group_size as usize, args.separator);
+    } else {
+        // The shares went to the file; the human labels still go to stderr.
+        emit_labels(&shares);
     }
 
     // The N-share SET is secret-equivalent (any K reconstruct the secret).
@@ -191,6 +221,12 @@ fn emit_text(shares: &[String], group_size: usize, separator: char) {
     for share in shares {
         let _ = writeln!(out, "{}", render_grouped(share, group_size, separator));
     }
+    emit_labels(shares);
+}
+
+/// The stderr "share i of n" panel, emitted whether or not the shares
+/// themselves went to stdout or to `--out`.
+fn emit_labels(shares: &[String]) {
     let stderr = std::io::stderr();
     let mut err = stderr.lock();
     for (i, _share) in shares.iter().enumerate() {

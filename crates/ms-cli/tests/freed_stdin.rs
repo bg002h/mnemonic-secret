@@ -149,25 +149,22 @@ fn the_phrase_plus_passphrase_shape_has_a_private_two_command_route() {
     let pass = write_tmp(dir.path(), "pass.txt", PASSPHRASE);
     let card = dir.path().join("card.ms1");
 
-    // Command 1 -- the phrase never touches argv.
+    // Command 1 -- the phrase never touches argv, and the card lands at 0600.
     //
-    // **This is the `--out`-free form of the route on purpose.** Row 3 builds
-    // no new code, and `--out` is the private write's to build three entries
-    // later; asserting it here would make row 3's gate depend on row 8 and
-    // unsatisfiable in its own position. The capture below is exactly what
-    // `--out` will do, minus the 0600, and this call is rewritten to `--out`
-    // when the private write lands.
+    // Row 3 asserted this route in its `--out`-free form, because `--out` is the
+    // private write's to build and row 3 builds no new code. The private write
+    // has landed, so this is now the route the refusal itself prints.
     let enc = ms()
         .args(["encode", "--in", &seed.display().to_string()])
+        .args(["--out", &card.display().to_string()])
         .output()
         .unwrap();
     assert_eq!(
         enc.status.code(),
         Some(0),
-        "encode --in: {}",
+        "encode --in --out: {}",
         String::from_utf8_lossy(&enc.stderr)
     );
-    std::fs::write(&card, &enc.stdout).unwrap();
 
     // Command 2 -- the passphrase never touches argv either.
     let der = ms()

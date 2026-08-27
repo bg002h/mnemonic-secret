@@ -26,6 +26,21 @@ use crate::parse::{read_input, read_phrase_input, Source};
 #[derive(Args, Debug)]
 #[command(group = clap::ArgGroup::new("input").required(true).args(["phrase", "hex", "in_path"]))]
 pub struct EncodeArgs {
+    /// Write the canonical artifact to FILE, **owner-only (0600)**.
+    ///
+    /// Through the shared crate's `write::write_private`, which sets the mode on
+    /// the OPEN FILE as well as passing it to `OpenOptions` -- the latter binds
+    /// on CREATE only, so an existing 0644 target would otherwise stay 0644 and
+    /// the tool would report success. It OVERWRITES (§6b), and truncates, so a
+    /// shrinking rewrite leaves no tail of the old file.
+    ///
+    /// **Not to be confused with `ms gen-man --out <DIR>`**, which is shipped,
+    /// exampled, driven by this repo's `man-release.yml` and by
+    /// `scripts/install.sh` in mnemonic-toolkit, and means a DIRECTORY. P2 does
+    /// not rename it; F-282 records that one binary now carries two meanings.
+    #[arg(long, value_name = "FILE")]
+    pub out: Option<std::path::PathBuf>,
+
     /// Proceed even though secret material is on argv.
     ///
     /// **Read off RAW argv before the parser, and it is a CHANNEL rather than a
@@ -189,6 +204,17 @@ pub fn run(mut args: EncodeArgs) -> Result<u8> {
     let entropy: Zeroizing<Vec<u8>> = Zeroizing::new(payload.as_bytes().to_vec());
     let word_count = entropy.len() * 3 / 4; // 16->12, 20->15, 24->18, 28->21, 32->24
 
+    // `--out` receives the CANONICAL artifact -- ungrouped, newline-terminated
+    // -- because it exists so the next tool can read the file. When it is given,
+    // the text form no longer repeats the artifact on stdout: the operator asked
+    // for it in a 0600 file, and printing it as well would put the same secret on
+    // a stream that is usually redirected into a 0644 one. The stderr engraving
+    // card is unaffected, and `--json` (a REPORT, not the artifact) still goes to
+    // stdout.
+    if let Some(path) = args.out.as_deref() {
+        crate::out::write_artifact(path, &format!("{ms1}\n"))?;
+    }
+
     if args.json {
         emit_json(&ms1, language_for_card, word_count, &entropy[..])?;
     } else {
@@ -199,6 +225,7 @@ pub fn run(mut args: EncodeArgs) -> Result<u8> {
             args.no_engraving_card,
             args.group_size as usize,
             args.separator,
+            args.out.is_some(),
         )?;
     }
     emit_output_class_advisory(
@@ -283,6 +310,7 @@ fn emit_json(ms1: &str, language: Option<&str>, word_count: usize, entropy: &[u8
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_text(
     ms1: &str,
     language: Option<&str>,
@@ -290,9 +318,12 @@ fn emit_text(
     no_engraving_card: bool,
     group_size: usize,
     separator: char,
+    artifact_went_to_a_file: bool,
 ) -> Result<()> {
     // Print-once stdout: the ms1 in the flag-controlled grouped form (SPEC §6).
-    println!("{}", render_grouped(ms1, group_size, separator));
+    if !artifact_went_to_a_file {
+        println!("{}", render_grouped(ms1, group_size, separator));
+    }
 
     if !no_engraving_card {
         let mut stderr = std::io::stderr().lock();

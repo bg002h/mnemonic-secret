@@ -20,6 +20,7 @@ mod language;
 // byte-equality with the toolkit's source under G6 normalization.
 #[allow(dead_code)]
 mod mlock;
+mod out;
 mod parse;
 mod process_hardening;
 

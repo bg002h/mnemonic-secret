@@ -61,6 +61,21 @@ use crate::parse::{read_input, Source};
 #[derive(Args, Debug)]
 #[command(group = clap::ArgGroup::new("repair_input").required(true).args(["ms1", "in_path"]))]
 pub struct RepairArgs {
+    /// Write the canonical artifact to FILE, **owner-only (0600)**.
+    ///
+    /// Through the shared crate's `write::write_private`, which sets the mode on
+    /// the OPEN FILE as well as passing it to `OpenOptions` -- the latter binds
+    /// on CREATE only, so an existing 0644 target would otherwise stay 0644 and
+    /// the tool would report success. It OVERWRITES (§6b), and truncates, so a
+    /// shrinking rewrite leaves no tail of the old file.
+    ///
+    /// **Not to be confused with `ms gen-man --out <DIR>`**, which is shipped,
+    /// exampled, driven by this repo's `man-release.yml` and by
+    /// `scripts/install.sh` in mnemonic-toolkit, and means a DIRECTORY. P2 does
+    /// not rename it; F-282 records that one binary now carries two meanings.
+    #[arg(long, value_name = "FILE")]
+    pub out: Option<std::path::PathBuf>,
+
     /// Proceed even though secret material is on argv.
     ///
     /// **Read off RAW argv before the parser, and it is a CHANNEL rather than a
@@ -141,6 +156,19 @@ pub fn run(args: RepairArgs) -> Result<u8> {
     // hold the in-memory vec as Zeroizing too (defense-in-depth, slug #6/#8).
     let corrected_chunks: Zeroizing<Vec<String>> = Zeroizing::new(vec![(*corrected_chunk).clone()]);
     let reports = vec![report];
+
+    // **RULED: `--out` receives the ARTIFACT LINE ALONE, and the report stays
+    // on stdout.** `ms repair` is the one verb whose stdout carries a report and
+    // then the artifact; a payload beginning `# Repair report` is not an ms1, and
+    // the correction record is what an operator needs to SEE before trusting a
+    // repaired card, so it belongs on the stream they are reading rather than
+    // buried in a file they will feed to an engraver. It is also the one verb
+    // that writes `--out` while exiting non-zero (4, VERIFY-ME) -- the file is
+    // written all the same, because a correction the operator must confirm is
+    // still the artifact they asked for.
+    if let Some(path) = args.out.as_deref() {
+        crate::out::write_artifact(path, &format!("{}\n", *corrected_chunk))?;
+    }
 
     if args.json {
         emit_json(corrected_chunks.as_slice(), &reports)?;
