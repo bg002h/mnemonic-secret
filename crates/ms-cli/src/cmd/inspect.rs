@@ -20,6 +20,18 @@ use crate::parse::{read_input, Source};
 /// `ms inspect` arguments.
 #[derive(Args, Debug)]
 pub struct InspectArgs {
+    /// Proceed even though secret material is on argv.
+    ///
+    /// **Read off RAW argv before the parser, and it is a CHANNEL rather than a
+    /// flag** (§6d): the admitted value is replaced by `-` and routed to the
+    /// verb through a side channel, so it is never handed back to clap. It is
+    /// declared here so `--help` documents it, and destructured nowhere --
+    /// consulting it after parsing would be a decision reached too late.
+    ///
+    /// For a single-user air-gapped box, or an amnesic Tails session.
+    #[arg(long)]
+    pub allow_argv_secret: bool,
+
     /// ms1 string to inspect. Use `-` or omit to read from stdin.
     pub ms1: Option<String>,
 
@@ -41,10 +53,10 @@ pub struct InspectArgs {
 pub fn run(args: InspectArgs) -> Result<u8> {
     // cycle-15 Lane M (slug #5): the ms1 intake IS secret material (BIP-39
     // entropy) — scrub it on drop. `inspect()` borrows `&str` (Deref).
-    let ms1: Zeroizing<String> = Zeroizing::new(read_input(Source::new(
-        args.ms1.as_deref(),
-        args.in_path.as_deref(),
-    ))?);
+    let ms1: Zeroizing<String> = Zeroizing::new(read_input(
+        Source::new(args.ms1.as_deref(), args.in_path.as_deref())
+            .on(crate::argv_guard::CH_POSITIONAL),
+    )?);
     let report = ms_codec::inspect(&ms1)?; // §2.3.1: failures return CliError::Codex32 here.
 
     // A threshold ∈ 2..=9 string is one share of a K-of-N share-set — a

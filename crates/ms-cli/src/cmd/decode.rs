@@ -19,6 +19,18 @@ use crate::parse::{read_input, Source};
 /// `ms decode` arguments.
 #[derive(Args, Debug)]
 pub struct DecodeArgs {
+    /// Proceed even though secret material is on argv.
+    ///
+    /// **Read off RAW argv before the parser, and it is a CHANNEL rather than a
+    /// flag** (§6d): the admitted value is replaced by `-` and routed to the
+    /// verb through a side channel, so it is never handed back to clap. It is
+    /// declared here so `--help` documents it, and destructured nowhere --
+    /// consulting it after parsing would be a decision reached too late.
+    ///
+    /// For a single-user air-gapped box, or an amnesic Tails session.
+    #[arg(long)]
+    pub allow_argv_secret: bool,
+
     /// ms1 string to decode. Use `-` or omit to read from stdin.
     pub ms1: Option<String>,
 
@@ -47,10 +59,10 @@ pub fn run(args: DecodeArgs) -> Result<u8> {
     // Note: `ms1` is the codex32 string, not directly secret-bearing,
     // but it's encrypted-form-equivalent (an attacker with this string
     // can recover the entropy). Wrap defensively.
-    let ms1: Zeroizing<String> = Zeroizing::new(read_input(Source::new(
-        args.ms1.as_deref(),
-        args.in_path.as_deref(),
-    ))?);
+    let ms1: Zeroizing<String> = Zeroizing::new(read_input(
+        Source::new(args.ms1.as_deref(), args.in_path.as_deref())
+            .on(crate::argv_guard::CH_POSITIONAL),
+    )?);
 
     let (cli_lang, defaulted) = match args.language {
         Some(l) => (l, false),

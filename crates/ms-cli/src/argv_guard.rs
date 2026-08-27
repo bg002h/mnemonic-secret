@@ -189,13 +189,150 @@ fn argv_surface(argv: &[String]) -> (String, bool) {
     }
 }
 
-/// **THE GUARD.** Returns the refusal, or `None`.
+/// The override flag. **It is a CHANNEL, not a flag** (§6d): its own parse
+/// happens here, on raw argv, because it cannot be honoured by a layer that has
+/// already handed the material to clap.
+pub const ALLOW_FLAG: &str = "--allow-argv-secret";
+
+/// The channel key for material that arrived positionally. `combine`'s variadic
+/// shares share it, in argv order.
+pub const CH_POSITIONAL: &str = "<positional>";
+
+/// The material the override ADMITTED, keyed by channel.
 ///
-/// `argv` is the process's raw arguments, argument 0 included, so the positions
-/// it names are the ones the operator typed.
-pub fn argv_secret_guard(argv: &[String]) -> Option<String> {
-    let hit = find_argv_material(argv)?;
-    Some(refusal(argv, hit.0, hit.1, hit.2))
+/// **The admitted token is substituted, never removed, and never re-presented
+/// to clap.** Removing it strands `encode` and `split`, whose required
+/// `ArgGroup` then has no member -- measured: `ms encode` exits 64 with
+/// `error: the following required arguments were not provided:` and the group's
+/// own usage line, and removing only the value gives `error: a value is required
+/// for '--phrase <PHRASE>'`. So the value becomes `-`, the stdin sentinel `ms`
+/// already parses on every one of the fourteen channels, and the material comes
+/// through here instead. `-` is not the material, so nothing §6d forbids is
+/// re-presented: §6d rules only that admitted material is *"never re-presented
+/// to clap as a positional"*, and `--phrase -` satisfies the group while
+/// carrying nothing.
+static ADMITTED: std::sync::OnceLock<std::collections::HashMap<String, Vec<String>>> =
+    std::sync::OnceLock::new();
+
+/// The material admitted on `channel`, in argv order, or `None`.
+///
+/// Consulted by `read_input` / `read_phrase_input` / `read_shares` **before**
+/// stdin, which is what makes the substituted `-` a placeholder rather than a
+/// real stdin read. The gate for that distinction is the same invocation run
+/// with stdin at `/dev/null`: material that truly came from stdin cannot
+/// survive it.
+pub fn admitted(channel: &str) -> Option<&'static [String]> {
+    ADMITTED.get()?.get(channel).map(|v| v.as_slice())
+}
+
+/// What the guard decided.
+pub enum Decision {
+    /// Refuse, with this message. Exit 1.
+    Refuse(String),
+    /// Proceed, parsing THIS argv -- the original, or the substituted one.
+    Proceed(Vec<String>),
+}
+
+/// **THE GUARD.** Scan raw argv, and either refuse or hand back the argv clap
+/// should parse.
+pub fn decide(argv: &[String]) -> Decision {
+    if override_applies(argv) {
+        return Decision::Proceed(substitute(argv));
+    }
+    match find_argv_material(argv) {
+        Some((i, class, len)) => Decision::Refuse(refusal(argv, i, class, len)),
+        None => Decision::Proceed(argv.to_vec()),
+    }
+}
+
+/// Is this argv asking for the override, **on a surface that declares it**?
+///
+/// The flag is declared on the eight material verbs. On `vectors`,
+/// `gui-schema` and `gen-man` it is not, and there is nothing to opt into --
+/// those carry no material, so the guard has nothing to buy past. The surface
+/// is the LITERAL token at `argv[1]`, not "the leading run of non-flag tokens":
+/// the latter reading lets a FLAG VALUE spoof the surface, because filtering out
+/// `-`-prefixed tokens keeps the value that follows one.
+fn override_applies(argv: &[String]) -> bool {
+    argv.iter().any(|t| t == ALLOW_FLAG)
+        && matches!(
+            argv.get(1).map(|t| t.trim()),
+            Some("encode")
+                | Some("decode")
+                | Some("inspect")
+                | Some("verify")
+                | Some("repair")
+                | Some("split")
+                | Some("combine")
+                | Some("derive")
+        )
+}
+
+/// Drop the override token, replace each material token with `-`, and seed the
+/// material into [`ADMITTED`].
+fn substitute(argv: &[String]) -> Vec<String> {
+    let mut map: std::collections::HashMap<String, Vec<String>> = Default::default();
+    let mut out: Vec<String> = Vec::with_capacity(argv.len());
+    let mut i = 0;
+    while i < argv.len() {
+        let token = argv[i].clone();
+        if token == ALLOW_FLAG {
+            i += 1;
+            continue;
+        }
+        let whole = token.trim().to_ascii_lowercase();
+        if i > 0 && SECRET_FLAGS.contains(&whole.as_str()) {
+            if let Some(value) = argv.get(i + 1) {
+                if value.trim() != "-" {
+                    map.entry(whole.clone()).or_default().push(value.clone());
+                    out.push(token);
+                    out.push("-".to_string());
+                    i += 2;
+                    continue;
+                }
+            }
+            out.push(token);
+            i += 1;
+            continue;
+        }
+        if i > 0 {
+            if let Some((lhs, _)) = whole.split_once('=') {
+                if SECRET_FLAGS.contains(&lhs) {
+                    let raw = token.trim().split_once('=').map(|(_, r)| r).unwrap_or("");
+                    if raw.trim() != "-" {
+                        map.entry(lhs.to_string())
+                            .or_default()
+                            .push(raw.to_string());
+                        out.push(format!("{lhs} -"));
+                        // Two tokens, not one: `--phrase=-` also parses, but
+                        // emitting the split form keeps the substituted argv in
+                        // the same shape as the space-joined case.
+                        out.pop();
+                        out.push(lhs.to_string());
+                        out.push("-".to_string());
+                        i += 1;
+                        continue;
+                    }
+                }
+            }
+            let is_material = argv_candidates(&token)
+                .iter()
+                .any(|c| material_class(c).is_some());
+            if is_material {
+                map.entry(CH_POSITIONAL.to_string())
+                    .or_default()
+                    .push(token);
+                out.push("-".to_string());
+                i += 1;
+                continue;
+            }
+        }
+        out.push(token);
+        i += 1;
+    }
+    // `set` rather than `get_or_init`: one process, one substitution.
+    let _ = ADMITTED.set(map);
+    out
 }
 
 /// `(index, class, character length)` of the first argv token carrying
@@ -376,7 +513,10 @@ mod tests {
     #[test]
     fn the_refusal_never_reproduces_the_value() {
         let seed = "legal winner thank year wave sausage worth useful legal winner thank yellow";
-        let msg = argv_secret_guard(&argv(&["encode", "--phrase", seed])).unwrap();
+        let msg = match decide(&argv(&["encode", "--phrase", seed])) {
+            Decision::Refuse(m) => m,
+            Decision::Proceed(_) => panic!("a seed on argv must be refused"),
+        };
         for word in seed.split_whitespace() {
             assert!(
                 !msg.to_lowercase().contains(word),

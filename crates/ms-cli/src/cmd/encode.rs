@@ -26,6 +26,18 @@ use crate::parse::{read_input, read_phrase_input, Source};
 #[derive(Args, Debug)]
 #[command(group = clap::ArgGroup::new("input").required(true).args(["phrase", "hex", "in_path"]))]
 pub struct EncodeArgs {
+    /// Proceed even though secret material is on argv.
+    ///
+    /// **Read off RAW argv before the parser, and it is a CHANNEL rather than a
+    /// flag** (§6d): the admitted value is replaced by `-` and routed to the
+    /// verb through a side channel, so it is never handed back to clap. It is
+    /// declared here so `--help` documents it, and destructured nowhere --
+    /// consulting it after parsing would be a decision reached too late.
+    ///
+    /// For a single-user air-gapped box, or an amnesic Tails session.
+    #[arg(long)]
+    pub allow_argv_secret: bool,
+
     /// BIP-39 mnemonic. Use `-` to read from stdin.
     #[arg(long)]
     pub phrase: Option<String>,
@@ -103,7 +115,7 @@ pub(crate) fn resolve_secret_payload(
     // present, so this is a routing decision and not a precedence one.
     let phrase_source: Option<crate::parse::Source> = match (in_path, phrase) {
         (Some(p), _) => Some(Source::new(None, Some(p))),
-        (None, Some(a)) => Some(Source::new(Some(a), None)),
+        (None, Some(a)) => Some(Source::new(Some(a), None).on("--phrase")),
         (None, None) => None,
     };
 
@@ -121,7 +133,7 @@ pub(crate) fn resolve_secret_payload(
                 Some(language.as_str()),
             )
         } else if let Some(hex_arg) = hex {
-            let hex_str = Zeroizing::new(read_input(Source::new(Some(hex_arg), None))?);
+            let hex_str = Zeroizing::new(read_input(Source::new(Some(hex_arg), None).on("--hex"))?);
             let bytes = Zeroizing::new(parse_hex_entropy(&hex_str)?);
             (bytes, None)
         } else {

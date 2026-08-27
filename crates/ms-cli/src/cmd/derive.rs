@@ -24,6 +24,18 @@ use crate::parse::{is_stdin_arg, read_input, read_phrase_input, Source};
 #[derive(Args, Debug)]
 #[command(group = clap::ArgGroup::new("entropy_src").args(["ms1", "hex", "phrase", "in_path"]))]
 pub struct DeriveArgs {
+    /// Proceed even though secret material is on argv.
+    ///
+    /// **Read off RAW argv before the parser, and it is a CHANNEL rather than a
+    /// flag** (§6d): the admitted value is replaced by `-` and routed to the
+    /// verb through a side channel, so it is never handed back to clap. It is
+    /// declared here so `--help` documents it, and destructured nowhere --
+    /// consulting it after parsing would be a decision reached too late.
+    ///
+    /// For a single-user air-gapped box, or an amnesic Tails session.
+    #[arg(long)]
+    pub allow_argv_secret: bool,
+
     /// ms1 string. Use `-` or omit to read from stdin.
     pub ms1: Option<String>,
 
@@ -350,7 +362,8 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
     // it supplied the ms1 channel does NOT consume stdin, so
     // `ms derive --in card.ms1 --passphrase-stdin` stops being refused and
     // becomes the first private way to derive with a passphrase (§2.5).
-    let ms1_src = Source::new(args.ms1.as_deref(), args.in_path.as_deref());
+    let ms1_src = Source::new(args.ms1.as_deref(), args.in_path.as_deref())
+        .on(crate::argv_guard::CH_POSITIONAL);
     let entropy_reads_stdin = if hex_arg.is_some() {
         hex_arg.as_deref().map(|s| s.as_str()) == Some("-")
     } else if phrase_arg.is_some() {
@@ -380,12 +393,13 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
     // consistent `(effective_lang, effective_lang_defaulted)` for the labels.
     let (mnemonic, effective_lang, effective_lang_defaulted): (Mnemonic, CliLanguage, bool) =
         if let Some(h) = &hex_arg {
-            let hex_str = Zeroizing::new(read_input(Source::new(Some(h.as_str()), None))?);
+            let hex_str =
+                Zeroizing::new(read_input(Source::new(Some(h.as_str()), None).on("--hex"))?);
             let entropy = Zeroizing::new(parse_hex_entropy(&hex_str)?);
             let m = Mnemonic::from_entropy_in(lang, &entropy[..]).map_err(CliError::Bip39)?;
             (m, cli_lang, defaulted)
         } else if let Some(p) = &phrase_arg {
-            let phrase = read_phrase_input(Source::new(Some(p.as_str()), None))?;
+            let phrase = read_phrase_input(Source::new(Some(p.as_str()), None).on("--phrase"))?;
             let m = Mnemonic::parse_in(lang, phrase.as_str()).map_err(CliError::Bip39)?;
             (m, cli_lang, defaulted)
         } else {
@@ -410,8 +424,14 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
     // BIP-39 passphrase (stdin or inline). C1: stdin via the byte-preserving
     // reader (NOT read_input, which strips/dedups whitespace and would mangle a
     // multi-word passphrase + disagree with the inline path).
+    // `--allow-argv-secret --passphrase <p>` substitutes the VALUE to `-`, so
+    // the side channel is consulted before the (now placeholder) inline value.
+    // `-` is not a passphrase anyone means, and without the override it keeps
+    // its old literal meaning -- unchanged behaviour.
     let passphrase: Zeroizing<String> = if args.passphrase_stdin {
         crate::parse::read_stdin_passphrase()?
+    } else if let Some([admitted, ..]) = crate::argv_guard::admitted("--passphrase") {
+        Zeroizing::new(admitted.clone())
     } else {
         passphrase_arg.unwrap_or_else(|| Zeroizing::new(String::new()))
     };

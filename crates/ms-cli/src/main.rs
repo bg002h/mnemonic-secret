@@ -180,12 +180,21 @@ fn main() -> ExitCode {
     // §6f rules `mk`'s invalid-artifact 2 the only code this cycle changes, and
     // that is P3's.
     let argv: Vec<String> = std::env::args().collect();
-    if let Some(msg) = argv_guard::argv_secret_guard(&argv) {
-        eprintln!("ms: {msg}");
-        return ExitCode::from(1);
-    }
+    // `--allow-argv-secret` is a CHANNEL, not a flag: its own parse happens
+    // here too, or it could not be honoured without parsing the very argv the
+    // guard exists to protect. When it applies, `decide` hands back a
+    // SUBSTITUTED argv -- the override token dropped, each admitted value
+    // replaced by `-` -- and seeds the material into a side channel the intake
+    // helpers consult before stdin.
+    let parse_argv: Vec<String> = match argv_guard::decide(&argv) {
+        argv_guard::Decision::Refuse(msg) => {
+            eprintln!("ms: {msg}");
+            return ExitCode::from(1);
+        }
+        argv_guard::Decision::Proceed(v) => v,
+    };
 
-    let cli = match Cli::try_parse() {
+    let cli = match Cli::try_parse_from(&parse_argv) {
         Ok(cli) => cli,
         Err(e) => {
             // Clap returns Err for two non-error terminations: --version

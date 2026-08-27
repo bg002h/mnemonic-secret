@@ -34,6 +34,18 @@ pub enum CombineTo {
 #[derive(Args, Debug)]
 #[command(group = clap::ArgGroup::new("combine_input").required(true).args(["shares", "in_path"]))]
 pub struct CombineArgs {
+    /// Proceed even though secret material is on argv.
+    ///
+    /// **Read off RAW argv before the parser, and it is a CHANNEL rather than a
+    /// flag** (§6d): the admitted value is replaced by `-` and routed to the
+    /// verb through a side channel, so it is never handed back to clap. It is
+    /// declared here so `--help` documents it, and destructured nowhere --
+    /// consulting it after parsing would be a decision reached too late.
+    ///
+    /// For a single-user air-gapped box, or an amnesic Tails session.
+    #[arg(long)]
+    pub allow_argv_secret: bool,
+
     /// The distributed share strings to recombine (K or more, distinct indices).
     pub shares: Vec<String>,
 
@@ -92,6 +104,18 @@ fn read_shares(
     for a in args {
         if a == "-" && !consumed_stdin {
             consumed_stdin = true;
+            // The override's side channel first: `--allow-argv-secret <s1> <s2>`
+            // substitutes each share to `-`, and the shares arrive here in argv
+            // order rather than from stdin.
+            if let Some(shares) = crate::argv_guard::admitted(crate::argv_guard::CH_POSITIONAL) {
+                for share in shares {
+                    let s = crate::format::strip_display_separators(share);
+                    if !s.is_empty() {
+                        out.push(s);
+                    }
+                }
+                continue;
+            }
             let buf = crate::parse::read_stdin()?;
             for line in buf.lines() {
                 let s = crate::format::strip_display_separators(line);

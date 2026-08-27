@@ -28,13 +28,27 @@ use crate::error::{CliError, Result};
 pub struct Source<'a> {
     arg: Option<&'a str>,
     in_path: Option<&'a Path>,
+    /// Which of the fourteen secret channels this is, for the override's side
+    /// channel. `""` means "not a channel the override can admit".
+    channel: &'a str,
 }
 
 impl<'a> Source<'a> {
     /// `arg` is the verb's own argv channel (`None` when omitted, `Some("-")`
     /// for explicit stdin, `Some(v)` for a value). `in_path` is `--in`.
     pub fn new(arg: Option<&'a str>, in_path: Option<&'a Path>) -> Self {
-        Self { arg, in_path }
+        Self {
+            arg,
+            in_path,
+            channel: "",
+        }
+    }
+
+    /// Name the channel, so `--allow-argv-secret`-admitted material can be
+    /// routed to it without ever being handed back to clap.
+    pub fn on(mut self, channel: &'a str) -> Self {
+        self.channel = channel;
+        self
     }
 
     /// True iff this source will consume the process's stdin.
@@ -59,7 +73,14 @@ impl<'a> Source<'a> {
             ))),
             (Some(p), None) => read_in_file(p),
             (None, Some(s)) if s != "-" => Ok(Zeroizing::new(s.to_string())),
-            (None, _) => read_stdin(),
+            // The override's side channel is consulted BEFORE stdin. `-` here
+            // is a placeholder that satisfies clap's arity, not a real read --
+            // which is why the gate runs the same invocation with stdin at
+            // /dev/null: material that truly came from stdin cannot survive it.
+            (None, _) => match crate::argv_guard::admitted(self.channel) {
+                Some([first, ..]) => Ok(Zeroizing::new(first.clone())),
+                _ => read_stdin(),
+            },
         }
     }
 }

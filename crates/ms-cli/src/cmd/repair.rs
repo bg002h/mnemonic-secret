@@ -61,6 +61,18 @@ use crate::parse::{read_input, Source};
 #[derive(Args, Debug)]
 #[command(group = clap::ArgGroup::new("repair_input").required(true).args(["ms1", "in_path"]))]
 pub struct RepairArgs {
+    /// Proceed even though secret material is on argv.
+    ///
+    /// **Read off RAW argv before the parser, and it is a CHANNEL rather than a
+    /// flag** (§6d): the admitted value is replaced by `-` and routed to the
+    /// verb through a side channel, so it is never handed back to clap. It is
+    /// declared here so `--help` documents it, and destructured nowhere --
+    /// consulting it after parsing would be a decision reached too late.
+    ///
+    /// For a single-user air-gapped box, or an amnesic Tails session.
+    #[arg(long)]
+    pub allow_argv_secret: bool,
+
     /// ms1 string to attempt to repair. Use `-` to read the string from
     /// stdin (a single line). Single-chunk per codex32 spec; non-repeating.
     #[arg(long, value_name = "MS1")]
@@ -103,10 +115,9 @@ struct RepairDetail {
 pub fn run(args: RepairArgs) -> Result<u8> {
     // `read_input` handles the `-` stdin sentinel (single line / trimmed).
     // cycle-15 Lane M (slug #6): the ms1 intake IS secret material — scrub on drop.
-    let original: Zeroizing<String> = Zeroizing::new(read_input(Source::new(
-        args.ms1.as_deref(),
-        args.in_path.as_deref(),
-    ))?);
+    let original: Zeroizing<String> = Zeroizing::new(read_input(
+        Source::new(args.ms1.as_deref(), args.in_path.as_deref()).on("--ms1"),
+    )?);
 
     // `decode_with_correction` performs BCH correction internally; HRP /
     // length / BCH-uncorrectable rejections surface as `ms_codec::Error`

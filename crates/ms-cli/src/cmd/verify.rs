@@ -17,6 +17,18 @@ use crate::parse::{read_input, read_phrase_input, Source};
 /// `ms verify` arguments.
 #[derive(Args, Debug)]
 pub struct VerifyArgs {
+    /// Proceed even though secret material is on argv.
+    ///
+    /// **Read off RAW argv before the parser, and it is a CHANNEL rather than a
+    /// flag** (§6d): the admitted value is replaced by `-` and routed to the
+    /// verb through a side channel, so it is never handed back to clap. It is
+    /// declared here so `--help` documents it, and destructured nowhere --
+    /// consulting it after parsing would be a decision reached too late.
+    ///
+    /// For a single-user air-gapped box, or an amnesic Tails session.
+    #[arg(long)]
+    pub allow_argv_secret: bool,
+
     /// ms1 string to verify. Use `-` or omit to read from stdin.
     pub ms1: Option<String>,
 
@@ -56,7 +68,8 @@ pub fn run(mut args: VerifyArgs) -> Result<u8> {
 
     // Step 1: read ms1 input. Concurrent-stdin guard: if both ms1 and --phrase
     // resolve to stdin, exit immediately (clap can't catch this).
-    let ms1_src = Source::new(args.ms1.as_deref(), args.in_path.as_deref());
+    let ms1_src = Source::new(args.ms1.as_deref(), args.in_path.as_deref())
+        .on(crate::argv_guard::CH_POSITIONAL);
     if ms1_src.reads_stdin() && phrase_arg.as_deref().map(|s| s.as_str()) == Some("-") {
         return Err(CliError::BadInput(
             "cannot read both ms1 and --phrase from stdin".into(),
@@ -105,7 +118,9 @@ pub fn run(mut args: VerifyArgs) -> Result<u8> {
 
     // Step 3: parse --phrase if present.
     let phrase_supplied: Option<Zeroizing<String>> = match phrase_arg.as_ref() {
-        Some(p) => Some(read_phrase_input(Source::new(Some(p.as_str()), None))?),
+        Some(p) => Some(read_phrase_input(
+            Source::new(Some(p.as_str()), None).on("--phrase"),
+        )?),
         None => None,
     };
 

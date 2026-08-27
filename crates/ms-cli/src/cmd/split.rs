@@ -27,6 +27,18 @@ use crate::language::CliLanguage;
 #[derive(Args, Debug)]
 #[command(group = clap::ArgGroup::new("split_input").required(true).args(["phrase", "hex", "in_path"]))]
 pub struct SplitArgs {
+    /// Proceed even though secret material is on argv.
+    ///
+    /// **Read off RAW argv before the parser, and it is a CHANNEL rather than a
+    /// flag** (§6d): the admitted value is replaced by `-` and routed to the
+    /// verb through a side channel, so it is never handed back to clap. It is
+    /// declared here so `--help` documents it, and destructured nowhere --
+    /// consulting it after parsing would be a decision reached too late.
+    ///
+    /// For a single-user air-gapped box, or an amnesic Tails session.
+    #[arg(long)]
+    pub allow_argv_secret: bool,
+
     /// BIP-39 mnemonic to split. Use `-` to read from stdin.
     #[arg(long)]
     pub phrase: Option<String>,
