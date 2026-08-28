@@ -13,3 +13,9 @@ rust-version = "1.85"
 # ms-codec at crates/ms-codec/src/codex32/ (Cycle-B, shape A; CC0-1.0). Consumers
 # reach it via `ms_codec::codex32::`.
 [workspace.dependencies]
+
+[profile.test]
+opt-level = 2
+
+[profile.dev]
+opt-level = 2
