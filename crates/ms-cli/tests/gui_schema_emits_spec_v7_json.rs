@@ -205,3 +205,85 @@ fn gui_schema_inspect_subcommand_present() {
         "inspect must have an ms1 positional"
     );
 }
+
+// ---------------------------------------------------------------------------
+// P2 row 13 — THE SCHEMA STILL DESCRIBES THE BINARY.
+//
+// `ms gui-schema` is clap-derived, so it follows the flag surface
+// automatically. This entry asserts that it DID, and it asserts an ARITHMETIC
+// rather than a presence, so a flag that failed to reach the schema goes RED on
+// the count instead of on a reader's attention.
+//
+// Measured baseline before P2: 10 subcommands carrying 36 flags -- derive 9,
+// encode 7, decode 2, inspect 1, verify 3, vectors 1, gen-man 1, repair 2,
+// split 8, combine 2. P2 adds `--in` on the eight material verbs (+8),
+// `--allow-argv-secret` on the same eight (+8), and `--out` on encode, split
+// and repair (+3). 36 + 19 = 55.
+//
+// The `mnemonic-gui` schema mirror is NOT regenerated here -- §7 gives that to
+// P3, and F-283 records that P2 is when it goes stale for `ms`.
+// ---------------------------------------------------------------------------
+
+const MATERIAL_VERBS: [&str; 8] = [
+    "derive", "encode", "decode", "inspect", "verify", "repair", "split", "combine",
+];
+
+fn schema_json() -> serde_json::Value {
+    let out = assert_cmd::Command::cargo_bin("ms")
+        .unwrap()
+        .arg("gui-schema")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "gui-schema must exit 0");
+    serde_json::from_slice(&out.stdout).expect("gui-schema emits JSON")
+}
+
+fn flags_of<'a>(v: &'a serde_json::Value, verb: &str) -> Vec<&'a str> {
+    v["subcommands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["name"] == verb)
+        .unwrap_or_else(|| panic!("no subcommand {verb}"))["flags"]
+        .as_array()
+        .map(|a| a.iter().map(|f| f["name"].as_str().unwrap()).collect())
+        .unwrap_or_default()
+}
+
+#[test]
+fn the_schema_names_every_flag_p2_added_and_the_total_is_55() {
+    let v = schema_json();
+    for verb in MATERIAL_VERBS {
+        let flags = flags_of(&v, verb);
+        assert!(
+            flags.contains(&"--in"),
+            "{verb} must carry --in in the schema; has {flags:?}"
+        );
+        assert!(
+            flags.contains(&"--allow-argv-secret"),
+            "{verb} must carry --allow-argv-secret in the schema; has {flags:?}"
+        );
+    }
+    for verb in ["encode", "split", "repair"] {
+        assert!(
+            flags_of(&v, verb).contains(&"--out"),
+            "{verb} must carry --out in the schema"
+        );
+    }
+    // ...and gen-man's --out, the OTHER meaning, is still described too.
+    assert!(flags_of(&v, "gen-man").contains(&"--out"));
+
+    let total: usize = v["subcommands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["flags"].as_array().map(|a| a.len()).unwrap_or(0))
+        .sum();
+    assert_eq!(
+        total, 55,
+        "36 before P2, plus --in x8, --allow-argv-secret x8 and --out x3. A \
+         different total means a flag reached the binary and not the schema, or \
+         the reverse -- either way the GUI's mirror would be describing a \
+         different program."
+    );
+}

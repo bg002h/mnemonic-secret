@@ -288,6 +288,12 @@ jobs:
           /usr/bin/fish --version
       - name: cargo test --test history_purge -- --include-ignored
         run: cargo test -p ms-cli --test history_purge -- --include-ignored
+      # The DECLINE's terminal assertion needs a pty for the same reason and is
+      # #[ignore]-gated for the same reason -- `ms encode` to a real terminal
+      # must still exit 0 and still print the artifact, which is what goes RED
+      # if `exit::write_block`'s unconditional terminal refusal is ever adopted.
+      - name: cargo test --test the_decline -- --include-ignored
+        run: cargo test -p ms-cli --test the_decline -- --include-ignored
 
   g6-invariant:
     # Cycle B SPEC §6 G6 — cross-repo mlock.rs inline-copy invariant.
