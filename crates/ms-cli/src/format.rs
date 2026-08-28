@@ -36,15 +36,32 @@ pub fn strip_display_separators(s: &str) -> String {
     s.chars().filter(|&c| !is_display_separator(c)).collect()
 }
 
-/// Parse `--separator`: keyword (`space|hyphen|comma`) or literal (`" "|-|,`).
-/// SPEC §5. clap value-parser; rejection is an exit-64 parse error.
+/// Parse `--separator`: **whitespace only** (§6c). clap value-parser; rejection
+/// is an exit-64 parse error.
+///
+/// **`hyphen` and `comma` are retired from EMISSION, and this is the only place
+/// that changes.** One `parse_separator` serves both `ms encode` and
+/// `ms split`, so it cannot bind to one of them.
+///
+/// **INTAKE IS NOT NARROWED, and the distinction is what keeps engraved metal
+/// readable.** [`is_display_separator`] still strips `-` and `,`, and
+/// [`render_grouped`] keeps its `char` parameter — a plate already cut from a
+/// hyphen-grouped card must still decode. Narrowing emission is a uniformity
+/// decision; narrowing intake would strand plates that exist.
+///
+/// It also leaves the SHA-pinned `design/display-grouping-vectors.tsv`
+/// untouched: its 22 rows (2 hyphen, 3 comma) call `render_grouped` directly and
+/// never reach this function.
 pub fn parse_separator(s: &str) -> Result<char, String> {
     match s {
         "space" | " " => Ok(' '),
-        "hyphen" | "-" => Ok('-'),
-        "comma" | "," => Ok(','),
+        "hyphen" | "-" | "comma" | "," => Err(format!(
+            "separator {s:?} is no longer offered: `ms` emits whitespace grouping \
+             only. An already-engraved hyphen- or comma-grouped card still DECODES \
+             -- only new cards are affected."
+        )),
         other => Err(format!(
-            "invalid separator {other:?}; expected one of: space|hyphen|comma (or the literal char)"
+            "invalid separator {other:?}; expected `space` (or the literal \" \")"
         )),
     }
 }
@@ -193,13 +210,40 @@ mod tests {
         assert_eq!(strip_display_separators(&once), once);
     }
 
+    /// **REWRITTEN for §6c, and it is one of the 146 `#[test]`s inside `src/`**
+    /// — outside the 276 integration tests, which is why an enumerated diff
+    /// scoped to `tests/` would not have reached it (R0 round 0's M-4).
     #[test]
-    fn parse_separator_keyword_and_literal() {
+    fn parse_separator_offers_whitespace_only_and_names_why() {
         assert_eq!(parse_separator("space").unwrap(), ' ');
         assert_eq!(parse_separator(" ").unwrap(), ' ');
-        assert_eq!(parse_separator("hyphen").unwrap(), '-');
-        assert_eq!(parse_separator("comma").unwrap(), ',');
+        for retired in ["hyphen", "-", "comma", ","] {
+            let e = parse_separator(retired).unwrap_err();
+            assert!(
+                e.contains("no longer offered"),
+                "a retired separator must say so rather than read as a typo: {e}"
+            );
+            assert!(
+                e.contains("still DECODES"),
+                "and must say intake was NOT narrowed, or an operator with an \
+                 engraved hyphen card reads this as data loss: {e}"
+            );
+        }
         assert!(parse_separator("bogus").is_err());
+    }
+
+    /// **The intake half, pinned right beside the emission half.** These two are
+    /// the ones a later tidy-up would "make consistent" -- and doing so would
+    /// strand every plate already cut from a hyphen- or comma-grouped card.
+    #[test]
+    fn intake_still_strips_the_retired_separators() {
+        assert!(is_display_separator('-'));
+        assert!(is_display_separator(','));
+        assert_eq!(strip_display_separators("ms10e-ntrs,qqqq"), "ms10entrsqqqq");
+        // and `render_grouped` keeps its `char` parameter, which the SHA-pinned
+        // conformance vectors call directly with `-` and `,`.
+        assert_eq!(render_grouped("abcdef", 3, '-'), "abc-def");
+        assert_eq!(render_grouped("abcdef", 3, ','), "abc,def");
     }
 
     #[test]
