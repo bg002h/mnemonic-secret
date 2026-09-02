@@ -59,6 +59,31 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/ms-cli-v')
         run: gh release upload "$REF_NAME" ms-man.tar.gz --clobber
 
+  # ── F-324: derive the mnemonic-io-lib rev from Cargo.lock ──────────────────
+  # Mirrors ci/repro/vendor-freshness.sh's own extraction exactly (same regex,
+  # same fail-closed-on-empty behaviour) so the `repro` job below never carries
+  # a hand-written copy of the rev that could drift from the lockfile the pin
+  # actually lives in.
+  pins:
+    name: derive git-source pins
+    runs-on: ubuntu-latest
+    outputs:
+      io_lib_rev: ${{ steps.derive.outputs.io_lib_rev }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive mnemonic-io-lib rev from Cargo.lock
+        id: derive
+        run: |
+          set -euo pipefail
+          REV="$(grep -oE 'mnemonic-engrave\?rev=[0-9a-f]{40}' Cargo.lock | head -1 | grep -oE '[0-9a-f]{40}' || true)"
+          if [ -z "$REV" ]; then
+            echo "::error::pins: could not derive the mnemonic-io-lib rev from Cargo.lock" \
+                 "(expected a 'mnemonic-engrave?rev=<40-hex>' source line). Failing closed." >&2
+            exit 1
+          fi
+          echo "io_lib_rev=$REV" >> "$GITHUB_OUTPUT"
+
   # ── REPRODUCIBILITY: the toolkit-homed gate ────────────────────────────────
   # Calls the centralized reusable workflow from mnemonic-toolkit (F6: ONE
   # source of truth for Dockerfile.repro + ci/repro/*.sh + the gate jobs). The
@@ -73,26 +98,27 @@ jobs:
   # TWO-block `--config` form (crates-io + vendored-sources only; NO git-fork
   # stanza).
   #
-  # ── F-324: THIS JOB IS KNOWN-RED AFTER P2, AND THE FIX IS NOT IN THIS REPO ──
-  # P2 pins `mnemonic-io-lib` by git rev, so Cargo.lock now carries a
+  # ── F-324: FIXED 2026-09-02, once the gate below has executed green ────────
+  # P2 pinned `mnemonic-io-lib` by git rev, so Cargo.lock carries a
   # `git+https://github.com/bg002h/mnemonic-engrave?rev=…` source. The reusable
-  # workflow above was read at its pinned SHA: its ONLY git-source knob is
-  # `miniscript_rev`, and the three `--config` lines it builds hard-code
-  # `https://github.com/rust-bitcoin/rust-miniscript` as the source URL. There
-  # is NO input by which a caller can declare a different git source, so this
-  # job cannot resolve mnemonic-io-lib `--offline` and will fail at the next
-  # `ms-cli-v*` tag.
+  # workflow's ONLY git-source knob used to be `miniscript_rev`, whose three
+  # `--config` lines hard-code `https://github.com/rust-bitcoin/rust-miniscript`
+  # as the source URL — there was no input by which a caller could declare a
+  # different git source, so this job could not resolve mnemonic-io-lib
+  # `--offline` and failed at `ms-cli-v0.17.0`'s tag (run 33621228397:
+  # `repro-substrate` / `repro-x86_64-musl` FAILED, both `musl-binary` legs
+  # SKIPPED, no musl tarballs / PROVENANCE / SHA256SUMS published).
   #
-  # It is left CALLED rather than disabled: a skipped gate prints ok and exit 0,
-  # which is how an unrun gate passes for months. The two legs of
-  # `musl-binaries` below ARE fixed (three-block, rev derived from Cargo.lock),
-  # because those live here.
-  #
-  # The fix is a `git_source`/`git_rev` input on the toolkit's reusable
-  # workflow, a repo shared by md, mk and mt — cross-repo work, owned BEFORE the
-  # next ms-cli-v* tag. It must be exercised once by `workflow_dispatch` after
-  # re-pinning, so the gate has actually executed rather than merely been
-  # edited. F-324 in mnemonic-engrave's design/FOLLOWUPS.md carries it.
+  # The toolkit gained generic `git_source_url` / `git_source_rev` inputs at
+  # TOOLKIT_SHA (bg002h/mnemonic-toolkit@d39d96269ce352270189c11fabebf9ad070362b4,
+  # commits 21b6696e + d39d9626) — a fourth `[source]` replacement stanza,
+  # additive to the miniscript one, added only when both inputs are non-empty.
+  # This caller supplies them below; the `pins` job above derives the rev from
+  # Cargo.lock (not hand-written) so moving the pin forward cannot leave this
+  # job pointing at a stale rev. F-324 in mnemonic-engrave's
+  # design/FOLLOWUPS.md carries the full history; closed once a
+  # `workflow_dispatch` run of this workflow reports the `repro` job green
+  # end-to-end against this config (the gate below).
   #
   # run_aarch64: false — the x86_64 gate runs inline; the slow (~30-60min QEMU)
   # aarch64 byte-gate is exercised on demand via the toolkit reusable workflow's
@@ -100,11 +126,12 @@ jobs:
   # artifact is STILL reproducible — the `musl-binaries` cross leg below is
   # re-homed onto the digest-pinned Cross.toml recipe.
   #
-  # toolkit_ref is a CONCRETE SHA (P3a's enabling commit). It MUST be concrete:
-  # the empty default falls back to the CALLER's SHA, which does not exist in the
-  # toolkit repo (the recipe checkout would 404).
+  # toolkit_ref is a CONCRETE SHA (the F-324 enabling commit). It MUST be
+  # concrete: the empty default falls back to the CALLER's SHA, which does not
+  # exist in the toolkit repo (the recipe checkout would 404).
   repro:
-    uses: bg002h/mnemonic-toolkit/.github/workflows/reproducible-musl-build.yml@6e37b18e50f9f857e439db1ebe2748fc91a54612
+    needs: pins
+    uses: bg002h/mnemonic-toolkit/.github/workflows/reproducible-musl-build.yml@d39d96269ce352270189c11fabebf9ad070362b4
     permissions:
       contents: read
       packages: write
@@ -115,10 +142,17 @@ jobs:
       target: x86_64-unknown-linux-musl
       arch: x86_64
       run_aarch64: false
-      # ms is fork-free ⇒ EMPTY rev selects the TWO-block --config form.
+      # ms is fork-free ⇒ EMPTY rev selects the TWO-block --config form for
+      # the miniscript stanza specifically (unrelated to the git_source_* pair
+      # below, which is additive).
       miniscript_rev: ""
-      # Source the centralized recipe from the toolkit at the P3a enabling commit.
-      toolkit_ref: 6e37b18e50f9f857e439db1ebe2748fc91a54612
+      # F-324: the mnemonic-io-lib git source. Both non-empty ⇒ the toolkit
+      # adds a fourth [source] replacement stanza; the rev tracks Cargo.lock
+      # via the pins job above.
+      git_source_url: https://github.com/bg002h/mnemonic-engrave
+      git_source_rev: ${{ needs.pins.outputs.io_lib_rev }}
+      # Source the centralized recipe from the toolkit at the F-324 enabling commit.
+      toolkit_ref: d39d96269ce352270189c11fabebf9ad070362b4
 
   # Static, dependency-free `ms` binaries for air-gapped / Alpine / musl boxes.
   # Builds both musl targets and attaches a static tarball per arch + a per-arch
