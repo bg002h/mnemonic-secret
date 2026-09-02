@@ -4,6 +4,18 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.17.1] — 2026-09-02
+
+Release infrastructure only; no code change since 0.17.0. `ms-cli-v0.17.0`
+was published without its musl binaries: the reproducible-build gate in
+`man-release.yml` could not resolve the `mnemonic-io-lib` git source under
+`--offline` (F-324, filed 2026-08-27, materialised at the 0.17.0 tag). The
+toolkit's reusable workflow gained `git_source_url`/`git_source_rev` inputs
+(mnemonic-toolkit d39d9626), this repo re-pinned and passes them (a069c77c,
+the `pins` job derives the rev from `Cargo.lock`), and the gate executed green
+by `workflow_dispatch` (run 33624724552) before this tag. 0.17.1 exists so the
+binaries, PROVENANCE and SHA256SUMS ship.
+
 ## ms-cli [0.17.0] — 2026-09-02
 
 - `ms derive --template bip48-p2tr` derives `m/48'/coin'/account'/3'`, the
