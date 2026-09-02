@@ -451,7 +451,7 @@ source = "git+https://github.com/bg002h/mnemonic-engrave?rev=6c24e62823e6c1ac02a
 
 [[package]]
 name = "ms-cli"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "assert_cmd",
  "bip39",
