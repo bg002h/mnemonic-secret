@@ -631,3 +631,35 @@ Single source of truth for items that surfaced during a review or implementation
 This repo commits a `vendor/` tree consumed by the `--offline --locked` reproducible build, but has NO leading PR-time check that it stays in sync with `Cargo.lock` — the same latent bug that broke `mnemonic-toolkit` **v0.74.0**'s reproducible release (a codec dep bump without `cargo vendor` → the tag-triggered repro build could not resolve, caught only at the release tag).
 
 - **Status:** ✓ **RESOLVED (2026-06-28)** — ported `ci/repro/vendor-freshness.sh` + `.github/workflows/vendor-freshness.yml` (TWO-block fork-free form; defensive git-source tripwire added so a future git dep fails closed rather than silently mis-resolving). Empirically verified FRESH→exit 0, STALE→exit 1 (vendor restored byte-clean); workflow runs on PR + push to the default branch, path-filtered. **Tier:** `ci`. **Companion:** `mnemonic-toolkit` `design/FOLLOWUPS.md::vendor-freshness-pr-gate` (RESOLVED there 2026-06-26) + `docs/verify-reproducibility.md`.
+
+### `ms-derive-taproot-justifications-stale` — the two stated reasons for `bg002h-tr` (and against a `bip48-p2tr` template) in `derive.rs` are measurably false today (repo: **mnemonic-secret**; owning phase: **docs fix now; template decision follows the composer's origin ruling**)
+
+Filed 2026-09-01 from the mnemonic-engrave wallet-policy composer recon
+`design/agent-reports/composer-recon-taproot-multisig-origin-convention.md`
+(persisted there), re-checked by the controller against source.
+
+**Claim 1 — `crates/ms-cli/src/cmd/derive.rs:102-105`:** "There is no
+`bip48-p2tr`: BIP-48 registers no Taproot script type, and inventing one would
+derive to a path no other wallet looks at." **False:** Coldcard Edge firmware
+exports `bip48_3` = `m/48h/{coin}h/{acct}h/3h` marked multisig, and Liana's test
+corpus consumes a Coldcard export carrying `"p2tr_deriv": "m/48h/1h/0h/3h"`
+(recon findings table, SOURCED). `mnemonic-toolkit` itself sweeps that path as
+`bip48-tr-multi-a` (`crates/mnemonic-toolkit/src/cmd/xpub_search/candidate_paths.rs:85`).
+The first half stays true: BIP-48 registers only `1'` and `2'`, and bips PR #1473
+proposing `3'` was closed unmerged 2024-05-14.
+
+**Claim 2 — `derive.rs:126-133`:** "md requires depth 4 for any multisig script
+context." **Stale:** `md encode --key` admits account xpubs at depth 3 OR 4
+(`descriptor-mnemonic/crates/md-cli/src/parse/keys.rs:130`, `matches!(depth, 3 | 4)`);
+a depth-3 `m/87'/0'/0'` taproot policy encodes and round-trips on md 0.14.0
+(measured 2026-09-01).
+
+**What to do.** (1) Fix both doc comments now (docs-only). (2) The TEMPLATE
+decision — add `bip48-p2tr` (`…/3'`) and/or `bip87` to `ms derive --template`,
+and whether `bg002h-tr` keeps its `270028'/…/0'` purpose — follows the composer
+spec's origin ruling (mnemonic-engrave `SPEC_wallet_policy_composer.md` §13 item
+1) so that `ms derive` can emit whatever origin the device declares for
+seed-derived taproot slots. The constellation is currently inconsistent three
+ways: toolkit defaults to BIP-87, `ms` rules `270028'`, the fork ships `48'/…/2'`.
+
+- **Status:** OPEN. **Tier:** `docs` now; `feature` after the ruling.
