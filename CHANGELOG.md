@@ -4,6 +4,16 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [Unreleased]
+
+- `ms derive --template bip48-p2tr` derives `m/48'/coin'/account'/3'`, the
+  SeedHammer II composer's origin for seed-derived taproot multisig slots
+  (Coldcard `bip48_3` / Liana `p2tr_deriv` convention; not a BIP-48
+  registration). The negative test asserting refusal became a positive one
+  pinned to a two-implementation oracle. The `derive.rs` doc comments that
+  claimed "no wallet looks at 48'/…/3'" and "md requires depth 4" are
+  corrected (follow-up `ms-derive-taproot-justifications-stale`, closed).
+
 ## ms-cli [0.16.0] — 2026-08-15
 
 **SemVer-MINOR — reverses 0.15.0's refusal of a bare `--template bip48`. Purely additive: a new accepted value and a new `--json` field.**

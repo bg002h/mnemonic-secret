@@ -99,10 +99,17 @@ pub struct DeriveArgs {
 /// multisig should not be stopped for not knowing a level of a derivation path.
 /// Permissive on input, expressive on output.
 ///
-/// There is no `bip48-p2tr`: BIP-48 registers no Taproot script type, and
-/// inventing one would derive to a path no other wallet looks at. That is where
-/// permissiveness STOPS — assuming a documented default is service, inventing an
-/// unregistered path is data loss.
+/// `bip48-p2tr` is `m/48'/coin'/account'/3'`. BIP-48 registers only `1'` and
+/// `2'` (bips PR #1473 proposing `3'` closed unmerged 2024-05-14), so `3'` is a
+/// CONVENTION, not a registration -- but a real one: Coldcard exports `bip48_3`
+/// as `m/48h/{coin}h/{acct}h/3h` marked multisig, Liana's corpus consumes a
+/// Coldcard export carrying `"p2tr_deriv": "m/48h/1h/0h/3h"`, and
+/// mnemonic-toolkit sweeps the path as `bip48-tr-multi-a`. The SeedHammer II
+/// composer declares exactly this origin for its seed-derived taproot slots
+/// (mnemonic-engrave SPEC_wallet_policy_composer.md C28), so a host-derived
+/// `key:` record must be able to match it. This is where permissiveness still
+/// STOPS: no bare `bip48` assumes taproot, and no template invents a path no
+/// wallet reads.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
 #[clap(rename_all = "lower")]
 pub enum Template {
@@ -120,13 +127,22 @@ pub enum Template {
     /// BIP-48 with no script type named: assumes `2'` (p2wsh) and says so.
     #[value(name = "bip48")]
     Bip48,
+    /// BIP-48-shaped taproot multisig (script_type 3'): the composer's origin
+    /// for seed-derived taproot slots. A convention shared with Coldcard and
+    /// Liana, not a BIP-48 registration -- see the type doc.
+    #[value(name = "bip48-p2tr")]
+    Bip48P2tr,
     /// The constellation's own path for TAPROOT keys:
     /// `m/270028'/coin'/account'/0'`.
     ///
     /// This is the answer to the gap the type doc above describes. BIP-48
-    /// registers no taproot script type, so a `tr()` multisig key has no
-    /// standard 4-level home -- and md requires depth 4 for any multisig
-    /// script context. Purpose `270028'` reads as `bg002h` in a single
+    /// registers no taproot script type; `bip48-p2tr` (3') is the
+    /// convention the composer and Coldcard/Liana use, and this purpose is the
+    /// constellation's own alternative for a layout that can never be mistaken
+    /// for BIP-48. (md admits account xpubs at depth 3 OR 4 --
+    /// descriptor-mnemonic `parse/keys.rs`, `matches!(depth, 3 | 4)` -- so
+    /// depth is not the reason for either template.)
+    /// Purpose `270028'` reads as `bg002h` in a single
     /// component (`27`->bg, `00`, `2`, `8`->h) and sits permanently outside
     /// any plausible BIP number, so it cannot collide with a future
     /// registration the way a bare `270'` could. Level 4 is the script type:
@@ -149,7 +165,10 @@ impl Template {
             Template::Bip49 => 49,
             Template::Bip84 => 84,
             Template::Bip86 => 86,
-            Template::Bip48P2wsh | Template::Bip48P2shP2wsh | Template::Bip48 => 48,
+            Template::Bip48P2wsh
+            | Template::Bip48P2shP2wsh
+            | Template::Bip48
+            | Template::Bip48P2tr => 48,
             Template::Bg002hTr | Template::Bg002hWsh => 270_028,
         }
     }
@@ -166,6 +185,7 @@ impl Template {
             // is what script_type_defaulted reports.
             Template::Bip48P2wsh | Template::Bip48 => Some(2),
             Template::Bip48P2shP2wsh => Some(1),
+            Template::Bip48P2tr => Some(3),
             // The constellation's own level-4 script values: 0' = tr, 1' = wsh.
             // Not BIP-48's 1'/2' -- reusing those would let the layout be
             // mistaken for BIP-48.
@@ -192,6 +212,7 @@ impl Template {
         match self {
             Template::Bip48P2wsh | Template::Bip48 => "2' p2wsh (native segwit)",
             Template::Bip48P2shP2wsh => "1' p2sh-p2wsh (nested segwit)",
+            Template::Bip48P2tr => "3' p2tr (taproot multisig; Coldcard/Liana convention)",
             Template::Bg002hTr => "0' tr (taproot)",
             Template::Bg002hWsh => "1' wsh (native segwit multisig)",
             _ => "",

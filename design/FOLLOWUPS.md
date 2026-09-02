@@ -662,4 +662,9 @@ spec's origin ruling (mnemonic-engrave `SPEC_wallet_policy_composer.md` §13 ite
 seed-derived taproot slots. The constellation is currently inconsistent three
 ways: toolkit defaults to BIP-87, `ms` rules `270028'`, the fork ships `48'/…/2'`.
 
-- **Status:** OPEN. **Tier:** `docs` now; `feature` after the ruling.
+`bg002h-tr` KEEPS its `270028'/…/0'` purpose: the composer spec §4f rules
+`48'/…/3'` for seed-derived slots, and nothing in composer Stage 1 removes
+`bg002h-tr` — it stays the constellation's own alternative for a layout that
+can never be mistaken for BIP-48.
+
+- **Status:** CLOSED 2026-09-02 by composer Stage 1 (bip48-p2tr added; both comments rewritten). **Tier:** was docs + feature.

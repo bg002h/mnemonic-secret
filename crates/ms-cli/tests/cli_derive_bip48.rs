@@ -17,8 +17,10 @@
 //!
 //! and it registers exactly two script types — `1'` nested segwit (p2sh-p2wsh)
 //! and `2'` native segwit (p2wsh), the latter being the recommended default.
-//! There is no registered Taproot value, so none is offered here; inventing one
-//! would put funds at a path no other wallet looks at.
+//! BIP-48 registers no Taproot value; `bip48-p2tr` (`3'`) is offered anyway
+//! because it is a live CONVENTION (Coldcard `bip48_3`, Liana `p2tr_deriv`) and
+//! the SeedHammer II composer's own origin for seed-derived taproot slots — see
+//! `derive.rs`'s type doc.
 //!
 //! # Provenance of the pins below
 //!
@@ -167,17 +169,57 @@ fn a_phrase_derives_the_same_account_as_the_hex() {
     assert!(out(&o).contains(P2WSH_ACCT0), "{}", out(&o));
 }
 
-/// No Taproot script_type is registered by BIP-48, so offering one would invent
-/// a path. Refusal must be the behaviour, not a silent fallback to p2wsh.
+/// BIP-48 registers only 1' and 2', but the constellation's taproot multisig
+/// origin is `m/48'/coin'/account'/3'` (composer spec C28; Coldcard's `bip48_3`,
+/// Liana's `p2tr_deriv`), so the template exists and derives there. Oracle:
+/// two independent BIP-32 implementations (fork Go hdkeychain, Python ecdsa),
+/// 2026-09-02, recorded in mnemonic-engrave's
+/// IMPLEMENTATION_PLAN_composer_S1_host_inputs.md Task 5.
+const P2TR_ACCT0: &str = "xpub6DkFAXWQ2dHxr7LX1ByDVebj6u3C5KSKTVXWkiVKb3tdYfh9t7FhXzvUVSxNSikoVTRb2bGjvYoW8PqYBReMeswi3megtqDwRCeVs3vxMeH";
+const P2TR_ACCT1: &str = "xpub6DzhyrnFFYQ1KXnhK7D7U1sD9jf9Cq2E5Ut5HhXdXZFVgEpjz4jNsvEnL1FzP2p4RkMW7MTJC7GWK8CqEWdZsM4XR7Yn8BbbUieRkaTntL2";
+
 #[test]
-fn an_unregistered_script_type_is_refused() {
+fn bip48_p2tr_derives_the_composer_taproot_origin() {
     let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip48-p2tr"]);
-    assert_ne!(
-        code(&o),
-        0,
-        "bip48-p2tr must be refused; stdout={}",
-        out(&o)
+    assert_eq!(code(&o), 0, "{}", err(&o));
+    let s = out(&o);
+    assert!(s.contains(MASTER_FP), "{s}");
+    assert!(s.contains("m/48'/0'/0'/3'"), "{s}");
+    assert!(s.contains(P2TR_ACCT0), "{s}");
+    assert!(!s.contains(P2WSH_ACCT0), "3' and 2' must not collapse: {s}");
+    assert!(
+        !err(&o).contains("ASSUMED"),
+        "an explicit script type is a choice, not an assumption"
     );
+    let o = ms(&[
+        "derive",
+        "--hex",
+        ZEROS_HEX,
+        "--template",
+        "bip48-p2tr",
+        "--account",
+        "1",
+    ]);
+    assert_eq!(code(&o), 0, "{}", err(&o));
+    assert!(out(&o).contains(P2TR_ACCT1), "{}", out(&o));
+    assert!(out(&o).contains("m/48'/0'/1'/3'"), "{}", out(&o));
+}
+
+#[test]
+fn bip48_p2tr_json_names_the_path_and_no_assumption() {
+    let o = ms(&[
+        "derive",
+        "--hex",
+        ZEROS_HEX,
+        "--template",
+        "bip48-p2tr",
+        "--json",
+    ]);
+    assert_eq!(code(&o), 0, "{}", err(&o));
+    let v: serde_json::Value = serde_json::from_str(&out(&o)).unwrap();
+    assert_eq!(v["account_path"], "m/48'/0'/0'/3'");
+    assert_eq!(v["account_xpub"], P2TR_ACCT0);
+    assert_eq!(v["script_type_defaulted"], false);
 }
 
 /// The existing single-sig template names must not have been renamed as
