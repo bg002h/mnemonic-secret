@@ -2,8 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**STATUS: DRAFT — not yet build-gated, not yet R0-reviewed.** The gate is
-`scripts/plan-build-gate-ms.sh` (Task 0); R0 = fidelity (opus) + tests (sonnet,
+**STATUS: BUILD GATE GREEN (2026-09-04); not yet R0-reviewed.** The gate is
+`scripts/plan-build-gate-ms.sh` (Task 0): ten runs to green, every earlier run
+a real finding (see the commit messages); R0 = fidelity (opus) + tests (sonnet,
 mutation beside every test); re-validate immediately before the implementer.
 **Baseline:** mnemonic-secret `master` `d4d6771` (ms-codec 0.7.0, ms-cli
 0.17.1; the spec at R0 GREEN). Every line citation below was taken at that
@@ -254,16 +255,26 @@ cargo build --workspace --all-targets 2>&1 | tail -3
 cargo build --workspace --all-targets --locked 2>&1 | tail -1
 cargo nextest run --workspace --locked --no-fail-fast -E 'binary(/hashlock/) | test(/hashlock/)' 2>&1 | tail -12
 cargo clippy --workspace --all-targets --locked -- -D warnings 2>&1 | tail -3
-cargo fmt --check 2>&1 | tail -3 && echo "fmt clean"
+# fmt is its own statement so a diff STOPS the gate (an `a | b && c` list would
+# let set -e walk past it); the diff's head is printed for the fold.
+if ! cargo fmt --check > "${WORK}/fmt.diff" 2>&1; then
+  echo "rustfmt diff ($(grep -c '^Diff in' "${WORK}/fmt.diff") hunks):"; head -40 "${WORK}/fmt.diff"; exit 5
+fi
+echo "fmt clean"
 
 echo "== 5 -- codeword distance (spec §1) =="
-cargo nextest run -p ms-codec --locked -E 'test(hashlock_kind::codeword_distance)' 2>&1 | grep -E "distance|PASS|FAIL" | head -3
+cargo nextest run -p ms-codec --locked --no-capture -E 'test(codeword_distance)' 2>&1 | grep -E "codeword distance|PASS|FAIL" | head -3
 
 echo "== 6 -- downgrade row against the pre-H1 tree ($PRE_H1) =="
 PRE="${TMPDIR:-/tmp}/plan-build-gate-ms-pre"
 rm -rf "$PRE"; git -C "$SRC" worktree add -q --detach "$PRE" "$PRE_H1"
 ( cd "$PRE" && CARGO_TARGET_DIR="${CARGO_TARGET_DIR}-pre" cargo build -p ms-cli --locked -q )
-S=$(python3 -c "import json;print(json.load(open('$WORK/crates/ms-codec/tests/vectors/hashlock-v0.8.json'))['kind'][0]['ms1'])")
+# The string comes from the WIRED binary, not from a corpus cell an implementer
+# may not have filled yet: the gate's job is to prove the old reader refuses
+# what the new writer emits.
+S=$(printf 'ab%.0s' $(seq 32) | "${CARGO_TARGET_DIR}/debug/ms" hashlock --hex - --json --no-engraving-card 2>/dev/null | python3 -c "import json,sys;print(json.load(sys.stdin)['preimage_ms1'])")
+[ -n "$S" ] || { echo "could not obtain a preimage plate string from the wired ms" >&2; exit 4; }
+echo "plate: $S"
 set +e
 OUT=$(printf '%s\n' "$S" | "${CARGO_TARGET_DIR}-pre/debug/ms" decode - 2>&1); RC=$?
 set -e
@@ -341,6 +352,8 @@ edit("crates/ms-codec/src/payload.rs", [
      "            Payload::Mnem { .. } => PayloadKind::Mnem,\n            Payload::Preimage(_) => PayloadKind::Preimage,\n        }"),
     ("            Payload::Mnem { entropy, .. } => entropy,\n        }",
      "            Payload::Mnem { entropy, .. } => entropy,\n            Payload::Preimage(x) => &x[..],\n        }"),
+    ("    pub fn validate(&self) -> Result<()> {\n        match self {\n            Payload::Entr(data) => {",
+     "    pub fn validate(&self) -> Result<()> {\n        match self {\n            // A preimage's length is structural in the variant (SPEC_ms_hashlock §3).\n            Payload::Preimage(_) => Ok(()),\n            Payload::Entr(data) => {"),
 ])
 edit("crates/ms-codec/src/envelope.rs", [
     ("use crate::consts::{", "use crate::consts::{PREIMAGE_PREFIX, "),
@@ -405,6 +418,8 @@ edit("crates/ms-cli/src/argv_guard.rs", [
     ('        "--ms1" => "an ms1 string",', '        "--ms1" => "an ms1 string",\n        "--hashlock-phrase" => "a hashlock phrase",'),
     ("fn argv_candidates(token: &str) -> Vec<String> {\n    let norm = |s: &str| s.trim().to_ascii_lowercase();",
      "fn argv_candidates(token: &str) -> Vec<String> {\n    // The fold and trim now live in `looks_like_ms1` as well, so the phrase\n    // channels and this guard test the SAME normalised shape\n    // (SPEC_ms_hashlock §4.3; R0 r0 tests C-1).\n    let norm = |s: &str| s.trim().to_ascii_lowercase();"),
+    ("/// The nine flag-keyed secret channels, as strings. No parse, no clap.",
+     "/// The five flag-keyed secret channels, as strings. No parse, no clap."),
     ("fn is_ms1_shaped(s: &str) -> bool {",
      "/// `is_ms1_shaped` over the NORMALISED token: trimmed, lowercased, display\n/// separators stripped. The one predicate both the argv guard and the phrase\n/// channels call, so the two cannot drift (SPEC_ms_hashlock §4.3). An\n/// uppercase plate string -- the BIP-173/QR spelling `ms decode` accepts --\n/// is caught here and only here.\npub(crate) fn looks_like_ms1(raw: &str) -> bool {\n    is_ms1_shaped(&raw.trim().to_ascii_lowercase())\n}\n\nfn is_ms1_shaped(s: &str) -> bool {"),
 ])
@@ -413,11 +428,20 @@ edit("crates/ms-cli/src/error.rs", [
      "    BadInput(String),\n    /// A usage error the verb itself detects (source arithmetic, a gate a flag\n    /// must satisfy): exit 64, the same code clap uses for its own.\n    Usage(String),"),
     ("            | CliError::PayloadLengthMismatch { .. } => 1,",
      "            | CliError::PayloadLengthMismatch { .. } => 1,\n            CliError::Usage(_) => 64,"),
+    ("            CliError::BadInput(_) => \"BadInput\",", "            CliError::BadInput(_) => \"BadInput\",\n            CliError::Usage(_) => \"Usage\","),
+    ("            CliError::BadInput(m) => m.clone(),", "            CliError::BadInput(m) => m.clone(),\n            CliError::Usage(m) => m.clone(),"),
 ])
 edit("crates/ms-cli/src/cmd/decode.rs", [
     ("        // ms_codec::Payload is #[non_exhaustive]; guard against future variants.\n        _ => unreachable!(\"ms-codec decode returned unknown Payload variant\"),\n    };",
-     "        // A preimage carries no language; the value is rendered below by\n        // `emit_preimage`, never as words (SPEC_ms_hashlock §5).\n        Payload::Preimage(_) => (cli_lang, defaulted),\n        // ms_codec::Payload is #[non_exhaustive]; guard against future variants.\n        _ => unreachable!(\"ms-codec decode returned unknown Payload variant\"),\n    };"),
+     "        // A preimage is rendered by `emit_preimage`, never as words, and the\n        // verb RETURNS here: the second match below (entropy extraction) is\n        // never reached for this kind and keeps its catch-all (SPEC_ms_hashlock §5).\n        Payload::Preimage(x) => return emit_preimage(x, args.json),\n        // ms_codec::Payload is #[non_exhaustive]; guard against future variants.\n        _ => unreachable!(\"ms-codec decode returned unknown Payload variant\"),\n    };"),
 ])
+# FORMAT THE WIRED COPY: the fragments above lengthen a few existing lines
+# (the blocklist, two import lines, SECRET_FLAGS) past rustfmt's width, and a
+# fragment kept fmt-clean by hand would drift the first time an anchor moved.
+# The implementer runs `cargo fmt` after applying fragments for the same reason.
+import subprocess
+subprocess.run(["cargo", "fmt"], cwd=root, check=True)
+print("  cargo fmt on the wired copy")
 open(sentinel, "w").write("wired\n")
 print("hand-wire complete")
 ```
@@ -468,7 +492,9 @@ Create `crates/ms-codec/tests/hashlock_kind.rs`:
 //! Every row names the door it enters by and the error it asserts: a row that
 //! says "refused" without either passes on the wrong error.
 
-use ms_codec::consts::{PREIMAGE_PREFIX, RESERVED_ID_BLOCKLIST, TAG_HASH, VALID_PREIMAGE_STR_LENGTHS};
+use ms_codec::consts::{
+    PREIMAGE_PREFIX, RESERVED_ID_BLOCKLIST, TAG_HASH, VALID_PREIMAGE_STR_LENGTHS,
+};
 use ms_codec::{decode, encode, Error, Payload, PayloadKind, Tag};
 use zeroize::Zeroizing;
 
@@ -521,9 +547,15 @@ fn id_and_prefix_must_agree_both_directions() {
     // id `hash` over a seed payload: encode refuses, and a hand-made string
     // is refused on decode -- never read as the other kind (spec §1 rule 2).
     let err = encode(Tag::HASH, &Payload::Entr(vec![0; 32])).unwrap_err();
-    assert!(matches!(err, Error::TagKindMismatch { tag, prefix: 0x00 } if tag == *b"hash"), "{err:?}");
+    assert!(
+        matches!(err, Error::TagKindMismatch { tag, prefix: 0x00 } if tag == *b"hash"),
+        "{err:?}"
+    );
     let err = encode(Tag::ENTR, &preimage(0)).unwrap_err();
-    assert!(matches!(err, Error::TagKindMismatch { tag, prefix: 0x03 } if tag == *b"entr"), "{err:?}");
+    assert!(
+        matches!(err, Error::TagKindMismatch { tag, prefix: 0x03 } if tag == *b"entr"),
+        "{err:?}"
+    );
 
     // Hand-made strings through the codex32 layer, bypassing encode's check.
     let forged_hash_over_seed = forge("hash", &{
@@ -532,14 +564,20 @@ fn id_and_prefix_must_agree_both_directions() {
         v
     });
     let err = decode(&forged_hash_over_seed).unwrap_err();
-    assert!(matches!(err, Error::TagKindMismatch { prefix: 0x00, .. }), "{err:?}");
+    assert!(
+        matches!(err, Error::TagKindMismatch { prefix: 0x00, .. }),
+        "{err:?}"
+    );
     let forged_entr_over_preimage = forge("entr", &{
         let mut v = vec![PREIMAGE_PREFIX];
         v.extend_from_slice(&[0xab; 32]);
         v
     });
     let err = decode(&forged_entr_over_preimage).unwrap_err();
-    assert!(matches!(err, Error::TagKindMismatch { prefix: 0x03, .. }), "{err:?}");
+    assert!(
+        matches!(err, Error::TagKindMismatch { prefix: 0x03, .. }),
+        "{err:?}"
+    );
 }
 
 /// Build a threshold-0 single with an arbitrary id over arbitrary payload
@@ -633,7 +671,10 @@ fn preimage_length_rows_refused_by_the_string_gate_first() {
         let s = forge("hash", &payload);
         assert_eq!(s.len(), chars);
         let err = decode(&s).unwrap_err();
-        assert!(matches!(err, Error::UnexpectedStringLength { got } if got == chars), "{n}: {err:?}");
+        assert!(
+            matches!(err, Error::UnexpectedStringLength { got, .. } if got == chars),
+            "{n}: {err:?}"
+        );
     }
 }
 
@@ -658,20 +699,46 @@ fn preimage_length_rows_through_combine_shares() {
 fn a_46_byte_payload_is_unconstructible() {
     let mut payload = vec![PREIMAGE_PREFIX];
     payload.extend(std::iter::repeat(0xab).take(45));
-    let s = ms_codec::codex32::Codex32String::from_seed("ms", 0, "hash", ms_codec::codex32::Fe::S, &payload)
-        .expect("from_seed")
-        .to_string();
+    let s = ms_codec::codex32::Codex32String::from_seed(
+        "ms",
+        0,
+        "hash",
+        ms_codec::codex32::Fe::S,
+        &payload,
+    )
+    .expect("from_seed")
+    .to_string();
     assert_eq!(s.len(), 96);
-    assert!(ms_codec::codex32::Codex32String::from_string(s).is_err(), "96 chars is outside both brackets");
+    assert!(
+        ms_codec::codex32::Codex32String::from_string(s).is_err(),
+        "96 chars is outside both brackets"
+    );
 }
 
 #[test]
 fn preimage_share_round_trip() {
     let secret = preimage(0x5a);
-    let shares = ms_codec::encode_shares(Tag::HASH, ms_codec::Threshold::new(2).unwrap(), 3, &secret).unwrap();
+    let shares =
+        ms_codec::encode_shares(Tag::HASH, ms_codec::Threshold::new(2).unwrap(), 3, &secret)
+            .unwrap();
     for pair in [[0, 1], [0, 2], [1, 2]] {
-        let (_tag, p) = ms_codec::combine_shares(&[shares[pair[0]].clone(), shares[pair[1]].clone()]).unwrap();
+        let (_tag, p) =
+            ms_codec::combine_shares(&[shares[pair[0]].clone(), shares[pair[1]].clone()]).unwrap();
         assert_eq!(p, secret);
+    }
+}
+
+/// The variant's field is `Zeroizing<[u8; 32]>` (spec §3): a type-level
+/// assertion the compiler enforces, so a refactor to a bare array fails to
+/// build rather than silently losing the scrub-on-drop.
+#[test]
+fn preimage_field_is_zeroizing() {
+    let p = preimage(0x42);
+    if let Payload::Preimage(z) = &p {
+        let _: &Zeroizing<[u8; 32]> = z;
+        assert_eq!(z.len(), 32);
+    } else {
+        panic!("not a preimage");
     }
 }
 
@@ -697,19 +764,33 @@ fn codeword_distance_between_entr_and_hash_ids_exceeds_the_correction_bound() {
     let b = forge("hash", &payload);
     let distance = a.bytes().zip(b.bytes()).filter(|(x, y)| x != y).count();
     println!("codeword distance entr/hash = {distance}");
-    assert!(distance > 8, "distance {distance} is within twice the correction bound");
+    assert!(
+        distance > 8,
+        "distance {distance} is within twice the correction bound"
+    );
 }
 
-/// A K-of-N share set over raw payload bytes, through the codex32 layer, so a
-/// wrong-length payload can be recombined without `encode_shares` refusing it.
+/// A 2-of-N share set over raw payload bytes, through the codex32 layer, so a
+/// wrong-length payload can be recombined without `encode_shares` refusing it
+/// (a `Payload::Preimage` cannot even be built at the wrong length, which is
+/// the point of the variant). Two points fix the polynomial: the secret at
+/// `S` and one random share at `A`; every other index is interpolated.
 fn forge_shares(secret: &[u8], k: usize, n: usize) -> Vec<String> {
     use ms_codec::codex32::{Codex32String, Fe};
+    assert_eq!(k, 2, "this forger builds 2-of-N sets");
     let s = Codex32String::from_seed("ms", k, "zzzz", Fe::S, secret).expect("secret at S");
-    let mut out = Vec::new();
-    let indices = [Fe::A, Fe::C, Fe::D];
-    for idx in indices.iter().take(n) {
-        // interpolate_at is the vendored codex32's share derivation.
-        out.push(ms_codec::codex32::derive_share(&s, *idx).expect("share").to_string());
+    let mut rnd = vec![0u8; secret.len()];
+    for (i, b) in rnd.iter_mut().enumerate() {
+        *b = (i as u8).wrapping_mul(37).wrapping_add(11);
+    }
+    let a = Codex32String::from_seed("ms", k, "zzzz", Fe::A, &rnd).expect("share at A");
+    let mut out = vec![a.to_string()];
+    for target in [Fe::C, Fe::D].iter().take(n - 1) {
+        out.push(
+            Codex32String::interpolate_at(&[s.clone(), a.clone()], *target)
+                .expect("interpolate")
+                .to_string(),
+        );
     }
     out
 }
@@ -718,10 +799,9 @@ fn forge_shares(secret: &[u8], k: usize, n: usize) -> Vec<String> {
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `cargo test -p ms-codec --test hashlock_kind`
-Expected: FAIL to compile (`Payload::Preimage`, `InspectKind::Preimage`, the
-`forge_shares` helper's `derive_share` — confirm that name against the
-vendored `codex32` module before writing Step 3: `grep -n "pub fn" crates/ms-codec/src/codex32/mod.rs | grep -i "share\|interpolat"`; if the exported
-name differs, use it and record the real name here).
+Expected: FAIL to compile (`Payload::Preimage`, `InspectKind::Preimage`). The
+`forge_shares` helper uses the vendored codex32's `Codex32String::interpolate_at`
+(`codex32/mod.rs:267`), measured.
 
 - [ ] **Step 3: Apply the Task 2 fragments**
 
@@ -781,10 +861,17 @@ Create `crates/ms-codec/tests/hashlock_derivation.rs`:
 //! hashlib and openssl kdf, cross-checked -- so a row is a correctness pin,
 //! not a regression pin. `hashlock_repro.rs` re-runs those tools in CI.
 
-use ms_codec::hashlock::{digest, preimage_hardened, preimage_sha256, HASHLOCK_DKLEN, HASHLOCK_ITERATIONS, HASHLOCK_SALT};
+use ms_codec::hashlock::{
+    digest, preimage_hardened, preimage_sha256, HASHLOCK_DKLEN, HASHLOCK_ITERATIONS, HASHLOCK_SALT,
+};
 
 fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
+    use std::fmt::Write;
+    b.iter()
+        .fold(String::with_capacity(b.len() * 2), |mut s, x| {
+            let _ = write!(s, "{x:02x}");
+            s
+        })
 }
 
 #[test]
@@ -828,7 +915,10 @@ fn anchor_rows_both_methods_pin_x_and_h() {
 #[test]
 fn the_two_methods_differ_on_every_row() {
     for (phrase, hx, _, sx, _) in ROWS {
-        assert_ne!(hx, sx, "{phrase:?}: a swap of the two methods must be visible");
+        assert_ne!(
+            hx, sx,
+            "{phrase:?}: a swap of the two methods must be visible"
+        );
     }
 }
 
@@ -855,7 +945,10 @@ fn random_preimages_differ_and_are_32_bytes() {
 fn digest_is_sha256_of_x() {
     // sha256 of 32 zero bytes, a public constant.
     let x = [0u8; 32];
-    assert_eq!(hex(&digest(&x)), "66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925");
+    assert_eq!(
+        hex(&digest(&x)),
+        "66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925"
+    );
 }
 ```
 
@@ -988,10 +1081,11 @@ that produced it into `provenance`; the anchor row is complete):
   "format": "ms hashlock corpus v0.8 (SPEC_ms_hashlock §8)",
   "kind": [
     {
-      "description": "preimage single, X = 0xab*32; id hash; 75 chars; the entr-32 pair row is X=0xab*32 under Tag::ENTR",
+      "description": "preimage single, X = 0xab*32; id hash; 75 chars; the entr-32 pair row is X=0xab*32 under Tag::ENTR. Measured with the gated build: both begin ms10<id>sq and differ at the id (and, downstream of the prefix byte's low bits, at the tenth character).",
       "preimage_hex": "abababababababababababababababababababababababababababababababab",
-      "ms1": "…",
-      "entr32_pair_ms1": "…"
+      "digest": "9a2db2e23f1504cd056606553ac049c5e718e8f9ce9233876df1a7a1821af885",
+      "ms1": "ms10hashsqw46h2at4w46h2at4w46h2at4w46h2at4w46h2at4w46h2at4w46kzv2ncy60u7z9c",
+      "entr32_pair_ms1": "ms10entrsqz46h2at4w46h2at4w46h2at4w46h2at4w46h2at4w46h2at4w46kdv3c0wn2hx0lq"
     }
   ],
   "derivation": [
@@ -1068,7 +1162,9 @@ Create `crates/ms-codec/tests/hashlock_repro.rs`:
 
 use std::process::Command;
 
-use ms_codec::hashlock::{digest, preimage_hardened, HASHLOCK_DKLEN, HASHLOCK_ITERATIONS, HASHLOCK_SALT};
+use ms_codec::hashlock::{
+    digest, preimage_hardened, HASHLOCK_DKLEN, HASHLOCK_ITERATIONS, HASHLOCK_SALT,
+};
 
 // LITERALS. Not the crate's constants.
 const SALT: &str = "ms-hashlock-v1";
@@ -1079,7 +1175,12 @@ const EXPECTED_X: &str = "c3e97525442520da4cffd5f57aae3f6273990017f2e0fa30c056e3
 const EXPECTED_H: &str = "3cf5d421caf2a9c8eb9de1d400866ea7d475e6ba978861bb0167a37cb70a4c12";
 
 fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
+    use std::fmt::Write;
+    b.iter()
+        .fold(String::with_capacity(b.len() * 2), |mut s, x| {
+            let _ = write!(s, "{x:02x}");
+            s
+        })
 }
 
 #[test]
@@ -1090,28 +1191,56 @@ fn constants_equal_the_literals() {
 }
 
 fn python_x() -> String {
+    // PHRASE and SALT are plain ASCII with no quotes, so single-quoted byte
+    // literals are exact.
     let script = format!(
-        "import hashlib,sys;x=hashlib.pbkdf2_hmac('sha256',{phrase!r}.encode(),{salt!r}.encode(),{iter},{dklen});sys.stdout.write(x.hex())",
-        phrase = PHRASE, salt = SALT, iter = ITER, dklen = DKLEN
+        "import hashlib,sys;x=hashlib.pbkdf2_hmac('sha256',b'{PHRASE}',b'{SALT}',{ITER},{DKLEN});sys.stdout.write(x.hex())"
     );
-    let out = Command::new("python3").args(["-c", &script]).output().expect("python3 must be present: this test FAILS on a missing tool, never skips");
-    assert!(out.status.success(), "python3 failed: {}", String::from_utf8_lossy(&out.stderr));
+    let out = Command::new("python3")
+        .args(["-c", &script])
+        .output()
+        .expect("python3 must be present: this test FAILS on a missing tool, never skips");
+    assert!(
+        out.status.success(),
+        "python3 failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     String::from_utf8(out.stdout).unwrap().trim().to_string()
 }
 
 fn openssl_x() -> String {
+    let keylen = DKLEN.to_string();
+    let pass = format!("pass:{PHRASE}");
+    let salt = format!("salt:{SALT}");
+    let iter = format!("iter:{ITER}");
     let out = Command::new("openssl")
         .args([
-            "kdf", "-keylen", &DKLEN.to_string(), "-kdfopt", "digest:SHA256",
-            &format!("-kdfopt"), &format!("pass:{PHRASE}"),
-            "-kdfopt", &format!("salt:{SALT}"),
-            "-kdfopt", &format!("iter:{ITER}"), "PBKDF2",
+            "kdf",
+            "-keylen",
+            &keylen,
+            "-kdfopt",
+            "digest:SHA256",
+            "-kdfopt",
+            &pass,
+            "-kdfopt",
+            &salt,
+            "-kdfopt",
+            &iter,
+            "PBKDF2",
         ])
         .output()
         .expect("openssl must be present: this test FAILS on a missing tool, never skips");
-    assert!(out.status.success(), "openssl kdf failed: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "openssl kdf failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     // openssl prints `AB:CD:...`; normalise to lowercase hex.
-    String::from_utf8(out.stdout).unwrap().trim().replace(':', "").to_ascii_lowercase()
+    String::from_utf8(out.stdout)
+        .unwrap()
+        .trim()
+        .replace(':', "")
+        .to_ascii_lowercase()
 }
 
 #[test]
@@ -1211,11 +1340,25 @@ fn ms() -> Command {
 /// accepted on argv and this fails.
 #[test]
 fn hashlock_phrase_on_argv_is_refused_without_the_allow_flag_and_never_echoed() {
-    let out = ms().args(["hashlock", "--hashlock-phrase", PHRASE]).output().unwrap();
-    assert_eq!(out.status.code(), Some(1), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = ms()
+        .args(["hashlock", "--hashlock-phrase", PHRASE])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let err = String::from_utf8_lossy(&out.stderr);
-    assert!(err.contains("a hashlock phrase"), "flag_class must name the class:\n{err}");
-    assert!(!err.contains(PHRASE), "the refusal echoed the phrase:\n{err}");
+    assert!(
+        err.contains("a hashlock phrase"),
+        "flag_class must name the class:\n{err}"
+    );
+    assert!(
+        !err.contains(PHRASE),
+        "the refusal echoed the phrase:\n{err}"
+    );
     assert!(!err.contains("BIP-39 passphrase"), "wrong class:\n{err}");
 }
 
@@ -1224,13 +1367,26 @@ fn hashlock_phrase_on_argv_is_refused_without_the_allow_flag_and_never_echoed() 
 #[test]
 fn allow_argv_secret_admits_the_phrase_through_the_side_channel() {
     let out = ms()
-        .args(["hashlock", "--allow-argv-secret", "--hashlock-phrase", PHRASE, "--no-engraving-card"])
+        .args([
+            "hashlock",
+            "--allow-argv-secret",
+            "--hashlock-phrase",
+            PHRASE,
+            "--no-engraving-card",
+        ])
         .write_stdin("")
         .output()
         .unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let so = String::from_utf8_lossy(&out.stdout);
-    assert_eq!(so.trim(), "hash:3cf5d421caf2a9c8eb9de1d400866ea7d475e6ba978861bb0167a37cb70a4c12");
+    assert_eq!(
+        so.trim(),
+        "hash:3cf5d421caf2a9c8eb9de1d400866ea7d475e6ba978861bb0167a37cb70a4c12"
+    );
 }
 
 /// The §6 gate for part 4: the same invocation with stdin at /dev/null (an
@@ -1240,39 +1396,68 @@ fn allow_argv_secret_admits_the_phrase_through_the_side_channel() {
 #[test]
 fn admitted_phrase_does_not_read_stdin() {
     let out = ms()
-        .args(["hashlock", "--allow-argv-secret", "--hashlock-phrase", PHRASE, "--no-engraving-card"])
+        .args([
+            "hashlock",
+            "--allow-argv-secret",
+            "--hashlock-phrase",
+            PHRASE,
+            "--no-engraving-card",
+        ])
         .write_stdin("")
         .output()
         .unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 /// Same gate for the `--hex` channel (part 5) and the positional (part 6).
 #[test]
 fn admitted_hex_and_positional_do_not_read_stdin() {
     let out = ms()
-        .args(["hashlock", "--allow-argv-secret", "--hex", HEX32, "--no-engraving-card"])
+        .args([
+            "hashlock",
+            "--allow-argv-secret",
+            "--hex",
+            HEX32,
+            "--no-engraving-card",
+        ])
         .write_stdin("")
         .output()
         .unwrap();
-    assert!(out.status.success(), "hex: {}", String::from_utf8_lossy(&out.stderr));
-    let plate = ms().args(["hashlock", "--hex", "-", "--no-engraving-card", "--out", "/dev/null"])
-        .write_stdin(HEX32)
-        .output().unwrap();
-    assert!(plate.status.success());
+    assert!(
+        out.status.success(),
+        "hex: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     // Get a real plate string to pass positionally.
     let s = String::from_utf8(
-        ms().args(["hashlock", "--hex", "-", "--json"]).write_stdin(HEX32).output().unwrap().stdout,
+        ms().args(["hashlock", "--hex", "-", "--json"])
+            .write_stdin(HEX32)
+            .output()
+            .unwrap()
+            .stdout,
     )
     .unwrap();
     let v: serde_json::Value = serde_json::from_str(&s).unwrap();
     let plate = v["preimage_ms1"].as_str().unwrap().to_string();
     let out = ms()
-        .args(["hashlock", "--allow-argv-secret", &plate, "--no-engraving-card"])
+        .args([
+            "hashlock",
+            "--allow-argv-secret",
+            &plate,
+            "--no-engraving-card",
+        ])
         .write_stdin("")
         .output()
         .unwrap();
-    assert!(out.status.success(), "positional: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "positional: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 /// MUTATION: zero sources defaulting to stdin -> this hangs or parses stdin
@@ -1282,7 +1467,13 @@ fn zero_sources_exits_64_listing_five() {
     let out = ms().args(["hashlock"]).write_stdin("").output().unwrap();
     assert_eq!(out.status.code(), Some(64));
     let err = String::from_utf8_lossy(&out.stderr);
-    for s in ["--hashlock-phrase", "--hashlock-phrase-stdin", "--hex", "--in", "--random"] {
+    for s in [
+        "--hashlock-phrase",
+        "--hashlock-phrase-stdin",
+        "--hex",
+        "--in",
+        "--random",
+    ] {
         assert!(err.contains(s), "usage must list {s}:\n{err}");
     }
 }
@@ -1294,7 +1485,7 @@ fn every_two_source_pair_exits_64() {
     let sources: &[&[&str]] = &[
         &["--allow-argv-secret", "--hashlock-phrase", PHRASE],
         &["--hashlock-phrase-stdin"],
-        &["--hex", HEX32],
+        &["--hex", "-"],
         &["-"],
         &["--random", "--out", "/tmp/ms-hashlock-pair-test.txt"],
     ];
@@ -1303,8 +1494,15 @@ fn every_two_source_pair_exits_64() {
             let mut args = vec!["hashlock"];
             args.extend_from_slice(sources[i]);
             args.extend_from_slice(sources[j]);
+            // Two sources are refused BEFORE anything is read, so the stdin
+            // contention pair (--hashlock-phrase-stdin with `-`) exits 64 too.
             let out = ms().args(&args).write_stdin(PHRASE).output().unwrap();
-            assert_eq!(out.status.code(), Some(64), "pair {i},{j}: {}", String::from_utf8_lossy(&out.stderr));
+            assert_eq!(
+                out.status.code(),
+                Some(64),
+                "pair {i},{j}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
         }
     }
     let _ = std::fs::remove_file("/tmp/ms-hashlock-pair-test.txt");
@@ -1314,12 +1512,27 @@ fn every_two_source_pair_exits_64() {
 #[test]
 fn method_with_a_supplied_preimage_exits_64_for_all_three_sources() {
     for args in [
-        vec!["hashlock", "--hex", HEX32, "--method", "sha256"],
-        vec!["hashlock", "--random", "--out", "/tmp/ms-hashlock-method-test.txt", "--method", "hardened"],
+        vec!["hashlock", "--hex", "-", "--method", "sha256"],
+        vec![
+            "hashlock",
+            "--random",
+            "--out",
+            "/tmp/ms-hashlock-method-test.txt",
+            "--method",
+            "hardened",
+        ],
         vec!["hashlock", "-", "--method", "sha256"],
     ] {
-        let out = ms().args(&args).write_stdin("ms10hashsq").output().unwrap();
-        assert_eq!(out.status.code(), Some(64), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        // `--method` is refused BEFORE any source is read, so stdin's content
+        // is irrelevant here; a raw hex value on argv would be refused by the
+        // guard first (exit 1), which is why --hex reads stdin.
+        let out = ms().args(&args).write_stdin(HEX32).output().unwrap();
+        assert_eq!(
+            out.status.code(),
+            Some(64),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
     let _ = std::fs::remove_file("/tmp/ms-hashlock-method-test.txt");
 }
@@ -1328,15 +1541,38 @@ fn method_with_a_supplied_preimage_exits_64_for_all_three_sources() {
 /// satisfy it. MUTATION: gate on `--out || --json` -> the second case exits 0.
 #[test]
 fn random_requires_out_file_and_json_alone_does_not_satisfy_it() {
-    let out = ms().args(["hashlock", "--random", "--no-engraving-card"]).output().unwrap();
+    let out = ms()
+        .args(["hashlock", "--random", "--no-engraving-card"])
+        .output()
+        .unwrap();
     assert_eq!(out.status.code(), Some(64));
     assert!(String::from_utf8_lossy(&out.stderr).contains("--out"));
-    let out = ms().args(["hashlock", "--random", "--json", "--no-engraving-card"]).output().unwrap();
-    assert_eq!(out.status.code(), Some(64), "--json alone must not satisfy the gate");
+    let out = ms()
+        .args(["hashlock", "--random", "--json", "--no-engraving-card"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(64),
+        "--json alone must not satisfy the gate"
+    );
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("x.txt");
-    let out = ms().args(["hashlock", "--random", "--out", p.to_str().unwrap(), "--no-engraving-card"]).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = ms()
+        .args([
+            "hashlock",
+            "--random",
+            "--out",
+            p.to_str().unwrap(),
+            "--no-engraving-card",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert!(p.exists());
 }
 
@@ -1346,8 +1582,26 @@ fn random_twice_differs() {
     let dir = tempfile::tempdir().unwrap();
     let a = dir.path().join("a.txt");
     let b = dir.path().join("b.txt");
-    let ra = ms().args(["hashlock", "--random", "--out", a.to_str().unwrap(), "--no-engraving-card"]).output().unwrap();
-    let rb = ms().args(["hashlock", "--random", "--out", b.to_str().unwrap(), "--no-engraving-card"]).output().unwrap();
+    let ra = ms()
+        .args([
+            "hashlock",
+            "--random",
+            "--out",
+            a.to_str().unwrap(),
+            "--no-engraving-card",
+        ])
+        .output()
+        .unwrap();
+    let rb = ms()
+        .args([
+            "hashlock",
+            "--random",
+            "--out",
+            b.to_str().unwrap(),
+            "--no-engraving-card",
+        ])
+        .output()
+        .unwrap();
     assert_ne!(ra.stdout, rb.stdout);
     assert_ne!(std::fs::read(&a).unwrap(), std::fs::read(&b).unwrap());
 }
@@ -1359,15 +1613,58 @@ fn random_twice_differs() {
 fn random_out_refuses_to_overwrite_but_other_sources_overwrite() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("preimage.txt");
-    assert!(ms().args(["hashlock", "--random", "--out", p.to_str().unwrap(), "--no-engraving-card"]).output().unwrap().status.success());
+    assert!(ms()
+        .args([
+            "hashlock",
+            "--random",
+            "--out",
+            p.to_str().unwrap(),
+            "--no-engraving-card"
+        ])
+        .output()
+        .unwrap()
+        .status
+        .success());
     let monday = std::fs::read(&p).unwrap();
-    let out = ms().args(["hashlock", "--random", "--out", p.to_str().unwrap(), "--no-engraving-card"]).output().unwrap();
-    assert_eq!(out.status.code(), Some(64), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = ms()
+        .args([
+            "hashlock",
+            "--random",
+            "--out",
+            p.to_str().unwrap(),
+            "--no-engraving-card",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(64),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert!(String::from_utf8_lossy(&out.stderr).contains(p.to_str().unwrap()));
-    assert_eq!(std::fs::read(&p).unwrap(), monday, "the existing preimage must be untouched");
+    assert_eq!(
+        std::fs::read(&p).unwrap(),
+        monday,
+        "the existing preimage must be untouched"
+    );
     // A phrase source overwrites (its artifact is a function of its input).
-    let out = ms().args(["hashlock", "--hashlock-phrase-stdin", "--out", p.to_str().unwrap(), "--no-engraving-card"]).write_stdin(PHRASE).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = ms()
+        .args([
+            "hashlock",
+            "--hashlock-phrase-stdin",
+            "--out",
+            p.to_str().unwrap(),
+            "--no-engraving-card",
+        ])
+        .write_stdin(PHRASE)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert_ne!(std::fs::read(&p).unwrap(), monday);
 }
 
@@ -1378,8 +1675,23 @@ fn out_is_owner_only() {
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("x.txt");
-    assert!(ms().args(["hashlock", "--hashlock-phrase-stdin", "--out", p.to_str().unwrap(), "--no-engraving-card"]).write_stdin(PHRASE).output().unwrap().status.success());
-    assert_eq!(std::fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600);
+    assert!(ms()
+        .args([
+            "hashlock",
+            "--hashlock-phrase-stdin",
+            "--out",
+            p.to_str().unwrap(),
+            "--no-engraving-card"
+        ])
+        .write_stdin(PHRASE)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert_eq!(
+        std::fs::metadata(&p).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
 }
 ```
 
@@ -1527,7 +1839,11 @@ pub fn validate_phrase(bytes: &[u8]) -> std::result::Result<(), PhraseRefusal> {
     if bytes.is_empty() {
         return Err(PhraseRefusal::Empty);
     }
-    if let Some((at, &byte)) = bytes.iter().enumerate().find(|(_, b)| !(0x20..=0x7e).contains(*b)) {
+    if let Some((at, &byte)) = bytes
+        .iter()
+        .enumerate()
+        .find(|(_, b)| !(0x20..=0x7e).contains(*b))
+    {
         return Err(PhraseRefusal::NotPrintableAscii { byte, at });
     }
     // All bytes are printable ASCII now, so this is a &str.
@@ -1569,39 +1885,93 @@ mod tests {
     #[test]
     fn printable_boundary_is_pinned_on_both_sides() {
         assert_eq!(validate_phrase(b" ~"), Ok(()));
-        assert_eq!(validate_phrase(b"a\tb"), Err(PhraseRefusal::NotPrintableAscii { byte: 0x09, at: 1 }));
-        assert_eq!(validate_phrase(b"a\x7f"), Err(PhraseRefusal::NotPrintableAscii { byte: 0x7f, at: 1 }));
-        assert_eq!(validate_phrase(b"\xff"), Err(PhraseRefusal::NotPrintableAscii { byte: 0xff, at: 0 }));
-        assert_eq!(validate_phrase("café".as_bytes()), Err(PhraseRefusal::NotPrintableAscii { byte: 0xc3, at: 3 }));
+        assert_eq!(
+            validate_phrase(b"a\tb"),
+            Err(PhraseRefusal::NotPrintableAscii { byte: 0x09, at: 1 })
+        );
+        assert_eq!(
+            validate_phrase(b"a\x7f"),
+            Err(PhraseRefusal::NotPrintableAscii { byte: 0x7f, at: 1 })
+        );
+        assert_eq!(
+            validate_phrase(b"\xff"),
+            Err(PhraseRefusal::NotPrintableAscii { byte: 0xff, at: 0 })
+        );
+        assert_eq!(
+            validate_phrase("café".as_bytes()),
+            Err(PhraseRefusal::NotPrintableAscii { byte: 0xc3, at: 3 })
+        );
     }
 
     #[test]
     fn ms1_shape_in_four_spellings_and_before_the_cap() {
-        let plate = "ms10hashsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq";
+        // Shape only: the HRP, the id, the charset, 75 characters. The
+        // checksum is wrong on purpose -- the shape test must not parse.
+        let plate = format!("ms10hashsq{}", "q".repeat(65));
         assert_eq!(plate.len(), 75);
-        assert_eq!(validate_phrase(plate.as_bytes()), Err(PhraseRefusal::Ms1Shaped), "lowercase");
-        assert_eq!(validate_phrase(plate.to_ascii_uppercase().as_bytes()), Err(PhraseRefusal::Ms1Shaped), "UPPERCASE");
-        let grouped: String = plate.as_bytes().chunks(5).map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join(" ");
-        assert_eq!(validate_phrase(grouped.as_bytes()), Err(PhraseRefusal::Ms1Shaped), "grouped");
-        assert_eq!(validate_phrase(format!("  {plate}  ").as_bytes()), Err(PhraseRefusal::Ms1Shaped), "padded");
-        let grouped2: String = plate.as_bytes().chunks(2).map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join(" ");
+        assert_eq!(
+            validate_phrase(plate.as_bytes()),
+            Err(PhraseRefusal::Ms1Shaped),
+            "lowercase"
+        );
+        assert_eq!(
+            validate_phrase(plate.to_ascii_uppercase().as_bytes()),
+            Err(PhraseRefusal::Ms1Shaped),
+            "UPPERCASE"
+        );
+        let grouped: String = plate
+            .as_bytes()
+            .chunks(5)
+            .map(|c| std::str::from_utf8(c).unwrap())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(
+            validate_phrase(grouped.as_bytes()),
+            Err(PhraseRefusal::Ms1Shaped),
+            "grouped"
+        );
+        assert_eq!(
+            validate_phrase(format!("  {plate}  ").as_bytes()),
+            Err(PhraseRefusal::Ms1Shaped),
+            "padded"
+        );
+        let grouped2: String = plate
+            .as_bytes()
+            .chunks(2)
+            .map(|c| std::str::from_utf8(c).unwrap())
+            .collect::<Vec<_>>()
+            .join(" ");
         assert!(grouped2.len() > HASHLOCK_PHRASE_MAX_CHARS);
-        assert_eq!(validate_phrase(grouped2.as_bytes()), Err(PhraseRefusal::Ms1Shaped), "shape test precedes the cap");
+        assert_eq!(
+            validate_phrase(grouped2.as_bytes()),
+            Err(PhraseRefusal::Ms1Shaped),
+            "shape test precedes the cap"
+        );
     }
 
     #[test]
     fn cap_at_100() {
         assert_eq!(validate_phrase("a".repeat(100).as_bytes()), Ok(()));
-        assert_eq!(validate_phrase("a".repeat(101).as_bytes()), Err(PhraseRefusal::TooLong { chars: 101 }));
+        assert_eq!(
+            validate_phrase("a".repeat(101).as_bytes()),
+            Err(PhraseRefusal::TooLong { chars: 101 })
+        );
     }
 
     #[test]
     fn hex64_either_case_refused_short_hex_accepted() {
         let lower = "c3e97525442520da4cffd5f57aae3f6273990017f2e0fa30c056e32172e22016";
         assert_eq!(validate_phrase(lower.as_bytes()), Err(PhraseRefusal::Hex64));
-        assert_eq!(validate_phrase(lower.to_ascii_uppercase().as_bytes()), Err(PhraseRefusal::Hex64));
+        assert_eq!(
+            validate_phrase(lower.to_ascii_uppercase().as_bytes()),
+            Err(PhraseRefusal::Hex64)
+        );
         assert_eq!(validate_phrase(b"beef"), Ok(()));
-        assert_eq!(validate_phrase(&lower.as_bytes()[..63]), Ok(()), "63 hex characters is a phrase");
+        assert_eq!(
+            validate_phrase(&lower.as_bytes()[..63]),
+            Ok(()),
+            "63 hex characters is a phrase"
+        );
     }
 
     #[test]
@@ -1642,8 +2012,7 @@ git commit -m "ms-cli: hashlock_phrase -- byte-verbatim stdin reader and the phr
 - Consumes: `ms_codec::hashlock::*`, `ms_codec::{encode, decode, Payload, Tag}`,
   `hashlock_phrase::*`, `argv_guard::{admitted, CH_POSITIONAL}`,
   `parse::{Source, read_input}`, `out::write_artifact`,
-  `format::group_display` (the existing grouping helper — confirm its name with
-  `grep -n "pub fn" crates/ms-cli/src/format.rs`), `advisory::{emit_output_class_advisory, OutputClass}`,
+  `format::render_grouped` (`format.rs:18`), `advisory::{emit_output_class_advisory, OutputClass}`,
   `cmd::encode::parse_hex_entropy`.
 - Produces: `cmd::hashlock::{HashlockArgs, run(HashlockArgs) -> Result<u8>}`.
 
@@ -1673,13 +2042,16 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use clap::{Args, ValueEnum};
-use ms_codec::hashlock::{digest, preimage_hardened, preimage_random, preimage_sha256, HASHLOCK_DKLEN, HASHLOCK_ITERATIONS, HASHLOCK_SALT};
+use ms_codec::hashlock::{
+    digest, preimage_hardened, preimage_random, preimage_sha256, HASHLOCK_DKLEN,
+    HASHLOCK_ITERATIONS, HASHLOCK_SALT,
+};
 use ms_codec::{Payload, Tag};
 use zeroize::Zeroizing;
 
 use crate::advisory::{emit_output_class_advisory, OutputClass};
 use crate::error::{CliError, Result};
-use crate::hashlock_phrase::{read_phrase_stdin, validate_phrase, HASHLOCK_PHRASE_MAX_CHARS};
+use crate::hashlock_phrase::{read_phrase_stdin, validate_phrase};
 use crate::parse::{read_input, Source};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -1757,7 +2129,8 @@ const FIVE_SOURCES: &str = "exactly one source: --hashlock-phrase TEXT, --hashlo
 
 fn pick_source(args: &HashlockArgs) -> Result<SourceKind> {
     let mut chosen: Vec<SourceKind> = Vec::new();
-    if args.hashlock_phrase.is_some() || crate::argv_guard::admitted("--hashlock-phrase").is_some() {
+    if args.hashlock_phrase.is_some() || crate::argv_guard::admitted("--hashlock-phrase").is_some()
+    {
         chosen.push(SourceKind::Phrase { argv: true });
     }
     if args.hashlock_phrase_stdin {
@@ -1766,7 +2139,10 @@ fn pick_source(args: &HashlockArgs) -> Result<SourceKind> {
     if args.hex.is_some() || crate::argv_guard::admitted("--hex").is_some() {
         chosen.push(SourceKind::Hex);
     }
-    if args.ms1.is_some() || args.in_path.is_some() || crate::argv_guard::admitted(crate::argv_guard::CH_POSITIONAL).is_some() {
+    if args.ms1.is_some()
+        || args.in_path.is_some()
+        || crate::argv_guard::admitted(crate::argv_guard::CH_POSITIONAL).is_some()
+    {
         chosen.push(SourceKind::Ms1);
     }
     if args.random {
@@ -1799,7 +2175,13 @@ fn derive(args: &HashlockArgs, source: SourceKind) -> Result<Derived> {
                 // argv value; the guard replaced the argv token with `-`.
                 match crate::argv_guard::admitted("--hashlock-phrase") {
                     Some([first, ..]) => Zeroizing::new(first.as_bytes().to_vec()),
-                    _ => Zeroizing::new(args.hashlock_phrase.as_deref().unwrap_or("").as_bytes().to_vec()),
+                    _ => Zeroizing::new(
+                        args.hashlock_phrase
+                            .as_deref()
+                            .unwrap_or("")
+                            .as_bytes()
+                            .to_vec(),
+                    ),
                 }
             } else {
                 read_phrase_stdin()?
@@ -1810,7 +2192,16 @@ fn derive(args: &HashlockArgs, source: SourceKind) -> Result<Derived> {
                 Method::Hardened => preimage_hardened(&bytes),
                 Method::Sha256 => preimage_sha256(&bytes),
             };
-            Ok(Derived { x, method: Some(method), phrase_chars: Some(bytes.len()), source: if argv { "phrase (argv, admitted)" } else { "phrase (stdin)" } })
+            Ok(Derived {
+                x,
+                method: Some(method),
+                phrase_chars: Some(bytes.len()),
+                source: if argv {
+                    "phrase (argv, admitted)"
+                } else {
+                    "phrase (stdin)"
+                },
+            })
         }
         SourceKind::Hex => {
             refuse_method(args)?;
@@ -1824,11 +2215,19 @@ fn derive(args: &HashlockArgs, source: SourceKind) -> Result<Derived> {
             }
             let mut x = Zeroizing::new([0u8; 32]);
             x.copy_from_slice(&bytes);
-            Ok(Derived { x, method: None, phrase_chars: None, source: "preimage supplied (--hex)" })
+            Ok(Derived {
+                x,
+                method: None,
+                phrase_chars: None,
+                source: "preimage supplied (--hex)",
+            })
         }
         SourceKind::Ms1 => {
             refuse_method(args)?;
-            let s = read_input(Source::new(args.ms1.as_deref(), args.in_path.as_deref()).on(crate::argv_guard::CH_POSITIONAL))?;
+            let s = read_input(
+                Source::new(args.ms1.as_deref(), args.in_path.as_deref())
+                    .on(crate::argv_guard::CH_POSITIONAL),
+            )?;
             let (_tag, payload) = ms_codec::decode(&s)?;
             match payload {
                 Payload::Preimage(x) => Ok(Derived { x, method: None, phrase_chars: None, source: "preimage supplied (ms1 plate)" }),
@@ -1845,7 +2244,12 @@ fn derive(args: &HashlockArgs, source: SourceKind) -> Result<Derived> {
                 ));
             }
             let x = preimage_random()?;
-            Ok(Derived { x, method: None, phrase_chars: None, source: "random (OS CSPRNG)" })
+            Ok(Derived {
+                x,
+                method: None,
+                phrase_chars: None,
+                source: "random (OS CSPRNG)",
+            })
         }
     }
 }
@@ -1860,7 +2264,12 @@ fn refuse_method(args: &HashlockArgs) -> Result<()> {
 }
 
 fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
+    use std::fmt::Write;
+    b.iter()
+        .fold(String::with_capacity(b.len() * 2), |mut s, x| {
+            let _ = write!(s, "{x:02x}");
+            s
+        })
 }
 
 fn method_line(d: &Derived) -> String {
@@ -1895,7 +2304,10 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
         let mut o = serde_json::Map::new();
         o.insert("digest".into(), hex(&h).into());
         o.insert("hash_record".into(), record.clone().into());
-        o.insert("sha256_operand".into(), format!("sha256={}", hex(&h)).into());
+        o.insert(
+            "sha256_operand".into(),
+            format!("sha256={}", hex(&h)).into(),
+        );
         o.insert("preimage_hex".into(), hex(&d.x[..]).into());
         o.insert("preimage_ms1".into(), ms1.clone().into());
         o.insert("source".into(), d.source.into());
@@ -1919,8 +2331,12 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
 
     let mut stderr = std::io::stderr().lock();
     if !args.no_engraving_card {
-        let grouped = crate::format::group_display(&ms1, args.group_size as usize, args.separator);
-        writeln!(stderr, "THIS CARD CARRIES THE PREIMAGE -- the secret. stdout carries only the public digest.").ok();
+        let grouped = crate::format::render_grouped(&ms1, args.group_size as usize, args.separator);
+        writeln!(
+            stderr,
+            "THIS CARD CARRIES THE PREIMAGE -- the secret. stdout carries only the public digest."
+        )
+        .ok();
         writeln!(stderr, "digest:          {}", hex(&h)).ok();
         writeln!(stderr, "for md compose:  --path ... sha256={}", hex(&h)).ok();
         writeln!(stderr, "preimage (ms1):  {grouped}").ok();
@@ -1996,7 +2412,7 @@ git commit -m "ms-cli: ms hashlock -- five sources, one at a time; the record on
 ### Task 8: The other verbs on the new kind
 
 **Files:**
-- Modify: `crates/ms-cli/src/cmd/decode.rs:84-125` (fragment: two `Payload::Preimage` arms + `emit_preimage`)
+- Modify: `crates/ms-cli/src/cmd/decode.rs:84-125` (fragment: ONE early-return `Payload::Preimage` arm in the first match -- the second match is then unreachable for the kind and keeps its catch-all -- plus `emit_preimage`)
 - Modify: `crates/ms-cli/src/cmd/combine.rs:154-167` (fragment: one arm)
 - Modify: `crates/ms-cli/src/cmd/payload_lang.rs:37-61` (fragment: the typed refusal; the helper returns `Result`)
 - Modify: `crates/ms-cli/src/cmd/verify.rs`, `crates/ms-cli/src/cmd/derive.rs` (fragment: `?` on the helper's new `Result`)
@@ -2030,8 +2446,16 @@ fn ms() -> Command {
 }
 
 fn plate() -> String {
-    let out = ms().args(["hashlock", "--hex", "-", "--json"]).write_stdin(HEX32).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = ms()
+        .args(["hashlock", "--hex", "-", "--json"])
+        .write_stdin(HEX32)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     v["preimage_ms1"].as_str().unwrap().to_string()
 }
@@ -2039,20 +2463,35 @@ fn plate() -> String {
 /// MUTATION: leave decode.rs's catch-all as `unreachable!` -> exit 101.
 #[test]
 fn decode_prints_kind_hex_and_digest_and_never_words() {
-    let out = ms().args(["decode", "-"]).write_stdin(plate()).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = ms()
+        .args(["decode", "-"])
+        .write_stdin(plate())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let so = String::from_utf8_lossy(&out.stdout);
     assert!(so.contains("preimage"), "{so}");
     assert!(so.contains(HEX32), "{so}");
     assert!(so.contains(H), "{so}");
     for w in ["abandon", "sentence", "entry", "word"] {
-        assert!(!so.to_ascii_lowercase().contains(w), "a preimage rendered as words:\n{so}");
+        assert!(
+            !so.to_ascii_lowercase().contains(w),
+            "a preimage rendered as words:\n{so}"
+        );
     }
 }
 
 #[test]
 fn decode_json_carries_kind_and_digest() {
-    let out = ms().args(["decode", "-", "--json"]).write_stdin(plate()).output().unwrap();
+    let out = ms()
+        .args(["decode", "-", "--json"])
+        .write_stdin(plate())
+        .output()
+        .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["kind"], "preimage");
     assert_eq!(v["preimage_hex"], HEX32);
@@ -2064,11 +2503,22 @@ fn decode_json_carries_kind_and_digest() {
 /// and `non-zero-prefix` fire on a valid preimage single.
 #[test]
 fn inspect_reports_the_kind_with_no_false_reason() {
-    let out = ms().args(["inspect", "-"]).write_stdin(plate()).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = ms()
+        .args(["inspect", "-"])
+        .write_stdin(plate())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let so = String::from_utf8_lossy(&out.stdout);
     assert!(so.contains("preimage"), "{so}");
-    assert!(!so.contains("unknown-tag") && !so.contains("non-zero-prefix"), "{so}");
+    assert!(
+        !so.contains("unknown-tag") && !so.contains("non-zero-prefix"),
+        "{so}"
+    );
     assert!(!so.contains("would NOT decode"), "{so}");
 }
 
@@ -2077,11 +2527,18 @@ fn inspect_reports_the_kind_with_no_false_reason() {
 #[test]
 fn derive_and_verify_refuse_with_the_executable_remedy() {
     for verb in ["derive", "verify"] {
-        let out = ms().args([verb, "-"]).write_stdin(plate()).output().unwrap();
+        let out = ms()
+            .args([verb, "-"])
+            .write_stdin(plate())
+            .output()
+            .unwrap();
         assert_ne!(out.status.code(), Some(101), "{verb} panicked");
         assert!(!out.status.success(), "{verb} must refuse a preimage");
         let err = String::from_utf8_lossy(&out.stderr);
-        assert!(err.contains("ms hashlock"), "{verb}: the remedy must be executable:\n{err}");
+        assert!(
+            err.contains("ms hashlock"),
+            "{verb}: the remedy must be executable:\n{err}"
+        );
         assert!(!err.contains(HEX32), "{verb} echoed the preimage:\n{err}");
     }
 }
@@ -2096,9 +2553,23 @@ fn combine_prints_a_recovered_preimage_as_decode_does() {
     for (i, b) in x.iter_mut().enumerate() {
         *b = u8::from_str_radix(&HEX32[2 * i..2 * i + 2], 16).unwrap();
     }
-    let shares = encode_shares(Tag::HASH, Threshold::new(2).unwrap(), 2, &Payload::Preimage(zeroize::Zeroizing::new(x))).unwrap();
-    let out = ms().args(["combine", "-"]).write_stdin(shares.join("\n")).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let shares = encode_shares(
+        Tag::HASH,
+        Threshold::new(2).unwrap(),
+        2,
+        &Payload::Preimage(zeroize::Zeroizing::new(x)),
+    )
+    .unwrap();
+    let out = ms()
+        .args(["combine", "-"])
+        .write_stdin(shares.join("\n"))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let so = String::from_utf8_lossy(&out.stdout);
     assert!(so.contains(HEX32) && so.contains(H), "{so}");
 }
@@ -2107,7 +2578,11 @@ fn combine_prints_a_recovered_preimage_as_decode_does() {
 #[test]
 fn repair_on_an_undamaged_preimage_plate_is_a_no_op() {
     let p = plate();
-    let out = ms().args(["repair", "--ms1", "-"]).write_stdin(p.clone()).output().unwrap();
+    let out = ms()
+        .args(["repair", "--ms1", "-"])
+        .write_stdin(p.clone())
+        .output()
+        .unwrap();
     assert_ne!(out.status.code(), Some(101));
 }
 
@@ -2123,7 +2598,10 @@ fn unreachable_catch_all_count_is_pinned() {
             if e.path().is_dir() {
                 walk(&e.path(), n);
             } else if e.path().extension().map(|x| x == "rs").unwrap_or(false) {
-                *n += std::fs::read_to_string(e.path()).unwrap().matches("_ => unreachable!").count();
+                *n += std::fs::read_to_string(e.path())
+                    .unwrap()
+                    .matches("_ => unreachable!")
+                    .count();
             }
         }
     }
@@ -2134,8 +2612,14 @@ fn unreachable_catch_all_count_is_pinned() {
 /// The SECRET_FLAGS doc comment was corrected while the line was edited (tests N-4).
 #[test]
 fn secret_flags_doc_comment_counts_five() {
-    let s = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/argv_guard.rs")).unwrap();
-    assert!(!s.contains("The nine flag-keyed"), "stale doc comment above SECRET_FLAGS");
+    let s = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/argv_guard.rs"),
+    )
+    .unwrap();
+    assert!(
+        !s.contains("The nine flag-keyed"),
+        "stale doc comment above SECRET_FLAGS"
+    );
     assert!(s.contains("const SECRET_FLAGS: [&str; 5]"));
 }
 ```
@@ -2154,12 +2638,6 @@ Append these entries to `scripts/plan-handwire-ms-hashlock.py` (before the
 sentinel write) and apply them to the tree by hand:
 
 ```python
-edit("crates/ms-cli/src/cmd/decode.rs", [
-    # The second match (the one that extracts entropy) gains its arm; the
-    # preimage path returns early through emit_preimage.
-    ("        // ms_codec::Payload is #[non_exhaustive]; guard against future variants.\n        _ => unreachable!(\"ms-codec decode returned unknown Payload variant\"),\n    };\n",
-     "        Payload::Preimage(x) => return emit_preimage(&x, args.json),\n        // ms_codec::Payload is #[non_exhaustive]; guard against future variants.\n        _ => unreachable!(\"ms-codec decode returned unknown Payload variant\"),\n    };\n"),
-])
 # emit_preimage is appended to decode.rs as a new fn (see the Rust block below).
 edit("crates/ms-cli/src/cmd/combine.rs", [
     ("        // ms_codec::Payload is #[non_exhaustive]; guard against future variants.\n        _ => unreachable!(\"combine_shares returned an unknown Payload variant\"),\n    };",
@@ -2196,6 +2674,15 @@ edit("crates/ms-codec/src/inspect.rs", [
     ("            InspectKind::Unknown => \"unknown\",", "            InspectKind::Preimage => \"preimage\",\n            InspectKind::Unknown => \"unknown\","),
     ("        _ => (InspectKind::Unknown, None),", "        PREIMAGE_PREFIX => (InspectKind::Preimage, None),\n        _ => (InspectKind::Unknown, None),"),
 ])
+# payload_lang.rs's own unit tests destructure the helper's tuple; it returns
+# Result now, so each of the five calls unwraps (test code only).
+_p = os.path.join(root, "crates/ms-cli/src/cmd/payload_lang.rs")
+_s = open(_p, encoding="utf-8").read()
+if _s.count("            &mut buf,\n        );") != 5:
+    sys.exit("payload_lang.rs: expected five unit-test calls to the helper")
+_s = _s.replace("            &mut buf,\n        );", "            &mut buf,\n        )\n        .unwrap();", 5)
+open(_p, "w", encoding="utf-8").write(_s)
+print("  wired crates/ms-cli/src/cmd/payload_lang.rs (five test unwraps)")
 # verify.rs and derive.rs: the helper now returns Result, so each call gains `?`
 # -- exact anchors, because one call is a match-arm expression (`),`) and the
 # other a statement (`);`).
@@ -2209,8 +2696,9 @@ edit("crates/ms-cli/src/cmd/derive.rs", [
 ])
 ```
 
-Add to `crates/ms-cli/src/cmd/decode.rs` (appended; also an `edit` entry
-that appends it, so the gate sees it):
+Add to `crates/ms-cli/src/cmd/decode.rs` -- inserted BEFORE its `#[cfg(test)]`
+module (clippy's `items_after_test_module` refuses an append); the hand-wire
+script does the same:
 
 ```rust
 /// Render a preimage: kind, hex, digest. NEVER words -- a preimage is not
@@ -2219,8 +2707,8 @@ that appends it, so the gate sees it):
 pub(crate) fn emit_preimage(x: &[u8; 32], json: bool) -> crate::error::Result<u8> {
     use std::io::Write;
     let h = ms_codec::hashlock::digest(x);
-    let hx: String = x.iter().map(|b| format!("{b:02x}")).collect();
-    let hh: String = h.iter().map(|b| format!("{b:02x}")).collect();
+    let hx = hex::encode(x);
+    let hh = hex::encode(h);
     let mut out = std::io::stdout().lock();
     if json {
         writeln!(out, "{}", serde_json::json!({"kind": "preimage", "preimage_hex": hx, "digest": hh})).ok();
@@ -2282,13 +2770,43 @@ fn ms() -> Command {
 }
 
 fn record_via_stdin(phrase: &[u8], method: &str) -> (Option<i32>, String, String) {
-    let out = ms().args(["hashlock", "--hashlock-phrase-stdin", "--method", method, "--no-engraving-card"]).write_stdin(phrase.to_vec()).output().unwrap();
-    (out.status.code(), String::from_utf8_lossy(&out.stdout).to_string(), String::from_utf8_lossy(&out.stderr).to_string())
+    let out = ms()
+        .args([
+            "hashlock",
+            "--hashlock-phrase-stdin",
+            "--method",
+            method,
+            "--no-engraving-card",
+        ])
+        .write_stdin(phrase.to_vec())
+        .output()
+        .unwrap();
+    (
+        out.status.code(),
+        String::from_utf8_lossy(&out.stdout).to_string(),
+        String::from_utf8_lossy(&out.stderr).to_string(),
+    )
 }
 
 fn record_via_argv(phrase: &str, method: &str) -> (Option<i32>, String, String) {
-    let out = ms().args(["hashlock", "--allow-argv-secret", "--hashlock-phrase", phrase, "--method", method, "--no-engraving-card"]).write_stdin("").output().unwrap();
-    (out.status.code(), String::from_utf8_lossy(&out.stdout).to_string(), String::from_utf8_lossy(&out.stderr).to_string())
+    let out = ms()
+        .args([
+            "hashlock",
+            "--allow-argv-secret",
+            "--hashlock-phrase",
+            phrase,
+            "--method",
+            method,
+            "--no-engraving-card",
+        ])
+        .write_stdin("")
+        .output()
+        .unwrap();
+    (
+        out.status.code(),
+        String::from_utf8_lossy(&out.stdout).to_string(),
+        String::from_utf8_lossy(&out.stderr).to_string(),
+    )
 }
 
 /// Byte-exact through BOTH channels, equal to the codec's own answer.
@@ -2298,14 +2816,22 @@ fn byte_exact_rows_on_both_channels() {
         let expect = {
             let x = ms_codec::hashlock::preimage_sha256(phrase.as_bytes());
             let h = ms_codec::hashlock::digest(&x);
-            format!("hash:{}", h.iter().map(|b| format!("{b:02x}")).collect::<String>())
+            format!("hash:{}", hex::encode(h))
         };
         let (code, so, se) = record_via_stdin(phrase.as_bytes(), "sha256");
         assert_eq!(code, Some(0), "stdin {phrase:?}: {se}");
-        assert_eq!(so.trim(), expect, "stdin channel changed the bytes of {phrase:?}");
+        assert_eq!(
+            so.trim(),
+            expect,
+            "stdin channel changed the bytes of {phrase:?}"
+        );
         let (code, so, se) = record_via_argv(phrase, "sha256");
         assert_eq!(code, Some(0), "argv {phrase:?}: {se}");
-        assert_eq!(so.trim(), expect, "argv channel changed the bytes of {phrase:?}");
+        assert_eq!(
+            so.trim(),
+            expect,
+            "argv channel changed the bytes of {phrase:?}"
+        );
     }
 }
 
@@ -2325,28 +2851,58 @@ fn refusals_in_four_spellings_on_both_channels_name_the_ms1_route() {
     let plate = String::from_utf8(
         ms().args(["hashlock", "--hex", "-", "--json"])
             .write_stdin("c3e97525442520da4cffd5f57aae3f6273990017f2e0fa30c056e32172e22016")
-            .output().unwrap().stdout,
+            .output()
+            .unwrap()
+            .stdout,
     )
     .unwrap();
-    let plate: String = serde_json::from_str::<serde_json::Value>(&plate).unwrap()["preimage_ms1"].as_str().unwrap().to_string();
-    let grouped5: String = plate.as_bytes().chunks(5).map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join(" ");
-    let grouped2: String = plate.as_bytes().chunks(2).map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join(" ");
+    let plate: String = serde_json::from_str::<serde_json::Value>(&plate).unwrap()["preimage_ms1"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let grouped5: String = plate
+        .as_bytes()
+        .chunks(5)
+        .map(|c| std::str::from_utf8(c).unwrap())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let grouped2: String = plate
+        .as_bytes()
+        .chunks(2)
+        .map(|c| std::str::from_utf8(c).unwrap())
+        .collect::<Vec<_>>()
+        .join(" ");
     for (name, s) in [
         ("lowercase", plate.clone()),
         ("UPPERCASE", plate.to_ascii_uppercase()),
         ("grouped", grouped5),
         ("padded", format!("  {plate}  ")),
-        ("grouped-by-2 (112 chars: the shape test precedes the cap)", grouped2),
+        (
+            "grouped-by-2 (112 chars: the shape test precedes the cap)",
+            grouped2,
+        ),
     ] {
         let (code, _, se) = record_via_stdin(s.as_bytes(), "sha256");
         assert_eq!(code, Some(1), "stdin {name}: {se}");
-        assert!(se.contains("--in"), "stdin {name} must name the ms1 route:\n{se}");
-        assert!(!se.contains("100 characters") || !name.starts_with("grouped-by-2"), "cap fired before the shape test:\n{se}");
+        assert!(
+            se.contains("--in"),
+            "stdin {name} must name the ms1 route:\n{se}"
+        );
+        assert!(
+            !se.contains("100 characters") || !name.starts_with("grouped-by-2"),
+            "cap fired before the shape test:\n{se}"
+        );
         // The argv channel: the guard's shape layer catches a plate string
         // FIRST (it is ms1 material on argv) and names --in itself.
-        let out = ms().args(["hashlock", "--hashlock-phrase", &s]).output().unwrap();
+        let out = ms()
+            .args(["hashlock", "--hashlock-phrase", &s])
+            .output()
+            .unwrap();
         assert_eq!(out.status.code(), Some(1), "argv {name}");
-        assert!(String::from_utf8_lossy(&out.stderr).contains("--in"), "argv {name} must name the ms1 route");
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("--in"),
+            "argv {name} must name the ms1 route"
+        );
     }
 }
 
@@ -2356,7 +2912,10 @@ fn hex64_either_case_is_redirected_to_hex_on_stdin_and_short_hex_is_accepted() {
     for s in [lower.to_string(), lower.to_ascii_uppercase()] {
         let (code, _, se) = record_via_stdin(s.as_bytes(), "sha256");
         assert_eq!(code, Some(1), "{se}");
-        assert!(se.contains("--hex") && se.contains("64 hex characters"), "{se}");
+        assert!(
+            se.contains("--hex") && se.contains("64 hex characters"),
+            "{se}"
+        );
     }
     let (code, _, se) = record_via_stdin(b"beef", "sha256");
     assert_eq!(code, Some(0), "{se}");
@@ -2365,12 +2924,23 @@ fn hex64_either_case_is_redirected_to_hex_on_stdin_and_short_hex_is_accepted() {
 #[test]
 fn printable_ascii_boundary_and_cap() {
     assert_eq!(record_via_stdin(b" ~", "sha256").0, Some(0));
-    for bad in [b"a\tb".to_vec(), b"a\x7f".to_vec(), vec![0xff], "caf\u{e9}".as_bytes().to_vec()] {
+    for bad in [
+        b"a\tb".to_vec(),
+        b"a\x7f".to_vec(),
+        vec![0xff],
+        "caf\u{e9}".as_bytes().to_vec(),
+    ] {
         let (code, _, se) = record_via_stdin(&bad, "sha256");
         assert_eq!(code, Some(1), "{bad:?}: {se}");
-        assert!(se.contains("printable ASCII"), "the rule must be named:\n{se}");
+        assert!(
+            se.contains("printable ASCII"),
+            "the rule must be named:\n{se}"
+        );
     }
-    assert_eq!(record_via_stdin("a".repeat(100).as_bytes(), "sha256").0, Some(0));
+    assert_eq!(
+        record_via_stdin("a".repeat(100).as_bytes(), "sha256").0,
+        Some(0)
+    );
     let (code, _, se) = record_via_stdin("a".repeat(101).as_bytes(), "sha256");
     assert_eq!(code, Some(1));
     assert!(se.contains("100"), "{se}");
@@ -2387,7 +2957,7 @@ fn lockstep_100_and_101() {
     assert_eq!(code, Some(0));
     let x = ms_codec::hashlock::preimage_hardened(p100.as_bytes());
     let h = ms_codec::hashlock::digest(&x);
-    assert_eq!(so.trim(), format!("hash:{}", h.iter().map(|b| format!("{b:02x}")).collect::<String>()));
+    assert_eq!(so.trim(), format!("hash:{}", hex::encode(h)));
 }
 ```
 
@@ -2418,31 +2988,81 @@ fn ms() -> Command {
 fn stdout_is_exactly_the_record_under_out_and_under_sha256() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("x.txt");
-    let out = ms().args(["hashlock", "--hashlock-phrase-stdin", "--out", p.to_str().unwrap()]).write_stdin(PHRASE).output().unwrap();
-    assert_eq!(String::from_utf8_lossy(&out.stdout), format!("{H_HARD}\n"), "under --out");
-    let out = ms().args(["hashlock", "--hashlock-phrase-stdin", "--method", "sha256"]).write_stdin(PHRASE).output().unwrap();
-    assert_eq!(String::from_utf8_lossy(&out.stdout), format!("{H_SHA}\n"), "under sha256, which always warns");
+    let out = ms()
+        .args([
+            "hashlock",
+            "--hashlock-phrase-stdin",
+            "--out",
+            p.to_str().unwrap(),
+        ])
+        .write_stdin(PHRASE)
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        format!("{H_HARD}\n"),
+        "under --out"
+    );
+    let out = ms()
+        .args(["hashlock", "--hashlock-phrase-stdin", "--method", "sha256"])
+        .write_stdin(PHRASE)
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        format!("{H_SHA}\n"),
+        "under sha256, which always warns"
+    );
     assert!(String::from_utf8_lossy(&out.stderr).contains("brainwallet"));
 }
 
 #[test]
 fn the_card_names_the_preimage_on_its_first_line_and_carries_the_method_line() {
-    let out = ms().args(["hashlock", "--hashlock-phrase-stdin"]).write_stdin(PHRASE).output().unwrap();
+    let out = ms()
+        .args(["hashlock", "--hashlock-phrase-stdin"])
+        .write_stdin(PHRASE)
+        .output()
+        .unwrap();
     let se = String::from_utf8_lossy(&out.stderr);
     let first = se.lines().next().unwrap();
-    assert!(first.to_ascii_uppercase().contains("PREIMAGE"), "first line: {first}");
+    assert!(
+        first.to_ascii_uppercase().contains("PREIMAGE"),
+        "first line: {first}"
+    );
     assert!(se.contains("preimage = PBKDF2-HMAC-SHA256(password = phrase, salt = \"ms-hashlock-v1\", iterations = 100000, dkLen = 32)"), "{se}");
     assert!(se.contains("28 characters"), "the character count:\n{se}");
-    assert!(se.contains("each method that shipped with the version named on this card"), "{se}");
+    assert!(
+        se.contains("each method that shipped with the version named on this card"),
+        "{se}"
+    );
     assert!(se.contains("One phrase per policy"), "{se}");
-    assert!(se.contains("OP_SIZE 32") || se.contains("32 bytes (64 hex characters)"), "{se}");
+    assert!(
+        se.contains("OP_SIZE 32") || se.contains("32 bytes (64 hex characters)"),
+        "{se}"
+    );
 }
 
 /// MUTATION: hardened threshold at 19 or 21 -> one of these flips.
 #[test]
 fn hardened_warns_under_20_only() {
-    let se19 = String::from_utf8_lossy(&ms().args(["hashlock", "--hashlock-phrase-stdin"]).write_stdin("a".repeat(19)).output().unwrap().stderr).to_string();
-    let se20 = String::from_utf8_lossy(&ms().args(["hashlock", "--hashlock-phrase-stdin"]).write_stdin("a".repeat(20)).output().unwrap().stderr).to_string();
+    let se19 = String::from_utf8_lossy(
+        &ms()
+            .args(["hashlock", "--hashlock-phrase-stdin"])
+            .write_stdin("a".repeat(19))
+            .output()
+            .unwrap()
+            .stderr,
+    )
+    .to_string();
+    let se20 = String::from_utf8_lossy(
+        &ms()
+            .args(["hashlock", "--hashlock-phrase-stdin"])
+            .write_stdin("a".repeat(20))
+            .output()
+            .unwrap()
+            .stderr,
+    )
+    .to_string();
     assert!(se19.contains("72 days"), "19 chars must warn:\n{se19}");
     assert!(!se20.contains("72 days"), "20 chars must not warn:\n{se20}");
 }
@@ -2451,36 +3071,64 @@ fn hardened_warns_under_20_only() {
 #[test]
 fn sha256_warns_at_every_length() {
     for n in [1usize, 28, 100] {
-        let se = String::from_utf8_lossy(&ms().args(["hashlock", "--hashlock-phrase-stdin", "--method", "sha256"]).write_stdin("b".repeat(n)).output().unwrap().stderr).to_string();
+        let se = String::from_utf8_lossy(
+            &ms()
+                .args(["hashlock", "--hashlock-phrase-stdin", "--method", "sha256"])
+                .write_stdin("b".repeat(n))
+                .output()
+                .unwrap()
+                .stderr,
+        )
+        .to_string();
         assert!(se.contains("brainwallet"), "{n} chars:\n{se}");
     }
 }
 
 #[test]
 fn hex_source_gets_the_unconditional_warning_and_no_write_it_down_line() {
-    let out = ms().args(["hashlock", "--hex", "-"]).write_stdin(HEX32).output().unwrap();
+    let out = ms()
+        .args(["hashlock", "--hex", "-"])
+        .write_stdin(HEX32)
+        .output()
+        .unwrap();
     let se = String::from_utf8_lossy(&out.stderr);
     assert!(se.contains("publishes these 32 bytes in the clear"), "{se}");
     assert!(se.contains("preimage supplied"), "{se}");
-    assert!(!se.contains("write the method line next to your phrase"), "no phrase, no instruction:\n{se}");
-    assert!(!se.contains("brainwallet") && !se.contains("72 days"), "method-keyed warnings must not fire:\n{se}");
+    assert!(
+        !se.contains("write the method line next to your phrase"),
+        "no phrase, no instruction:\n{se}"
+    );
+    assert!(
+        !se.contains("brainwallet") && !se.contains("72 days"),
+        "method-keyed warnings must not fire:\n{se}"
+    );
 }
 
 #[test]
 fn random_card_names_the_file_not_a_plate() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("x.txt");
-    let out = ms().args(["hashlock", "--random", "--out", p.to_str().unwrap()]).output().unwrap();
+    let out = ms()
+        .args(["hashlock", "--random", "--out", p.to_str().unwrap()])
+        .output()
+        .unwrap();
     let se = String::from_utf8_lossy(&out.stderr);
     assert!(se.contains("nothing can be remembered"), "{se}");
-    assert!(se.contains("The file you just wrote is the only copy"), "{se}");
+    assert!(
+        se.contains("The file you just wrote is the only copy"),
+        "{se}"
+    );
     assert!(!se.contains("This plate is the only copy"), "{se}");
 }
 
 /// Both `--json` variants; every hex lowercase; the advisory fires.
 #[test]
 fn json_both_variants() {
-    let out = ms().args(["hashlock", "--hashlock-phrase-stdin", "--json"]).write_stdin(PHRASE).output().unwrap();
+    let out = ms()
+        .args(["hashlock", "--hashlock-phrase-stdin", "--json"])
+        .write_stdin(PHRASE)
+        .output()
+        .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["hash_record"], H_HARD);
     assert_eq!(v["method"]["iterations"], 100000);
@@ -2490,11 +3138,26 @@ fn json_both_variants() {
         let s = v[k].as_str().unwrap();
         assert_eq!(s, s.to_ascii_lowercase(), "{k} must be lowercase hex");
     }
-    assert!(String::from_utf8_lossy(&out.stderr).contains("private key material") || String::from_utf8_lossy(&out.stderr).to_ascii_lowercase().contains("secret"));
-    let out = ms().args(["hashlock", "--hex", "-", "--json"]).write_stdin(HEX32).output().unwrap();
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("private key material")
+            || String::from_utf8_lossy(&out.stderr)
+                .to_ascii_lowercase()
+                .contains("secret")
+    );
+    let out = ms()
+        .args(["hashlock", "--hex", "-", "--json"])
+        .write_stdin(HEX32)
+        .output()
+        .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert!(v.get("method").is_none(), "method omitted for a supplied preimage");
-    assert!(v.get("phrase_chars").is_none(), "phrase_chars omitted for a supplied preimage");
+    assert!(
+        v.get("method").is_none(),
+        "method omitted for a supplied preimage"
+    );
+    assert!(
+        v.get("phrase_chars").is_none(),
+        "phrase_chars omitted for a supplied preimage"
+    );
     assert_eq!(v["preimage_hex"], HEX32);
 }
 
@@ -2503,10 +3166,27 @@ fn json_both_variants() {
 fn random_json_with_out_succeeds() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("x.txt");
-    let out = ms().args(["hashlock", "--random", "--out", p.to_str().unwrap(), "--json", "--no-engraving-card"]).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = ms()
+        .args([
+            "hashlock",
+            "--random",
+            "--out",
+            p.to_str().unwrap(),
+            "--json",
+            "--no-engraving-card",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert!(v["preimage_ms1"].as_str().unwrap().starts_with("ms10hashsq"));
+    assert!(v["preimage_ms1"]
+        .as_str()
+        .unwrap()
+        .starts_with("ms10hashsq"));
 }
 
 /// The record feeds the composer's packer unmodified (§12.6): the spelling
@@ -2514,10 +3194,16 @@ fn random_json_with_out_succeeds() {
 /// it SAYS so on stderr and still passes the shape check.
 #[test]
 fn record_line_shape_is_what_me_sysw_pack_reads() {
-    let out = ms().args(["hashlock", "--hashlock-phrase-stdin", "--no-engraving-card"]).write_stdin(PHRASE).output().unwrap();
+    let out = ms()
+        .args(["hashlock", "--hashlock-phrase-stdin", "--no-engraving-card"])
+        .write_stdin(PHRASE)
+        .output()
+        .unwrap();
     let line = String::from_utf8_lossy(&out.stdout);
     assert!(line.starts_with("hash:") && line.trim().len() == 5 + 64);
-    assert!(line.trim()[5..].bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
+    assert!(line.trim()[5..]
+        .bytes()
+        .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
 }
 ```
 
@@ -2550,9 +3236,16 @@ fn assert_silent(args: &[&str], stdin: &[u8], secrets: &[&str], label: &str) {
         let out = ms().args(&a).write_stdin(stdin.to_vec()).output().unwrap();
         assert!(!out.status.success(), "{label} (json={json}) must refuse");
         assert_ne!(out.status.code(), Some(101), "{label} panicked");
-        let all = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+        let all = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
         for s in secrets {
-            assert!(!all.contains(s), "{label} (json={json}) echoed material:\n{all}");
+            assert!(
+                !all.contains(s),
+                "{label} (json={json}) echoed material:\n{all}"
+            );
         }
     }
 }
@@ -2561,18 +3254,76 @@ fn assert_silent(args: &[&str], stdin: &[u8], secrets: &[&str], label: &str) {
 fn eleven_refusals_never_echo() {
     let tab_phrase = format!("{SECRET_PHRASE}\t");
     let long_phrase = format!("{SECRET_PHRASE}{}", "x".repeat(100));
-    let plate = "ms10hashsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq";
-    assert_silent(&["hashlock", "--hashlock-phrase-stdin"], b"", &[SECRET_PHRASE], "empty");
-    assert_silent(&["hashlock", "--hashlock-phrase-stdin"], "caf\u{e9} zebra quantum".as_bytes(), &["zebra quantum"], "non-ascii");
-    assert_silent(&["hashlock", "--hashlock-phrase-stdin"], tab_phrase.as_bytes(), &[SECRET_PHRASE], "control byte");
-    assert_silent(&["hashlock", "--hashlock-phrase-stdin"], long_phrase.as_bytes(), &[SECRET_PHRASE], "over 100");
-    assert_silent(&["hashlock", "--hashlock-phrase-stdin"], SECRET_HEX.as_bytes(), &[SECRET_HEX], "64-hex");
-    assert_silent(&["hashlock", "--hashlock-phrase-stdin"], plate.as_bytes(), &[plate], "ms1-shaped");
-    assert_silent(&["hashlock", "--hex", "-"], b"abcd", &["abcd"], "--hex wrong length");
-    assert_silent(&["hashlock", "-"], b"ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f", &["ms10entrsqqqqq"], "wrong ms1 kind");
+    let plate = format!("ms10hashsq{}", "q".repeat(65));
+    let plate = plate.as_str();
+    assert_silent(
+        &["hashlock", "--hashlock-phrase-stdin"],
+        b"",
+        &[SECRET_PHRASE],
+        "empty",
+    );
+    assert_silent(
+        &["hashlock", "--hashlock-phrase-stdin"],
+        "caf\u{e9} zebra quantum".as_bytes(),
+        &["zebra quantum"],
+        "non-ascii",
+    );
+    assert_silent(
+        &["hashlock", "--hashlock-phrase-stdin"],
+        tab_phrase.as_bytes(),
+        &[SECRET_PHRASE],
+        "control byte",
+    );
+    assert_silent(
+        &["hashlock", "--hashlock-phrase-stdin"],
+        long_phrase.as_bytes(),
+        &[SECRET_PHRASE],
+        "over 100",
+    );
+    assert_silent(
+        &["hashlock", "--hashlock-phrase-stdin"],
+        SECRET_HEX.as_bytes(),
+        &[SECRET_HEX],
+        "64-hex",
+    );
+    assert_silent(
+        &["hashlock", "--hashlock-phrase-stdin"],
+        plate.as_bytes(),
+        &[plate],
+        "ms1-shaped",
+    );
+    assert_silent(
+        &["hashlock", "--hex", "-"],
+        b"abcd",
+        &["abcd"],
+        "--hex wrong length",
+    );
+    assert_silent(
+        &["hashlock", "-"],
+        b"ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f",
+        &["ms10entrsqqqqq"],
+        "wrong ms1 kind",
+    );
     assert_silent(&["hashlock"], b"", &[SECRET_PHRASE], "zero sources");
-    assert_silent(&["hashlock", "--hashlock-phrase-stdin", "--hex", SECRET_HEX], SECRET_PHRASE.as_bytes(), &[SECRET_PHRASE, SECRET_HEX], "two sources");
-    assert_silent(&["hashlock", "--hex", SECRET_HEX, "--method", "sha256", "--allow-argv-secret"], b"", &[SECRET_HEX], "--method with a supplied X");
+    assert_silent(
+        &["hashlock", "--hashlock-phrase-stdin", "--hex", SECRET_HEX],
+        SECRET_PHRASE.as_bytes(),
+        &[SECRET_PHRASE, SECRET_HEX],
+        "two sources",
+    );
+    assert_silent(
+        &[
+            "hashlock",
+            "--hex",
+            SECRET_HEX,
+            "--method",
+            "sha256",
+            "--allow-argv-secret",
+        ],
+        b"",
+        &[SECRET_HEX],
+        "--method with a supplied X",
+    );
 }
 ```
 
@@ -2780,9 +3531,10 @@ parts, three gates); §7 → Tasks 7, 9 (every line, the boundaries); §8 → Ta
 Tasks 10, 11 (MIGRATION's five items, H0 first); §10 → Tasks 10, 11 (versions,
 pin, dry run, tags, manual); §11 → Tasks 5, 8, 9 (every listed test; the
 `/dev/null` gates ×3; the ten pairs; the negative-content matrix; the
-catch-all count; the `Zeroizing` pin — **gap:** the compile-time pin on
-`Payload::Preimage`'s field type is not in any task; add to Task 2 Step 1 a
-test `fn preimage_field_is_zeroizing() { let p = Payload::Preimage(Zeroizing::new([0u8;32])); if let Payload::Preimage(z) = p { let _: &Zeroizing<[u8;32]> = &z; } }` — done, it is a type-level assertion the compiler enforces); §12 → Task 11 Step 3; §13 → nothing to build; §14 → the citations below.
+catch-all count; the `Zeroizing` pin — the first draft of this section
+claimed that pin was "done" while no code block carried it; it is now Task
+2's `preimage_field_is_zeroizing`, a type-level assertion the compiler
+enforces); §12 → Task 11 Step 3; §13 → nothing to build; §14 → the citations below.
 
 **Placeholder scan.** The corpus's `"…"` cells are the implementer's to fill
 from the two external tools and are named as such with the `provenance`

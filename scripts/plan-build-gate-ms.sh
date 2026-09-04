@@ -113,16 +113,26 @@ cargo build --workspace --all-targets 2>&1 | tail -3
 cargo build --workspace --all-targets --locked 2>&1 | tail -1
 cargo nextest run --workspace --locked --no-fail-fast -E 'binary(/hashlock/) | test(/hashlock/)' 2>&1 | tail -12
 cargo clippy --workspace --all-targets --locked -- -D warnings 2>&1 | tail -3
-cargo fmt --check 2>&1 | tail -3 && echo "fmt clean"
+# fmt is its own statement so a diff STOPS the gate (an `a | b && c` list would
+# let set -e walk past it); the diff's head is printed for the fold.
+if ! cargo fmt --check > "${WORK}/fmt.diff" 2>&1; then
+  echo "rustfmt diff ($(grep -c '^Diff in' "${WORK}/fmt.diff") hunks):"; head -40 "${WORK}/fmt.diff"; exit 5
+fi
+echo "fmt clean"
 
 echo "== 5 -- codeword distance (spec §1) =="
-cargo nextest run -p ms-codec --locked -E 'test(hashlock_kind::codeword_distance)' 2>&1 | grep -E "distance|PASS|FAIL" | head -3
+cargo nextest run -p ms-codec --locked --no-capture -E 'test(codeword_distance)' 2>&1 | grep -E "codeword distance|PASS|FAIL" | head -3
 
 echo "== 6 -- downgrade row against the pre-H1 tree ($PRE_H1) =="
 PRE="${TMPDIR:-/tmp}/plan-build-gate-ms-pre"
 rm -rf "$PRE"; git -C "$SRC" worktree add -q --detach "$PRE" "$PRE_H1"
 ( cd "$PRE" && CARGO_TARGET_DIR="${CARGO_TARGET_DIR}-pre" cargo build -p ms-cli --locked -q )
-S=$(python3 -c "import json;print(json.load(open('$WORK/crates/ms-codec/tests/vectors/hashlock-v0.8.json'))['kind'][0]['ms1'])")
+# The string comes from the WIRED binary, not from a corpus cell an implementer
+# may not have filled yet: the gate's job is to prove the old reader refuses
+# what the new writer emits.
+S=$(printf 'ab%.0s' $(seq 32) | "${CARGO_TARGET_DIR}/debug/ms" hashlock --hex - --json --no-engraving-card 2>/dev/null | python3 -c "import json,sys;print(json.load(sys.stdin)['preimage_ms1'])")
+[ -n "$S" ] || { echo "could not obtain a preimage plate string from the wired ms" >&2; exit 4; }
+echo "plate: $S"
 set +e
 OUT=$(printf '%s\n' "$S" | "${CARGO_TARGET_DIR}-pre/debug/ms" decode - 2>&1); RC=$?
 set -e

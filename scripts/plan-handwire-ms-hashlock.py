@@ -57,6 +57,8 @@ edit("crates/ms-codec/src/payload.rs", [
      "            Payload::Mnem { .. } => PayloadKind::Mnem,\n            Payload::Preimage(_) => PayloadKind::Preimage,\n        }"),
     ("            Payload::Mnem { entropy, .. } => entropy,\n        }",
      "            Payload::Mnem { entropy, .. } => entropy,\n            Payload::Preimage(x) => &x[..],\n        }"),
+    ("    pub fn validate(&self) -> Result<()> {\n        match self {\n            Payload::Entr(data) => {",
+     "    pub fn validate(&self) -> Result<()> {\n        match self {\n            // A preimage's length is structural in the variant (SPEC_ms_hashlock §3).\n            Payload::Preimage(_) => Ok(()),\n            Payload::Entr(data) => {"),
 ])
 edit("crates/ms-codec/src/envelope.rs", [
     ("use crate::consts::{", "use crate::consts::{PREIMAGE_PREFIX, "),
@@ -121,6 +123,8 @@ edit("crates/ms-cli/src/argv_guard.rs", [
     ('        "--ms1" => "an ms1 string",', '        "--ms1" => "an ms1 string",\n        "--hashlock-phrase" => "a hashlock phrase",'),
     ("fn argv_candidates(token: &str) -> Vec<String> {\n    let norm = |s: &str| s.trim().to_ascii_lowercase();",
      "fn argv_candidates(token: &str) -> Vec<String> {\n    // The fold and trim now live in `looks_like_ms1` as well, so the phrase\n    // channels and this guard test the SAME normalised shape\n    // (SPEC_ms_hashlock §4.3; R0 r0 tests C-1).\n    let norm = |s: &str| s.trim().to_ascii_lowercase();"),
+    ("/// The nine flag-keyed secret channels, as strings. No parse, no clap.",
+     "/// The five flag-keyed secret channels, as strings. No parse, no clap."),
     ("fn is_ms1_shaped(s: &str) -> bool {",
      "/// `is_ms1_shaped` over the NORMALISED token: trimmed, lowercased, display\n/// separators stripped. The one predicate both the argv guard and the phrase\n/// channels call, so the two cannot drift (SPEC_ms_hashlock §4.3). An\n/// uppercase plate string -- the BIP-173/QR spelling `ms decode` accepts --\n/// is caught here and only here.\npub(crate) fn looks_like_ms1(raw: &str) -> bool {\n    is_ms1_shaped(&raw.trim().to_ascii_lowercase())\n}\n\nfn is_ms1_shaped(s: &str) -> bool {"),
 ])
@@ -129,19 +133,15 @@ edit("crates/ms-cli/src/error.rs", [
      "    BadInput(String),\n    /// A usage error the verb itself detects (source arithmetic, a gate a flag\n    /// must satisfy): exit 64, the same code clap uses for its own.\n    Usage(String),"),
     ("            | CliError::PayloadLengthMismatch { .. } => 1,",
      "            | CliError::PayloadLengthMismatch { .. } => 1,\n            CliError::Usage(_) => 64,"),
+    ("            CliError::BadInput(_) => \"BadInput\",", "            CliError::BadInput(_) => \"BadInput\",\n            CliError::Usage(_) => \"Usage\","),
+    ("            CliError::BadInput(m) => m.clone(),", "            CliError::BadInput(m) => m.clone(),\n            CliError::Usage(m) => m.clone(),"),
 ])
 edit("crates/ms-cli/src/cmd/decode.rs", [
     ("        // ms_codec::Payload is #[non_exhaustive]; guard against future variants.\n        _ => unreachable!(\"ms-codec decode returned unknown Payload variant\"),\n    };",
-     "        // A preimage carries no language; the value is rendered below by\n        // `emit_preimage`, never as words (SPEC_ms_hashlock §5).\n        Payload::Preimage(_) => (cli_lang, defaulted),\n        // ms_codec::Payload is #[non_exhaustive]; guard against future variants.\n        _ => unreachable!(\"ms-codec decode returned unknown Payload variant\"),\n    };"),
+     "        // A preimage is rendered by `emit_preimage`, never as words, and the\n        // verb RETURNS here: the second match below (entropy extraction) is\n        // never reached for this kind and keeps its catch-all (SPEC_ms_hashlock §5).\n        Payload::Preimage(x) => return emit_preimage(x, args.json),\n        // ms_codec::Payload is #[non_exhaustive]; guard against future variants.\n        _ => unreachable!(\"ms-codec decode returned unknown Payload variant\"),\n    };"),
 ])
 edit("crates/ms-cli/src/out.rs", [
     ("pub(crate) fn write_artifact(", '/// Like `write_artifact`, but REFUSES an existing path (exit 64, naming it)\n/// instead of truncating. For `--random` only: that artifact is a function of\n/// nothing and cannot be re-made (SPEC_ms_hashlock §4.1).\npub(crate) fn write_artifact_create_new(path: &std::path::Path, body: &str) -> Result<()> {\n    if path.exists() {\n        return Err(CliError::Usage(format!(\n            "--out {} already exists; a --random preimage will not overwrite it (choose another file, or move the old one first)",\n            path.display()\n        )));\n    }\n    write_artifact(path, body)\n}\n\npub(crate) fn write_artifact('),
-])
-edit("crates/ms-cli/src/cmd/decode.rs", [
-    # The second match (the one that extracts entropy) gains its arm; the
-    # preimage path returns early through emit_preimage.
-    ("        // ms_codec::Payload is #[non_exhaustive]; guard against future variants.\n        _ => unreachable!(\"ms-codec decode returned unknown Payload variant\"),\n    };\n",
-     "        Payload::Preimage(x) => return emit_preimage(&x, args.json),\n        // ms_codec::Payload is #[non_exhaustive]; guard against future variants.\n        _ => unreachable!(\"ms-codec decode returned unknown Payload variant\"),\n    };\n"),
 ])
 # emit_preimage is appended to decode.rs as a new fn (see the Rust block below).
 edit("crates/ms-cli/src/cmd/combine.rs", [
@@ -168,8 +168,10 @@ edit("crates/ms-cli/src/cmd/inspect.rs", [
 # emit_preimage, appended to decode.rs (Task 8).
 _p = os.path.join(root, "crates/ms-cli/src/cmd/decode.rs")
 _s = open(_p, encoding="utf-8").read()
-open(_p, "w", encoding="utf-8").write(_s + "\n" + '/// Render a preimage: kind, hex, digest. NEVER words -- a preimage is not\n/// entropy, and a 24-word rendering would be a seed nobody holds\n/// (SPEC_ms_hashlock §5).\npub(crate) fn emit_preimage(x: &[u8; 32], json: bool) -> crate::error::Result<u8> {\n    use std::io::Write;\n    let h = ms_codec::hashlock::digest(x);\n    let hx: String = x.iter().map(|b| format!("{b:02x}")).collect();\n    let hh: String = h.iter().map(|b| format!("{b:02x}")).collect();\n    let mut out = std::io::stdout().lock();\n    if json {\n        writeln!(out, "{}", serde_json::json!({"kind": "preimage", "preimage_hex": hx, "digest": hh})).ok();\n    } else {\n        writeln!(out, "kind:      preimage (hashlock, 32 bytes / 64 hex characters)").ok();\n        writeln!(out, "preimage:  {hx}").ok();\n        writeln!(out, "digest:    {hh}").ok();\n    }\n    drop(out);\n    let mut err = std::io::stderr().lock();\n    crate::advisory::emit_output_class_advisory(crate::advisory::OutputClass::PrivateKeyMaterial, &mut err);\n    Ok(0)\n}\n')
-print("  wired crates/ms-cli/src/cmd/decode.rs (emit_preimage appended)")
+if _s.count("#[cfg(test)]") != 1:
+    sys.exit("decode.rs: expected exactly one #[cfg(test)] to insert emit_preimage before")
+open(_p, "w", encoding="utf-8").write(_s.replace("#[cfg(test)]", '/// Render a preimage: kind, hex, digest. NEVER words -- a preimage is not\n/// entropy, and a 24-word rendering would be a seed nobody holds\n/// (SPEC_ms_hashlock §5).\npub(crate) fn emit_preimage(x: &[u8; 32], json: bool) -> crate::error::Result<u8> {\n    use std::io::Write;\n    let h = ms_codec::hashlock::digest(x);\n    let hx = hex::encode(x);\n    let hh = hex::encode(h);\n    let mut out = std::io::stdout().lock();\n    if json {\n        writeln!(out, "{}", serde_json::json!({"kind": "preimage", "preimage_hex": hx, "digest": hh})).ok();\n    } else {\n        writeln!(out, "kind:      preimage (hashlock, 32 bytes / 64 hex characters)").ok();\n        writeln!(out, "preimage:  {hx}").ok();\n        writeln!(out, "digest:    {hh}").ok();\n    }\n    drop(out);\n    let mut err = std::io::stderr().lock();\n    crate::advisory::emit_output_class_advisory(crate::advisory::OutputClass::PrivateKeyMaterial, &mut err);\n    Ok(0)\n}\n' + "\n#[cfg(test)]", 1))
+print("  wired crates/ms-cli/src/cmd/decode.rs (emit_preimage inserted before the test module)")
 edit("crates/ms-cli/src/cmd/inspect.rs", [
     ("use ms_codec::consts::{", "use ms_codec::consts::{TAG_HASH, VALID_PREIMAGE_STR_LENGTHS, "),
 ])
@@ -189,5 +191,21 @@ edit("crates/ms-cli/src/cmd/derive.rs", [
     ("                    &mut stderr,\n                );\n            let m = Mnemonic::from_entropy_in(",
      "                    &mut stderr,\n                )?;\n            let m = Mnemonic::from_entropy_in("),
 ])
+# payload_lang.rs's own unit tests destructure the helper's tuple; it returns
+# Result now, so each of the five calls unwraps (test code only).
+_p = os.path.join(root, "crates/ms-cli/src/cmd/payload_lang.rs")
+_s = open(_p, encoding="utf-8").read()
+if _s.count("            &mut buf,\n        );") != 5:
+    sys.exit("payload_lang.rs: expected five unit-test calls to the helper")
+_s = _s.replace("            &mut buf,\n        );", "            &mut buf,\n        )\n        .unwrap();", 5)
+open(_p, "w", encoding="utf-8").write(_s)
+print("  wired crates/ms-cli/src/cmd/payload_lang.rs (five test unwraps)")
+# FORMAT THE WIRED COPY: the fragments above lengthen a few existing lines
+# (the blocklist, two import lines, SECRET_FLAGS) past rustfmt's width, and a
+# fragment kept fmt-clean by hand would drift the first time an anchor moved.
+# The implementer runs `cargo fmt` after applying fragments for the same reason.
+import subprocess
+subprocess.run(["cargo", "fmt"], cwd=root, check=True)
+print("  cargo fmt on the wired copy")
 open(sentinel, "w").write("wired\n")
 print("hand-wire complete")
