@@ -85,6 +85,12 @@ enum Command {
     )]
     Decode(cmd::decode::DecodeArgs),
 
+    /// Derive a hashlock preimage from a phrase (or take one), print the `hash:` record, and back the preimage up as an ms1 plate string.
+    #[command(
+        after_long_help = "EXAMPLES:\n  ms hashlock --hashlock-phrase-stdin < phrase.txt\n  ms hashlock --hashlock-phrase-stdin --method sha256 < phrase.txt\n  ms hashlock --random --out preimage.txt\n  ms hashlock --in preimage.txt\n  ms hashlock --hashlock-phrase-stdin < phrase.txt | me sysw pack --out payload.bin"
+    )]
+    Hashlock(cmd::hashlock::HashlockArgs),
+
     /// Inspect an ms1 string's structural fields and decoder verdict.
     #[command(
         after_long_help = "EXAMPLES:\n  ms inspect <ms1>          # verdict + fields\n  ms inspect <ms1> --json   # structured output for tooling\n  printf \"ms10e ntrsq…\" | ms inspect -   # back-typed chunked form"
@@ -221,6 +227,7 @@ fn main() -> ExitCode {
         Command::Derive(args) => cmd::derive::run(args),
         Command::Encode(args) => cmd::encode::run(args),
         Command::Decode(args) => cmd::decode::run(args),
+        Command::Hashlock(args) => cmd::hashlock::run(args),
         Command::Inspect(args) => cmd::inspect::run(args),
         Command::Verify(args) => cmd::verify::run(args),
         Command::Vectors(args) => cmd::vectors::run(args),
@@ -252,6 +259,7 @@ fn is_json_mode(cmd: &Command) -> bool {
         Command::Derive(a) => a.json,
         Command::Encode(a) => a.json,
         Command::Decode(a) => a.json,
+        Command::Hashlock(a) => a.json,
         Command::Inspect(a) => a.json,
         Command::Verify(a) => a.json,
         Command::Vectors(_) => false, // vectors output is always JSON-shaped
