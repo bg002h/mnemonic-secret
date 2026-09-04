@@ -9,6 +9,18 @@ carries the preimage on a metal plate, with its own kind byte and its own
 four-character id so the eye can tell it from a seed; and (3) `ms hashlock`, the
 verb that produces both plus the `hash:` record the composer consumes.
 
+**STATUS: R0 GREEN under lens-closure (2026-09-04).** Round 0 = three opus
+lenses (correctness 1C/7I/6M/2N, adversarial 4C/4I/5M/1N, tests-vector
+1C/11I/11M/4N), all persisted verbatim and folded in one edit (`1a14a4d`); r1
+sonnet fold verification GREEN (28/28 C+I fixed, spot-checks reproduced, no
+new contradiction). Lenses run: correctness, adversarial (with the operator
+journeys inside it), tests/vectors, fold-verification. The journey lens is
+assigned to the composer spec fold by brainstorm 4.5. **Three controller
+defaults await the operator and are labelled in place**: §1 rule 2
+(`TagKindMismatch`), §4.1 (`--random` requires `--out`; narrows L21), §9 (H0
+precedes the 0.18.0 release; reorders 4.5). A veto folds the section back and
+re-verifies. Next: the H1 plan.
+
 **Base SHA.** mnemonic-secret `master` `7fc1e58` (ms-codec 0.7.0, ms-cli
 0.17.1). Every line citation in §14 was re-grepped at that SHA while this spec
 was written; re-grep at implementation time (CLAUDE.md citation-decay).
@@ -454,7 +466,10 @@ Refusals name the rule and **never echo the phrase**.
   lands a preimage in a `0644` file and nothing else on the stream would say so.
   Then: the digest; the `sha256=` operand for `md compose --path`; the preimage
   as grouped ms1 (`--group-size`/`--separator` apply) and as hex; the **method
-  line**, verbatim and copyable, e.g.
+  line**, verbatim and copyable — for the two phrase sources; for `--hex`, `--random`
+  and `<ms1>` the line reads `preimage supplied` and carries no write-it-down
+  instruction, there being no phrase to write it beside (correctness N-2) —
+  e.g.
   `preimage = PBKDF2-HMAC-SHA256(password = phrase, salt = "ms-hashlock-v1", iterations = 100000, dkLen = 32)`
   or `preimage = SHA-256(phrase)`; the phrase's **character count** beside it
   (review M-2 — the one signal that makes a stray space visible); the composer spec's §8i and
