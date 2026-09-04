@@ -12,6 +12,7 @@ mod cmd;
 mod codex32_friendly;
 mod error;
 mod format;
+mod hashlock_phrase;
 mod language;
 // Inline copy of mnemonic-toolkit's mlock module per SPEC §5 + §6 G6.
 // Test helpers (failure_count_for_test, first_errno_for_test, etc.) are
