@@ -12,6 +12,20 @@ pub enum PayloadKind {
     Entr,
     /// BIP-39 mnemonic entropy with wordlist language tag (16/20/24/28/32 B entropy).
     Mnem,
+    /// A hashlock preimage: exactly 32 B (SPEC_ms_hashlock §1).
+    Preimage,
+}
+
+impl PayloadKind {
+    /// The tag a SINGLE of this kind carries: `entr` for the two seed kinds,
+    /// `hash` for a preimage. Decode CHECKS a single's tag against this; encode
+    /// refuses to emit a mismatch (SPEC_ms_hashlock §1 rule 2).
+    pub fn single_tag(self) -> crate::tag::Tag {
+        match self {
+            PayloadKind::Entr | PayloadKind::Mnem => crate::tag::Tag::ENTR,
+            PayloadKind::Preimage => crate::tag::Tag::HASH,
+        }
+    }
 }
 
 /// v0.1 payload.
@@ -28,6 +42,8 @@ pub enum PayloadKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Payload {
+    /// A hashlock preimage, exactly 32 bytes; scrubbed on drop (SPEC_ms_hashlock §3).
+    Preimage(zeroize::Zeroizing<[u8; 32]>),
     /// BIP-39 entropy. Length MUST be in {16, 20, 24, 28, 32} bytes
     /// (bijective with BIP-39 word counts {12, 15, 18, 21, 24}).
     ///
@@ -63,6 +79,8 @@ impl Payload {
     /// the payload bytes following the prefix byte.
     pub fn validate(&self) -> Result<()> {
         match self {
+            // A preimage's length is structural in the variant (SPEC_ms_hashlock §3).
+            Payload::Preimage(_) => Ok(()),
             Payload::Entr(data) => {
                 if !VALID_ENTR_LENGTHS.contains(&data.len()) {
                     return Err(Error::PayloadLengthMismatch {
@@ -94,6 +112,7 @@ impl Payload {
         match self {
             Payload::Entr(_) => PayloadKind::Entr,
             Payload::Mnem { .. } => PayloadKind::Mnem,
+            Payload::Preimage(_) => PayloadKind::Preimage,
         }
     }
 
@@ -103,6 +122,7 @@ impl Payload {
         match self {
             Payload::Entr(data) => data,
             Payload::Mnem { entropy, .. } => entropy,
+            Payload::Preimage(x) => &x[..],
         }
     }
 }

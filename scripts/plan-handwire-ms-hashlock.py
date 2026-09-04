@@ -92,9 +92,13 @@ edit("crates/ms-codec/src/envelope.rs", [
     ("pub(crate) fn payload_wire_bytes(p: &Payload) -> Zeroizing<Vec<u8>> {",
      "/// The prefix byte a payload writes on the wire, for error reporting.\npub(crate) fn prefix_of(p: &Payload) -> u8 {\n    match p {\n        Payload::Entr(_) => RESERVED_PREFIX,\n        Payload::Mnem { .. } => MNEM_PREFIX,\n        Payload::Preimage(_) => PREIMAGE_PREFIX,\n    }\n}\n\npub(crate) fn payload_wire_bytes(p: &Payload) -> Zeroizing<Vec<u8>> {"),
 ])
+# The check sits AFTER the reserved-not-emitted check, not at the top of the fn:
+# `seed`/`xprv` are not kind-naming ids, and the v0.1 SPEC §4 rule 7 error they
+# have always returned is a shipped guarantee (encode.rs's own
+# `encode_rejects_seed_tag` / `encode_rejects_xprv_tag` pin it).
 edit("crates/ms-codec/src/encode.rs", [
-    ("pub fn encode(tag: Tag, payload: &Payload) -> Result<String> {",
-     "pub fn encode(tag: Tag, payload: &Payload) -> Result<String> {\n    // SPEC_ms_hashlock §1 rule 2, emit side: never mint a single whose tag\n    // names a different kind than its prefix byte -- decode would refuse it.\n    if tag != payload.kind().single_tag() {\n        return Err(Error::TagKindMismatch {\n            tag: *tag.as_bytes(),\n            prefix: crate::envelope::prefix_of(payload),\n        });\n    }"),
+    ("    // §3.5: payload length validation.",
+     "    // SPEC_ms_hashlock §1 rule 2, emit side: never mint a single whose tag\n    // names a different kind than its prefix byte -- decode would refuse it.\n    // Placed AFTER the reserved-not-emitted check so `seed`/`xprv` keep the\n    // v0.1 SPEC §4 rule 7 error they have always returned.\n    if tag != payload.kind().single_tag() {\n        return Err(Error::TagKindMismatch {\n            tag: *tag.as_bytes(),\n            prefix: crate::envelope::prefix_of(payload),\n        });\n    }\n    // §3.5: payload length validation."),
 ])
 edit("crates/ms-codec/src/inspect.rs", [
     ("    /// Any other prefix byte — future or invalid.\n    Unknown,",

@@ -46,7 +46,10 @@ fn all_undefined_prefix_bytes_rejected() {
     // 0x02 (Mnem) must be rejected with ReservedPrefixViolation.
     let entropy = [0xAAu8; 16];
     for prefix in 1u8..=255 {
-        if prefix == 0x02 {
+        // 0x03 is the preimage kind now (SPEC_ms_hashlock §1): a 17-byte 0x03
+        // payload is refused by LENGTH, not by prefix -- hashlock_kind.rs's
+        // `preimage_prefix_is_refused_by_length_not_prefix` pins what it does.
+        if prefix == 0x02 || prefix == 0x03 {
             // 0x02 is now the mnem prefix — not a reserved violation.
             continue;
         }
