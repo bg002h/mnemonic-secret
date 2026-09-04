@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **STATUS: BUILD GATE GREEN (2026-09-04); not yet R0-reviewed.** The gate is
-`scripts/plan-build-gate-ms.sh` (Task 0): ten runs to green, every earlier run
+`scripts/plan-build-gate-ms.sh` (Task 0): eleven runs to green, every earlier run
 a real finding (see the commit messages); R0 = fidelity (opus) + tests (sonnet,
 mutation beside every test); re-validate immediately before the implementer.
 **Baseline:** mnemonic-secret `master` `d4d6771` (ms-codec 0.7.0, ms-cli
@@ -68,6 +68,10 @@ Copied from the spec; every task's requirements include these.
   items of §9; **H0 ships before the 0.18.0 release** (§9, §10).
 - **Secret discipline:** `--hashlock-phrase` joins `SECRET_FLAGS`; refusals
   never echo the phrase; the phrase's VALUE is never normalised (§4.3, §6).
+- **CONTROLLER DEFAULT awaiting the operator (spec §4.1 is silent):**
+  `--hashlock-phrase -` is REFUSED naming `--hashlock-phrase-stdin`, never
+  derived from the one-byte phrase `-` (R0 r0 fidelity I-10). Every other
+  secret flag reads `-` as stdin; this verb has a flag for that.
 - **Process:** Rust-primary; persist reports verbatim in their own commit;
   a fold is authorship and re-earns the gate; stage paths explicitly.
 
@@ -113,10 +117,13 @@ Existing files edited (FRAGMENTS — hand-wired for the gate, NOT extractable):
 | `crates/ms-cli/src/main.rs` | `Command::Hashlock`, dispatch, `is_json_mode` |
 | `crates/ms-cli/src/cmd/mod.rs` | `pub mod hashlock;` |
 | `crates/ms-cli/src/lib.rs` or `main.rs` | `mod hashlock_phrase;` |
-| `crates/ms-cli/src/cmd/decode.rs` | two `Payload::Preimage` arms |
+| `crates/ms-cli/src/cmd/decode.rs` | ONE early-return `Payload::Preimage` arm in the first match (the second is then unreachable for the kind and keeps its catch-all) + `emit_preimage` |
 | `crates/ms-cli/src/cmd/combine.rs` | one `Payload::Preimage` arm |
 | `crates/ms-cli/src/cmd/payload_lang.rs` | the typed refusal arm |
-| `crates/ms-cli/src/cmd/inspect.rs` | verdict rules 6/8/9/10 + `reason_text` + version line |
+| `crates/ms-cli/src/cmd/inspect.rs` | verdict rules 6/6b/8/9/10 + `reason_text` + version line |
+| `crates/ms-cli/src/cmd/split.rs` | the `PayloadKind` catch-all gains `Preimage => ("hash", None)` (unreachable via the CLI today, F-468; swept because §3/§9 are categorical) |
+| `crates/ms-codec/tests/forward_compat.rs` | the every-undefined-prefix loop skips `0x03` (it is defined now); `hashlock_kind.rs` pins what `0x03` does instead |
+| `crates/ms-cli/src/error.rs` (cont.) | `From<ms_codec::Error>` arms for `PreimageLengthMismatch`, `TagKindMismatch` (FormatViolation, exit 2) and `RandomnessUnavailable` |
 | `crates/ms-cli/Cargo.toml` | version 0.18.0; pin `=0.8.0` |
 | `CHANGELOG.md`, `MIGRATION.md` | release records |
 | `.github/workflows/rust.yml` | `test (ms-codec)` preflight + run-by-name step |
@@ -382,6 +389,8 @@ edit("crates/ms-codec/src/decode.rs", [
      "                Payload::Mnem { language, entropy } => {\n                    let p = Payload::Mnem { language, entropy };\n                    // §4 rule 10: validate (language range + entropy length).\n                    p.validate()?;\n                    p\n                }\n                // Unreachable: rule 6b above refused the mismatch. Kept as a\n                // typed error, never a panic.\n                other => {\n                    return Err(Error::TagKindMismatch {\n                        tag: x,\n                        prefix: crate::envelope::prefix_of(&other),\n                    })\n                }\n            }"),
 ])
 edit("crates/ms-codec/src/envelope.rs", [
+    ("/// `Payload` is a closed 2-variant enum within this crate (`#[non_exhaustive]`\n/// only affects downstream crates), so the match is exhaustive.",
+     "/// `Payload` is a closed 3-variant enum within this crate (`#[non_exhaustive]`\n/// only affects downstream crates), so the match is exhaustive."),
     ("pub(crate) fn payload_wire_bytes(p: &Payload) -> Zeroizing<Vec<u8>> {",
      "/// The prefix byte a payload writes on the wire, for error reporting.\npub(crate) fn prefix_of(p: &Payload) -> u8 {\n    match p {\n        Payload::Entr(_) => RESERVED_PREFIX,\n        Payload::Mnem { .. } => MNEM_PREFIX,\n        Payload::Preimage(_) => PREIMAGE_PREFIX,\n    }\n}\n\npub(crate) fn payload_wire_bytes(p: &Payload) -> Zeroizing<Vec<u8>> {"),
 ])
@@ -416,8 +425,8 @@ edit("crates/ms-cli/src/argv_guard.rs", [
      'const SECRET_FLAGS: [&str; 5] = ["--phrase", "--hex", "--ms1", "--passphrase", "--hashlock-phrase"];'),
     ("            Some(\"encode\")\n                | Some(\"decode\")", "            Some(\"hashlock\")\n                | Some(\"encode\")\n                | Some(\"decode\")"),
     ('        "--ms1" => "an ms1 string",', '        "--ms1" => "an ms1 string",\n        "--hashlock-phrase" => "a hashlock phrase",'),
-    ("fn argv_candidates(token: &str) -> Vec<String> {\n    let norm = |s: &str| s.trim().to_ascii_lowercase();",
-     "fn argv_candidates(token: &str) -> Vec<String> {\n    // The fold and trim now live in `looks_like_ms1` as well, so the phrase\n    // channels and this guard test the SAME normalised shape\n    // (SPEC_ms_hashlock §4.3; R0 r0 tests C-1).\n    let norm = |s: &str| s.trim().to_ascii_lowercase();"),
+    ("    if is_ms1_shaped(candidate) {\n        return Some(\"an ms1 string (or one share of an ms1 share-set)\");",
+     "    // ONE predicate for the ms1 shape, shared with the phrase channels: the\n    // normalisation is inside it (SPEC_ms_hashlock §4.3; R0 r0 tests C-1).\n    if looks_like_ms1(candidate) {\n        return Some(\"an ms1 string (or one share of an ms1 share-set)\");"),
     ("/// The nine flag-keyed secret channels, as strings. No parse, no clap.",
      "/// The five flag-keyed secret channels, as strings. No parse, no clap."),
     ("fn is_ms1_shaped(s: &str) -> bool {",
@@ -430,6 +439,10 @@ edit("crates/ms-cli/src/error.rs", [
      "            | CliError::PayloadLengthMismatch { .. } => 1,\n            CliError::Usage(_) => 64,"),
     ("            CliError::BadInput(_) => \"BadInput\",", "            CliError::BadInput(_) => \"BadInput\",\n            CliError::Usage(_) => \"Usage\","),
     ("            CliError::BadInput(m) => m.clone(),", "            CliError::BadInput(m) => m.clone(),\n            CliError::Usage(m) => m.clone(),"),
+    # C-1 (R0 r0 fidelity): the three new codec errors get their own arms, or
+    # they fall into the catch-all as `unhandled ms_codec::Error variant` at exit 1.
+    ("            // ms_codec::Error is #[non_exhaustive]; v0.2+ may add variants.",
+     "            ms_codec::Error::PreimageLengthMismatch { got } => CliError::FormatViolation {\n                underlying_kind: \"PreimageLengthMismatch\",\n                message: format!(\"preimage payload is {got} bytes after the prefix; a hashlock preimage is exactly 32 bytes (64 hex characters)\"),\n                details: Some(json!({ \"got\": got })),\n            },\n            ms_codec::Error::TagKindMismatch { tag, prefix } => CliError::FormatViolation {\n                underlying_kind: \"TagKindMismatch\",\n                message: format!(\n                    \"the id {:?} names a different kind than the prefix byte 0x{prefix:02x} carries; refusing rather than reading one kind as another\",\n                    std::str::from_utf8(&tag).unwrap_or(\"<non-utf8>\")\n                ),\n                details: Some(json!({ \"tag\": std::str::from_utf8(&tag).unwrap_or(\"<non-utf8>\"), \"prefix\": prefix })),\n            },\n            ms_codec::Error::RandomnessUnavailable => CliError::BadInput(\n                \"the OS random source is unavailable; no preimage was produced\".to_string(),\n            ),\n            // ms_codec::Error is #[non_exhaustive]; v0.2+ may add variants."),
 ])
 edit("crates/ms-cli/src/cmd/decode.rs", [
     ("        // ms_codec::Payload is #[non_exhaustive]; guard against future variants.\n        _ => unreachable!(\"ms-codec decode returned unknown Payload variant\"),\n    };",
@@ -446,10 +459,11 @@ open(sentinel, "w").write("wired\n")
 print("hand-wire complete")
 ```
 
-(The remaining fragments — `decode.rs`'s second arm and its `emit_preimage`,
-`combine.rs`, `payload_lang.rs`, `inspect.rs` — are added to this script by
-Tasks 8 and 9, in the same exact-anchor form; each task's Step names the
-`edit(...)` entry it appends.)
+(The remaining fragments — `decode.rs`'s `emit_preimage`, `combine.rs`,
+`payload_lang.rs`, `inspect.rs`, `split.rs`, `forward_compat.rs`, the three
+`From<ms_codec::Error>` arms in `error.rs` — are added to this script by Tasks
+5 and 8, in the same exact-anchor form; each task's Step names the `edit(...)`
+entry it appends.)
 
 - [ ] **Step 3: Run the gate on this plan and confirm it extracts, builds and refuses correctly**
 
@@ -474,6 +488,7 @@ git commit -m "scripts: plan-build-gate-ms.sh + the hashlock hand-wire script (H
 - Modify: `crates/ms-codec/src/consts.rs:36-71` (fragment)
 - Modify: `crates/ms-codec/src/tag.rs:14-17` (fragment)
 - Modify: `crates/ms-codec/src/error.rs:60-66,200-204` (fragment)
+- Modify: `crates/ms-codec/Cargo.toml` (`version = "0.8.0"`) and `crates/ms-cli/Cargo.toml` (`version = "0.18.0"`; the pin `=0.8.0`) — TOGETHER, in this task: ms-cli pins the path dependency by exact version, so the workspace stops resolving the moment one side moves alone (R0 r0 fidelity I-1)
 - Test: `crates/ms-codec/tests/hashlock_kind.rs` (Create; grows in Task 2)
 
 **Interfaces:**
@@ -604,7 +619,10 @@ working tree by hand, byte for byte. In prose: `consts.rs` gains
 `MNEM_PREFIX`, and `hash` joins `RESERVED_ID_BLOCKLIST`; `tag.rs` gains
 `Tag::HASH`; `error.rs` gains the three variants before
 `ReservedPrefixViolation` and their `Display` arms — the `PreimageLengthMismatch`
-text carries L8's dual spelling, "exactly 32 bytes (64 hex characters)".
+text carries L8's dual spelling, "exactly 32 bytes (64 hex characters)". Both
+`Cargo.toml` version lines and ms-cli's `=0.8.0` pin move in this same step
+(the hand-wire script's two `Cargo.toml` entries), so every later task's
+`cargo test` resolves.
 
 - [ ] **Step 4: Run — still failing, one step further**
 
@@ -659,6 +677,17 @@ fn preimage_length_rows_through_decode_name_their_error() {
             s.len()
         );
     }
+}
+
+/// I-2 (R0 r0 fidelity): 0x03 left forward_compat.rs's "every undefined prefix
+/// is refused" loop; this is what it does instead.
+#[test]
+fn preimage_prefix_is_refused_by_length_not_prefix() {
+    let mut payload = vec![PREIMAGE_PREFIX];
+    payload.extend_from_slice(&[0xab; 16]);
+    let s = forge("hash", &payload);
+    let err = decode(&s).unwrap_err();
+    assert!(matches!(err, Error::PreimageLengthMismatch { got: 16 }), "{err:?}");
 }
 
 #[test]
@@ -820,13 +849,18 @@ arm — refuses a tag that does not equal `payload.kind().single_tag()` with
 Run: `cargo test -p ms-codec --test hashlock_kind`
 Expected: PASS, all eleven tests; `codeword_distance` prints a number ≥ 9.
 
-- [ ] **Step 5: Flip the tests that pinned `0x03` as reserved, mechanically**
+- [ ] **Step 5: The test that pinned every undefined prefix as reserved**
 
-Run: `grep -rn "0x03\|ReservedPrefixViolation" crates/ms-codec/tests crates/ms-codec/src --include=*.rs | grep -i "test\|assert"`
-Expected: every hit that asserts `0x03 → ReservedPrefixViolation` is listed.
-For each, change the asserted byte to `0x01` (still unallocated) so the test
-keeps guarding the reserved-prefix rule; record the list of files touched in
-the commit message. `cargo test -p ms-codec` then passes whole.
+Measured at `d4d6771`: the crate has NO literal `0x03` anywhere
+(`grep -rn "0x03" crates/` is empty); the one test that now breaks is a LOOP,
+`crates/ms-codec/tests/forward_compat.rs:48` `for prefix in 1u8..=255`, which
+skips `0x02` and expects `ReservedPrefixViolation` for every other byte. At
+`0x03` the wired dispatch returns `PreimageLengthMismatch { got: 16 }` instead.
+Apply the hand-wire script's `forward_compat.rs` entry: the loop skips `0x03`
+too, with a comment naming why, and `hashlock_kind.rs`'s
+`preimage_prefix_is_refused_by_length_not_prefix` pins what `0x03` does
+instead. Then `cargo test -p ms-codec` passes whole; record the file in the
+commit message.
 
 - [ ] **Step 6: Commit**
 
@@ -842,7 +876,7 @@ git commit -m "ms-codec: Payload::Preimage, prefix 0x03 dispatch with the length
 **Files:**
 - Create: `crates/ms-codec/src/hashlock.rs`
 - Modify: `crates/ms-codec/src/lib.rs:47` (fragment: `pub mod hashlock;`)
-- Modify: `crates/ms-codec/Cargo.toml` (fragment: `pbkdf2`, `sha2`)
+- Modify: `crates/ms-codec/Cargo.toml` (fragment: the `pbkdf2` and `sha2` dependencies; the version line moved in Task 1)
 - Test: `crates/ms-codec/tests/hashlock_derivation.rs`
 
 **Interfaces:**
@@ -881,23 +915,22 @@ fn constants_are_the_specs() {
     assert_eq!(HASHLOCK_DKLEN, 32);
 }
 
-/// (phrase, hardened X, hardened H, sha256 X, sha256 H) -- literals from
-/// python3 hashlib.pbkdf2_hmac / hashlib.sha256, cross-checked in openssl kdf.
+/// (phrase, hardened X, hardened H, sha256 X, sha256 H) -- every row produced
+/// OUTSIDE this crate by python3 hashlib, the hardened X of three rows
+/// cross-checked in openssl kdf, and the whole set re-derived from the corpus
+/// file by `corpus_rows_are_filled_and_re_derive` below.
 const ROWS: &[(&str, &str, &str, &str, &str)] = &[
-    (
-        "correct horse battery staple",
-        "c3e97525442520da4cffd5f57aae3f6273990017f2e0fa30c056e32172e22016",
-        "3cf5d421caf2a9c8eb9de1d400866ea7d475e6ba978861bb0167a37cb70a4c12",
-        "c4bbcb1fbec99d65bf59d85c8cb62ee2db963f0fe106f483d9afa73bd4e39a8a",
-        "b867db875479bcc0287352cdaa4a1755689b8338777d0915e9acd9f6edbc96cb",
-    ),
-    // The implementer fills the remaining rows from the SAME two external
-    // tools and pastes their command lines into the corpus's `provenance`
-    // field: one character ("z"), 20 characters, 64 and 65 characters (the
-    // HMAC block boundary), 100 and 101 characters (101 is REFUSED by the CLI
-    // rule, but the codec derives any bytes; the row pins that the codec is
-    // rule-free), "  a  b " (leading, doubled, trailing spaces),
-    // "correct-horse,battery staple" (hyphen and comma), "a-b,c".
+    ("correct horse battery staple", "c3e97525442520da4cffd5f57aae3f6273990017f2e0fa30c056e32172e22016", "3cf5d421caf2a9c8eb9de1d400866ea7d475e6ba978861bb0167a37cb70a4c12", "c4bbcb1fbec99d65bf59d85c8cb62ee2db963f0fe106f483d9afa73bd4e39a8a", "b867db875479bcc0287352cdaa4a1755689b8338777d0915e9acd9f6edbc96cb"),
+    ("z", "eda31187ec20d855d85cb69d94abac1c55b8996819d6ce3dc6cc17f79f6dd3e2", "af384a82ac8ff16b69a24392f1adc40966ab22923ae2b06d5ebc8ea6a5453b3a", "594e519ae499312b29433b7dd8a97ff068defcba9755b6d5d00e84c524d67b06", "c27cd49cb724724842a58b799b1009ecc968b3499767b73ee54693661ff723ca"),
+    ("twenty characters!!!", "c9c45a47783e7cfbe4773d76a0f282d02ad077bc32d863a5b78e9fb134d0503c", "f00137a8ecf4f1b6acb592a7d00085ab30a738d936996417df098fe6d39eb4a2", "e8bf4723478e5d324b4ce75009b82a9b60ce5d4233a43e656c2ff7e4f8cba7f8", "5b891cd8cd226400ddcf25419847487f0954fc197640b6e6e5074dfb3b1bdde4"),
+    ("hashlock phrase row: sixty-four printable characters, no hex!!xx", "72bd30bb4280d8db4a1db45f18ef5e03313a30d7e2440b2abe4b39ff23b62a96", "bd10cd48bffc544fa3c42cb8577db646f8603135479d73217b564e5be57b58fd", "ef2d8e668e2172c6fea55ac565db83db434cdb993bdee43e3dad3e398cd61b60", "895d7861d3c8f40ca177e30e4ac8e30004a15706cdd549aa04822c00126ec335"),
+    ("hashlock phrase row: sixty-four printable characters, no hex!!xx!", "81659f096958cceca503b18498a2abe861ccd93789801c42f031f96d0ea7c9c7", "4a84ddc8d54b05c8d06cf5ba610c25a2e14ab83f79ada662a7504c1f37bf6984", "2f437817e6039e03d66badc8808dfaaf74adb0cbafdebc1f95c45e0e8fdc856b", "671c81426fa67f7b590f78f143173faeb56799da21dd316aa2762dac6ac64ff1"),
+    ("hashlock phrase row: one hundred printable characters kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk", "048a9101a6c2d4d2f41a64d3cfc2fa63717eafb99ddc2c0b94183605ffd97ece", "70a5395386c769019faa4996aa61510f7760a1b32d6980173ccc57b3e68b4525", "4847734befcd471f090bfb87ea23c13e2a80dccd973dffb301be6844c53a5251", "76001f8e456719bd4d1e560ff28be3c4d75db624779079809da422607f31cde4"),
+    ("hashlock phrase row: one hundred printable characters kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk!", "abe28ff3905421a9f8caae476f3685555bb94a11c55e767d3bd979e9e46f6a57", "ee37d62cd1e715c6b49cb76403aa2605c468db9c67386a7065dc6cae0b1c003b", "7c898a67500677c6d58452d6b01361c53f482c13450c9609130f84d9018a80ad", "f87e53adb8fd3338ad727cbc677be5b75b028ff481695e05d46fb33e0d8fb8b8"),
+    ("  a  b ", "cae9f5663350a86462a194015516655846bc6880f134e156227e582323e0146b", "07ca621d2310d284d214f8894bc35100f467a39f9fb8155620d3a3f0d65941f6", "2438381a3894dfca639406f8a9677057050c098ad4d36ae8109db731adbb9574", "5f74bd9f51c2e64d0099927da9e472bd97bfe63537667b8a8e1cf4d4b294fe69"),
+    ("correct-horse,battery staple", "4a48398f2814a30100fc29db21f2c2640774b86068bd2aa115ecb0ea3c5f5449", "528a12a16588e00171dc83975a4a511815ff33ff43788abf88f780051af350df", "6c76839064b97076384507503d4b987312c58a2fbd68d5854dee0765b03d42dc", "c0ed353a4b7f36a2802940f473a06c43c3b64c1246c58118da9e09b5ebfdf468"),
+    ("a-b,c", "79324e188fd4935ef23dd5e1aa31e00cbe0d597558cea1dcd5e6a815b169900f", "8680bbf9e00acff491b41ed5ca0e6ea7c3530260690f2ea7a1145e3ac1841c37", "7a7fc2a0bffae80552a53f00a170f459d777b8b27857993fd463950ffe7fcbb7", "082f6172bde9ae5667a2493e75437dd839cc472ff54c311873aa3cb889a9fe16"),
+    ("Correct Horse Battery Staple", "865125fb7ee922748fe3a53fbbf0917affce472877eb537482092572301fe650", "36d5ad9d6ec2a7bbaaa5e2ca641698f2301392076faa0c3fb0ad50f828cacea2", "af139fa284364215adfa49c889ab7feddc5e5d1c52512ffb2cfc9baeb67f220e", "95d4447031cdc4117f797040c1a9e32367af2a8d97554e442c7bfd002297a7ff"),
 ];
 
 #[test]
@@ -931,6 +964,50 @@ fn bytes_are_used_verbatim() {
     let a = preimage_hardened(b"a-b,c");
     let b = preimage_hardened(b"abc");
     assert_ne!(&a[..], &b[..], "hyphen and comma are bytes, not separators");
+}
+
+#[test]
+fn case_is_bytes_too() {
+    // Spec §4.3: no case folding anywhere on the phrase (R0 r0 tests I-1).
+    assert_ne!(&preimage_hardened(b"Abc")[..], &preimage_hardened(b"abc")[..]);
+    assert_ne!(&preimage_sha256(b"Abc")[..], &preimage_sha256(b"abc")[..]);
+}
+
+/// The corpus FILE is loaded and every derivation row re-derived, so a row
+/// left as a placeholder, or a value that drifted from the crate, fails here
+/// -- nothing else loads the file (R0 r0 tests I-2).
+#[test]
+fn corpus_rows_are_filled_and_re_derive() {
+    let raw = include_str!("vectors/hashlock-v0.8.json");
+    let v: serde_json::Value = serde_json::from_str(raw).expect("corpus parses");
+    let is_hex64 = |s: &str| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase());
+    let rows = v["derivation"].as_array().expect("derivation rows");
+    assert!(rows.len() >= 11, "the corpus lost rows: {}", rows.len());
+    for r in rows {
+        let phrase = r["phrase"].as_str().expect("phrase is a literal string");
+        assert_eq!(r["phrase_chars"].as_u64().unwrap() as usize, phrase.len(), "{phrase:?}: phrase_chars");
+        for k in ["hardened_x", "hardened_h", "sha256_x", "sha256_h"] {
+            let s = r[k].as_str().unwrap_or("");
+            assert!(is_hex64(s), "{phrase:?}: {k} is not 64 lowercase hex (a placeholder left in the corpus?): {s:?}");
+        }
+        let x = preimage_hardened(phrase.as_bytes());
+        assert_eq!(hex(&x[..]), r["hardened_x"], "{phrase:?}: hardened X");
+        assert_eq!(hex(&digest(&x)), r["hardened_h"], "{phrase:?}: hardened H");
+        let x = preimage_sha256(phrase.as_bytes());
+        assert_eq!(hex(&x[..]), r["sha256_x"], "{phrase:?}: sha256 X");
+        assert_eq!(hex(&digest(&x)), r["sha256_h"], "{phrase:?}: sha256 H");
+    }
+    // The kind row: the plate string and its entr-32 pair are the codec's own.
+    let k0 = &v["kind"][0];
+    let mut x = [0u8; 32];
+    for (i, b) in x.iter_mut().enumerate() {
+        *b = u8::from_str_radix(&k0["preimage_hex"].as_str().unwrap()[2 * i..2 * i + 2], 16).unwrap();
+    }
+    let plate = ms_codec::encode(ms_codec::Tag::HASH, &ms_codec::Payload::Preimage(zeroize::Zeroizing::new(x))).unwrap();
+    assert_eq!(plate, k0["ms1"].as_str().unwrap());
+    let pair = ms_codec::encode(ms_codec::Tag::ENTR, &ms_codec::Payload::Entr(x.to_vec())).unwrap();
+    assert_eq!(pair, k0["entr32_pair_ms1"].as_str().unwrap());
+    assert_eq!(hex(&digest(&x)), k0["digest"].as_str().unwrap());
 }
 
 #[test]
@@ -1089,24 +1166,17 @@ that produced it into `provenance`; the anchor row is complete):
     }
   ],
   "derivation": [
-    {
-      "phrase": "correct horse battery staple",
-      "phrase_chars": 28,
-      "hardened_x": "c3e97525442520da4cffd5f57aae3f6273990017f2e0fa30c056e32172e22016",
-      "hardened_h": "3cf5d421caf2a9c8eb9de1d400866ea7d475e6ba978861bb0167a37cb70a4c12",
-      "sha256_x": "c4bbcb1fbec99d65bf59d85c8cb62ee2db963f0fe106f483d9afa73bd4e39a8a",
-      "sha256_h": "b867db875479bcc0287352cdaa4a1755689b8338777d0915e9acd9f6edbc96cb",
-      "provenance": "python3 -c 'import hashlib;p=b\"correct horse battery staple\";x=hashlib.pbkdf2_hmac(\"sha256\",p,b\"ms-hashlock-v1\",100000,32);print(x.hex(),hashlib.sha256(x).hex())' ; openssl kdf -keylen 32 -kdfopt digest:SHA256 -kdfopt pass:'correct horse battery staple' -kdfopt salt:ms-hashlock-v1 -kdfopt iter:100000 PBKDF2"
-    },
-    { "phrase": "z", "phrase_chars": 1, "hardened_x": "…", "hardened_h": "…", "sha256_x": "…", "sha256_h": "…", "provenance": "…" },
-    { "phrase": "twenty characters!!!", "phrase_chars": 20, "hardened_x": "…", "hardened_h": "…", "sha256_x": "…", "sha256_h": "…", "provenance": "…" },
-    { "phrase": "<64 printable ASCII characters, none of them all-hex>", "phrase_chars": 64, "hardened_x": "…", "hardened_h": "…", "sha256_x": "…", "sha256_h": "…", "provenance": "…" },
-    { "phrase": "<65 printable ASCII characters>", "phrase_chars": 65, "hardened_x": "…", "hardened_h": "…", "sha256_x": "…", "sha256_h": "…", "provenance": "…" },
-    { "phrase": "<100 printable ASCII characters>", "phrase_chars": 100, "hardened_x": "…", "hardened_h": "…", "sha256_x": "…", "sha256_h": "…", "provenance": "…" },
-    { "phrase": "<101 printable ASCII characters -- the codec derives it; the CLI refuses it>", "phrase_chars": 101, "hardened_x": "…", "hardened_h": "…", "sha256_x": "…", "sha256_h": "…", "provenance": "…" },
-    { "phrase": "  a  b ", "phrase_chars": 7, "hardened_x": "…", "hardened_h": "…", "sha256_x": "…", "sha256_h": "…", "provenance": "…" },
-    { "phrase": "correct-horse,battery staple", "phrase_chars": 28, "hardened_x": "…", "hardened_h": "…", "sha256_x": "…", "sha256_h": "…", "provenance": "…" },
-    { "phrase": "a-b,c", "phrase_chars": 5, "hardened_x": "…", "hardened_h": "…", "sha256_x": "…", "sha256_h": "…", "provenance": "…" }
+    { "phrase": "correct horse battery staple", "phrase_chars": 28, "hardened_x": "c3e97525442520da4cffd5f57aae3f6273990017f2e0fa30c056e32172e22016", "hardened_h": "3cf5d421caf2a9c8eb9de1d400866ea7d475e6ba978861bb0167a37cb70a4c12", "sha256_x": "c4bbcb1fbec99d65bf59d85c8cb62ee2db963f0fe106f483d9afa73bd4e39a8a", "sha256_h": "b867db875479bcc0287352cdaa4a1755689b8338777d0915e9acd9f6edbc96cb", "provenance": "python3 -c 'import hashlib;p=b\\\"correct horse battery staple\\\";x=hashlib.pbkdf2_hmac(\\\"sha256\\\",p,b\\\"ms-hashlock-v1\\\",100000,32);print(x.hex(),hashlib.sha256(x).hex())' ; openssl kdf -keylen 32 -kdfopt digest:SHA256 -kdfopt pass:'correct horse battery staple' -kdfopt salt:ms-hashlock-v1 -kdfopt iter:100000 PBKDF2" },
+    { "phrase": "z", "phrase_chars": 1, "hardened_x": "eda31187ec20d855d85cb69d94abac1c55b8996819d6ce3dc6cc17f79f6dd3e2", "hardened_h": "af384a82ac8ff16b69a24392f1adc40966ab22923ae2b06d5ebc8ea6a5453b3a", "sha256_x": "594e519ae499312b29433b7dd8a97ff068defcba9755b6d5d00e84c524d67b06", "sha256_h": "c27cd49cb724724842a58b799b1009ecc968b3499767b73ee54693661ff723ca", "provenance": "python3 hashlib.pbkdf2_hmac('sha256', phrase_bytes, b'ms-hashlock-v1', 100000, 32) and hashlib.sha256, 2026-09-04; the hardened X of the 'z' and '  a  b ' rows cross-checked byte-identical in openssl kdf (PBKDF2, digest:SHA256, salt:ms-hashlock-v1, iter:100000)" },
+    { "phrase": "twenty characters!!!", "phrase_chars": 20, "hardened_x": "c9c45a47783e7cfbe4773d76a0f282d02ad077bc32d863a5b78e9fb134d0503c", "hardened_h": "f00137a8ecf4f1b6acb592a7d00085ab30a738d936996417df098fe6d39eb4a2", "sha256_x": "e8bf4723478e5d324b4ce75009b82a9b60ce5d4233a43e656c2ff7e4f8cba7f8", "sha256_h": "5b891cd8cd226400ddcf25419847487f0954fc197640b6e6e5074dfb3b1bdde4", "provenance": "python3 hashlib.pbkdf2_hmac('sha256', phrase_bytes, b'ms-hashlock-v1', 100000, 32) and hashlib.sha256, 2026-09-04; the hardened X of the 'z' and '  a  b ' rows cross-checked byte-identical in openssl kdf (PBKDF2, digest:SHA256, salt:ms-hashlock-v1, iter:100000)" },
+    { "phrase": "hashlock phrase row: sixty-four printable characters, no hex!!xx", "phrase_chars": 64, "hardened_x": "72bd30bb4280d8db4a1db45f18ef5e03313a30d7e2440b2abe4b39ff23b62a96", "hardened_h": "bd10cd48bffc544fa3c42cb8577db646f8603135479d73217b564e5be57b58fd", "sha256_x": "ef2d8e668e2172c6fea55ac565db83db434cdb993bdee43e3dad3e398cd61b60", "sha256_h": "895d7861d3c8f40ca177e30e4ac8e30004a15706cdd549aa04822c00126ec335", "provenance": "python3 hashlib.pbkdf2_hmac('sha256', phrase_bytes, b'ms-hashlock-v1', 100000, 32) and hashlib.sha256, 2026-09-04; the hardened X of the 'z' and '  a  b ' rows cross-checked byte-identical in openssl kdf (PBKDF2, digest:SHA256, salt:ms-hashlock-v1, iter:100000)" },
+    { "phrase": "hashlock phrase row: sixty-four printable characters, no hex!!xx!", "phrase_chars": 65, "hardened_x": "81659f096958cceca503b18498a2abe861ccd93789801c42f031f96d0ea7c9c7", "hardened_h": "4a84ddc8d54b05c8d06cf5ba610c25a2e14ab83f79ada662a7504c1f37bf6984", "sha256_x": "2f437817e6039e03d66badc8808dfaaf74adb0cbafdebc1f95c45e0e8fdc856b", "sha256_h": "671c81426fa67f7b590f78f143173faeb56799da21dd316aa2762dac6ac64ff1", "provenance": "python3 hashlib.pbkdf2_hmac('sha256', phrase_bytes, b'ms-hashlock-v1', 100000, 32) and hashlib.sha256, 2026-09-04; the hardened X of the 'z' and '  a  b ' rows cross-checked byte-identical in openssl kdf (PBKDF2, digest:SHA256, salt:ms-hashlock-v1, iter:100000)" },
+    { "phrase": "hashlock phrase row: one hundred printable characters kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk", "phrase_chars": 100, "hardened_x": "048a9101a6c2d4d2f41a64d3cfc2fa63717eafb99ddc2c0b94183605ffd97ece", "hardened_h": "70a5395386c769019faa4996aa61510f7760a1b32d6980173ccc57b3e68b4525", "sha256_x": "4847734befcd471f090bfb87ea23c13e2a80dccd973dffb301be6844c53a5251", "sha256_h": "76001f8e456719bd4d1e560ff28be3c4d75db624779079809da422607f31cde4", "provenance": "python3 hashlib.pbkdf2_hmac('sha256', phrase_bytes, b'ms-hashlock-v1', 100000, 32) and hashlib.sha256, 2026-09-04; the hardened X of the 'z' and '  a  b ' rows cross-checked byte-identical in openssl kdf (PBKDF2, digest:SHA256, salt:ms-hashlock-v1, iter:100000)" },
+    { "phrase": "hashlock phrase row: one hundred printable characters kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk!", "phrase_chars": 101, "hardened_x": "abe28ff3905421a9f8caae476f3685555bb94a11c55e767d3bd979e9e46f6a57", "hardened_h": "ee37d62cd1e715c6b49cb76403aa2605c468db9c67386a7065dc6cae0b1c003b", "sha256_x": "7c898a67500677c6d58452d6b01361c53f482c13450c9609130f84d9018a80ad", "sha256_h": "f87e53adb8fd3338ad727cbc677be5b75b028ff481695e05d46fb33e0d8fb8b8", "note": "the codec derives it; the CLI refuses it", "provenance": "python3 hashlib.pbkdf2_hmac('sha256', phrase_bytes, b'ms-hashlock-v1', 100000, 32) and hashlib.sha256, 2026-09-04; the hardened X of the 'z' and '  a  b ' rows cross-checked byte-identical in openssl kdf (PBKDF2, digest:SHA256, salt:ms-hashlock-v1, iter:100000)" },
+    { "phrase": "  a  b ", "phrase_chars": 7, "hardened_x": "cae9f5663350a86462a194015516655846bc6880f134e156227e582323e0146b", "hardened_h": "07ca621d2310d284d214f8894bc35100f467a39f9fb8155620d3a3f0d65941f6", "sha256_x": "2438381a3894dfca639406f8a9677057050c098ad4d36ae8109db731adbb9574", "sha256_h": "5f74bd9f51c2e64d0099927da9e472bd97bfe63537667b8a8e1cf4d4b294fe69", "provenance": "python3 hashlib.pbkdf2_hmac('sha256', phrase_bytes, b'ms-hashlock-v1', 100000, 32) and hashlib.sha256, 2026-09-04; the hardened X of the 'z' and '  a  b ' rows cross-checked byte-identical in openssl kdf (PBKDF2, digest:SHA256, salt:ms-hashlock-v1, iter:100000)" },
+    { "phrase": "correct-horse,battery staple", "phrase_chars": 28, "hardened_x": "4a48398f2814a30100fc29db21f2c2640774b86068bd2aa115ecb0ea3c5f5449", "hardened_h": "528a12a16588e00171dc83975a4a511815ff33ff43788abf88f780051af350df", "sha256_x": "6c76839064b97076384507503d4b987312c58a2fbd68d5854dee0765b03d42dc", "sha256_h": "c0ed353a4b7f36a2802940f473a06c43c3b64c1246c58118da9e09b5ebfdf468", "provenance": "python3 hashlib.pbkdf2_hmac('sha256', phrase_bytes, b'ms-hashlock-v1', 100000, 32) and hashlib.sha256, 2026-09-04; the hardened X of the 'z' and '  a  b ' rows cross-checked byte-identical in openssl kdf (PBKDF2, digest:SHA256, salt:ms-hashlock-v1, iter:100000)" },
+    { "phrase": "a-b,c", "phrase_chars": 5, "hardened_x": "79324e188fd4935ef23dd5e1aa31e00cbe0d597558cea1dcd5e6a815b169900f", "hardened_h": "8680bbf9e00acff491b41ed5ca0e6ea7c3530260690f2ea7a1145e3ac1841c37", "sha256_x": "7a7fc2a0bffae80552a53f00a170f459d777b8b27857993fd463950ffe7fcbb7", "sha256_h": "082f6172bde9ae5667a2493e75437dd839cc472ff54c311873aa3cb889a9fe16", "provenance": "python3 hashlib.pbkdf2_hmac('sha256', phrase_bytes, b'ms-hashlock-v1', 100000, 32) and hashlib.sha256, 2026-09-04; the hardened X of the 'z' and '  a  b ' rows cross-checked byte-identical in openssl kdf (PBKDF2, digest:SHA256, salt:ms-hashlock-v1, iter:100000)" },
+    { "phrase": "Correct Horse Battery Staple", "phrase_chars": 28, "hardened_x": "865125fb7ee922748fe3a53fbbf0917affce472877eb537482092572301fe650", "hardened_h": "36d5ad9d6ec2a7bbaaa5e2ca641698f2301392076faa0c3fb0ad50f828cacea2", "sha256_x": "af139fa284364215adfa49c889ab7feddc5e5d1c52512ffb2cfc9baeb67f220e", "sha256_h": "95d4447031cdc4117f797040c1a9e32367af2a8d97554e442c7bfd002297a7ff", "note": "mixed case: NO folding, a different X from the anchor row (R0 r0 tests I-1)", "provenance": "python3 hashlib.pbkdf2_hmac('sha256', phrase_bytes, b'ms-hashlock-v1', 100000, 32) and hashlib.sha256, 2026-09-04; the hardened X of the 'z' and '  a  b ' rows cross-checked byte-identical in openssl kdf (PBKDF2, digest:SHA256, salt:ms-hashlock-v1, iter:100000)" }
   ],
   "refusals": [
     { "input": "", "channel": "phrase", "rule": "empty" },
@@ -1123,7 +1193,7 @@ that produced it into `provenance`; the anchor row is complete):
     { "input": "<the kind[0].ms1 string, grouped by 5 with spaces>", "channel": "phrase", "rule": "ms1-shaped", "remedy": "--in" },
     { "input": "<the kind[0].ms1 string, with two leading and two trailing spaces>", "channel": "phrase", "rule": "ms1-shaped", "remedy": "--in" },
     { "input": "<the kind[0].ms1 string, grouped by 2 (112 chars)>", "channel": "phrase", "rule": "ms1-shaped", "remedy": "--in", "note": "shape test precedes the cap" },
-    { "input": "<101 printable ASCII characters>", "channel": "phrase", "rule": "too-long" }
+    { "input": "hashlock phrase row: one hundred printable characters kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk!", "channel": "phrase", "rule": "too-long" }
   ],
   "lengths_by_door": [
     { "payload_bytes": 34, "door": "decode", "error": "PreimageLengthMismatch", "got": 33 },
@@ -1134,6 +1204,12 @@ that produced it into `provenance`; the anchor row is complete):
     { "payload_bytes": 44, "door": "combine_shares", "error": "PreimageLengthMismatch", "got": 43 },
     { "payload_bytes": 46, "door": "none", "note": "unconstructible: 96 chars is outside both codex32 brackets" }
   ],
+  "downgrade": {
+    "reader": "ms-codec 0.7 (ms 0.16.0 / 0.17.x)",
+    "input": "kind[0].ms1",
+    "expected": "refused: `reserved-prefix byte was 0x03, expected 0x00`, exit 2 -- never a panic",
+    "executor": "scripts/plan-build-gate-ms.sh step 6 builds the pre-H1 tree and runs it; no shipped test can hold a 0.7 crate, so this row is proven at plan time and re-provable with that script against any pre-0.8 SHA"
+  },
   "lockstep": [
     "derivation rows: 100 and 101 characters, the spaces row, the hyphen+comma row",
     "refusals: empty, printable-ascii (TAB, DEL, 0xFF), 64-hex both cases, 101",
@@ -1159,6 +1235,9 @@ Create `crates/ms-codec/tests/hashlock_repro.rs`:
 //!   ways: Rust = python, Rust = openssl, python = openssl.
 //! - A missing tool FAILS the test. There is no `#[ignore]` and no cfg gate;
 //!   CI additionally asserts this test ran by name (rust.yml).
+//! - KNOWN LIMIT (R0 r0 tests I-3): a SHADOWED tool -- a `python3` on PATH
+//!   that echoes the expected hex -- defeats any shell-out comparison. CI logs
+//!   `python3 -VV` and `openssl version`; a compromised runner is out of scope.
 
 use std::process::Command;
 
@@ -1289,13 +1368,13 @@ and AFTER its test step, add the run-by-name assertion:
 ```yaml
       - name: hashlock reproduction test RAN (by name)
         run: |
-          cargo nextest run -p ms-codec --locked -E 'test(hashlock_repro_three_ways)' 2>&1 | tee /tmp/repro.log
-          grep -E "Summary.*1 test run" /tmp/repro.log
+          # The job runs `cargo test`, not nextest (rust.yml:118-119, measured).
+          cargo test -p ms-codec --locked --test hashlock_repro -- --exact hashlock_repro_three_ways 2>&1 | tee /tmp/repro.log
+          grep -E "test result: ok. 1 passed" /tmp/repro.log
 ```
 
-(`cargo-nextest` is installed in that job already if the job uses it;
-otherwise `cargo test -p ms-codec --test hashlock_repro -- --exact
-hashlock_repro_three_ways 2>&1 | grep -E "test result: ok. 1 passed"`.)
+(`--exact` on the harness filter, so a renamed test is a red step, not a
+silently empty run.)
 
 - [ ] **Step 5: Commit**
 
@@ -1314,7 +1393,7 @@ git commit -m "ms-codec: hashlock corpus v0.8 with external provenance; the thre
 - Test: `crates/ms-cli/tests/hashlock_sources.rs` (Create; the guard rows)
 
 **Interfaces:**
-- Produces: `argv_guard::looks_like_ms1(raw: &str) -> bool` (`pub(crate)`),
+- Produces: `argv_guard::looks_like_ms1(raw: &str) -> bool` (`pub(crate)`) — the ONE ms1-shape predicate, called by `material_class` (the guard) and by `hashlock_phrase::validate_phrase`,
   `SUBCOMMANDS` with `hashlock`, `SECRET_FLAGS` with `--hashlock-phrase`,
   `override_applies` admitting `hashlock`, `flag_class("--hashlock-phrase") =
   "a hashlock phrase"`, `CliError::Usage(String)` → exit 64.
@@ -1413,9 +1492,10 @@ fn admitted_phrase_does_not_read_stdin() {
     );
 }
 
-/// Same gate for the `--hex` channel (part 5) and the positional (part 6).
+/// Same gate for the `--hex` channel (part 5). An empty pipe and /dev/null
+/// both yield zero bytes, which is what the gate needs.
 #[test]
-fn admitted_hex_and_positional_do_not_read_stdin() {
+fn admitted_hex_does_not_read_stdin() {
     let out = ms()
         .args([
             "hashlock",
@@ -1432,6 +1512,11 @@ fn admitted_hex_and_positional_do_not_read_stdin() {
         "hex: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+}
+
+/// Same gate for the positional (part 6).
+#[test]
+fn admitted_positional_does_not_read_stdin() {
     // Get a real plate string to pass positionally.
     let s = String::from_utf8(
         ms().args(["hashlock", "--hex", "-", "--json"])
@@ -1503,6 +1588,10 @@ fn every_two_source_pair_exits_64() {
                 "pair {i},{j}: {}",
                 String::from_utf8_lossy(&out.stderr)
             );
+            assert!(
+                String::from_utf8_lossy(&out.stderr).contains("were both given"),
+                "pair {i},{j}: the message, not just the code"
+            );
         }
     }
     let _ = std::fs::remove_file("/tmp/ms-hashlock-pair-test.txt");
@@ -1532,6 +1621,11 @@ fn method_with_a_supplied_preimage_exits_64_for_all_three_sources() {
             Some(64),
             "{args:?}: {}",
             String::from_utf8_lossy(&out.stderr)
+        );
+        // The MESSAGE too, because clap's unknown-subcommand error is also 64.
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("--method applies to the phrase sources only"),
+            "{args:?}"
         );
     }
     let _ = std::fs::remove_file("/tmp/ms-hashlock-method-test.txt");
@@ -1668,6 +1762,57 @@ fn random_out_refuses_to_overwrite_but_other_sources_overwrite() {
     assert_ne!(std::fs::read(&p).unwrap(), monday);
 }
 
+/// §11: `--hex` at 63, 64 and 65 characters, upper and lower case. MUTATION:
+/// parse with encode's helper -> the 63-char refusal names entropy lengths,
+/// not "32 bytes (64 hex characters)" and §8i (R0 r0 fidelity I-6, I-9).
+#[test]
+fn hex_at_63_64_65_chars_both_cases() {
+    for (n, ok) in [(63usize, false), (64, true), (65, false)] {
+        for upper in [false, true] {
+            let s: String = (0..n).map(|i| "0123456789abcdef".as_bytes()[i % 16] as char).collect();
+            let s = if upper { s.to_ascii_uppercase() } else { s };
+            let out = ms().args(["hashlock", "--hex", "-", "--no-engraving-card"]).write_stdin(s.clone()).output().unwrap();
+            if ok {
+                assert!(out.status.success(), "{n} {upper}: {}", String::from_utf8_lossy(&out.stderr));
+            } else {
+                assert_eq!(out.status.code(), Some(1), "{n} {upper}");
+                let err = String::from_utf8_lossy(&out.stderr);
+                assert!(err.contains("32 bytes (64 hex characters)") && err.contains("§8i"), "{n} {upper}:\n{err}");
+                assert!(!err.contains(&s), "echoed the value:\n{err}");
+            }
+        }
+    }
+}
+
+/// §11: the entr-32 pair string -- the COLLIDING length -- and a mnem string
+/// are refused as seed backups, with the spec's wording (R0 r0 fidelity I-7).
+/// MUTATION: dispatch on string length -> the 75-char entr-32 is accepted.
+#[test]
+fn entr32_and_mnem_strings_are_refused_as_seed_backups() {
+    let entr32 = "ms10entrsqz46h2at4w46h2at4w46h2at4w46h2at4w46h2at4w46h2at4w46kdv3c0wn2hx0lq";
+    assert_eq!(entr32.len(), 75);
+    let mnem = ms_codec::encode(
+        ms_codec::Tag::ENTR,
+        &ms_codec::Payload::Mnem { language: 6, entropy: vec![0xab; 32] },
+    )
+    .unwrap();
+    for s in [entr32.to_string(), mnem] {
+        let out = ms().args(["hashlock", "-", "--no-engraving-card"]).write_stdin(s.clone()).output().unwrap();
+        assert_eq!(out.status.code(), Some(1), "{s}");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains("that is a seed backup, not a hashlock preimage"), "{err}");
+    }
+}
+
+/// `--hashlock-phrase -` is refused naming the stdin flag, never derived from
+/// the one-byte phrase "-" (controller default, R0 r0 fidelity I-10).
+#[test]
+fn hashlock_phrase_dash_is_refused_naming_the_stdin_flag() {
+    let out = ms().args(["hashlock", "--hashlock-phrase", "-", "--no-engraving-card"]).write_stdin(PHRASE).output().unwrap();
+    assert_eq!(out.status.code(), Some(64), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--hashlock-phrase-stdin"));
+}
+
 /// `--out` is 0600 (owner-only) on every source.
 #[cfg(unix)]
 #[test]
@@ -1702,9 +1847,13 @@ not, add `tempfile = "3"` under `[dev-dependencies]` in the same commit.
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `cargo test -p ms-cli --test hashlock_sources`
-Expected: every test FAILS — `ms hashlock` is not a subcommand (clap exit 2
-"unrecognized subcommand"), and the guard's refusal names "a BIP-39
-passphrase" for the flag.
+Expected: eight tests FAIL with clap's `unrecognized subcommand 'hashlock'`.
+Three do NOT, and the plan says why rather than claiming otherwise (R0 r0
+tests M-1): the argv-refusal test passes already because the guard runs BEFORE
+clap and needs no subcommand; and clap's unknown-subcommand error is ALSO exit
+64, the code `CliError::Usage` uses, so the two exit-64 tests would pass for
+the wrong reason -- which is why both also assert the refusal's MESSAGE, and
+those message assertions are what fail here.
 
 - [ ] **Step 3: Apply the Task 5 fragments**
 
@@ -1818,12 +1967,18 @@ pub fn strip_one_trailing_newline(buf: &mut Vec<u8>) {
 /// Read the phrase from stdin, byte-verbatim. At a terminal, print one prompt
 /// line to stderr first (r2 review M-7: the first `ms` input a human types
 /// must not look like a hang).
+/// The one prompt line, printed iff stdin is a terminal. Split out so the
+/// terminal branch is unit-tested without a pty (R0 r0 fidelity I-8).
+pub fn prompt_if_terminal(is_tty: bool, stderr: &mut impl std::io::Write) {
+    if is_tty {
+        let _ = writeln!(stderr, "Type the hashlock phrase, then Enter.");
+    }
+}
+
 pub fn read_phrase_stdin() -> Result<Zeroizing<Vec<u8>>> {
     use std::io::{IsTerminal, Read};
     let stdin = std::io::stdin();
-    if stdin.is_terminal() {
-        eprintln!("Type the hashlock phrase, then Enter.");
-    }
+    prompt_if_terminal(stdin.is_terminal(), &mut std::io::stderr().lock());
     let mut buf: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::new());
     stdin
         .lock()
@@ -1854,7 +2009,9 @@ pub fn validate_phrase(bytes: &[u8]) -> std::result::Result<(), PhraseRefusal> {
     if s.len() > HASHLOCK_PHRASE_MAX_CHARS {
         return Err(PhraseRefusal::TooLong { chars: s.len() });
     }
-    if s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()) {
+    // The same predicate `--hex` parses with (the `hex` crate), so the two
+    // cannot disagree about what a pasted preimage looks like (spec §4.3).
+    if s.len() == 64 && hex::decode(s).is_ok() {
         return Err(PhraseRefusal::Hex64);
     }
     Ok(())
@@ -1975,6 +2132,16 @@ mod tests {
     }
 
     #[test]
+    fn prompt_only_at_a_terminal() {
+        let mut tty = Vec::new();
+        prompt_if_terminal(true, &mut tty);
+        assert_eq!(String::from_utf8(tty).unwrap(), "Type the hashlock phrase, then Enter.\n");
+        let mut pipe = Vec::new();
+        prompt_if_terminal(false, &mut pipe);
+        assert!(pipe.is_empty(), "a pipe gets no prompt: it would land in the operator's output");
+    }
+
+    #[test]
     fn refusals_never_echo_the_phrase() {
         let secret = "my very secret phrase\t";
         let msg = validate_phrase(secret.as_bytes()).unwrap_err().message();
@@ -2013,7 +2180,7 @@ git commit -m "ms-cli: hashlock_phrase -- byte-verbatim stdin reader and the phr
   `hashlock_phrase::*`, `argv_guard::{admitted, CH_POSITIONAL}`,
   `parse::{Source, read_input}`, `out::write_artifact`,
   `format::render_grouped` (`format.rs:18`), `advisory::{emit_output_class_advisory, OutputClass}`,
-  `cmd::encode::parse_hex_entropy`.
+  the `hex` crate (`--hex` is parsed by the verb itself, R0 r0 fidelity I-9).
 - Produces: `cmd::hashlock::{HashlockArgs, run(HashlockArgs) -> Result<u8>}`.
 
 - [ ] **Step 1: Write the verb**
@@ -2175,6 +2342,16 @@ fn derive(args: &HashlockArgs, source: SourceKind) -> Result<Derived> {
                 // argv value; the guard replaced the argv token with `-`.
                 match crate::argv_guard::admitted("--hashlock-phrase") {
                     Some([first, ..]) => Zeroizing::new(first.as_bytes().to_vec()),
+                    // A bare `-` here is NOT admitted material (the guard passes
+                    // it through untouched) and would otherwise derive from the
+                    // one-byte phrase "-". Every other secret flag treats `-` as
+                    // stdin; this verb has a dedicated flag for that, so name it.
+                    // CONTROLLER DEFAULT (spec §4.1 is silent; R0 r0 fidelity I-10).
+                    _ if args.hashlock_phrase.as_deref() == Some("-") => {
+                        return Err(CliError::Usage(
+                            "--hashlock-phrase - is not a channel; to read the phrase from stdin use --hashlock-phrase-stdin".to_string(),
+                        ))
+                    }
                     _ => Zeroizing::new(
                         args.hashlock_phrase
                             .as_deref()
@@ -2206,13 +2383,25 @@ fn derive(args: &HashlockArgs, source: SourceKind) -> Result<Derived> {
         SourceKind::Hex => {
             refuse_method(args)?;
             let raw = read_input(Source::new(args.hex.as_deref(), None).on("--hex"))?;
-            let bytes = crate::cmd::encode::parse_hex_entropy(raw.trim())?;
-            if bytes.len() != 32 {
-                return Err(CliError::BadInput(format!(
-                    "--hex is {} bytes; a hashlock preimage is exactly 32 bytes (64 hex characters) -- see the composer spec's §8i",
-                    bytes.len()
-                )));
+            // Parsed HERE, not by `parse_hex_entropy`: that helper speaks for
+            // `ms encode` ("expected hex of length 32/40/48/56/64 chars"), a
+            // set that is wrong for this verb, and it fails before any length
+            // check could name §8i (R0 r0 fidelity I-9). The predicate is the
+            // `hex` crate's, the same one the phrase rule's 64-hex guard uses.
+            let s = raw.trim();
+            let refuse = |got: usize| {
+                CliError::BadInput(format!(
+                    "--hex is {got} characters; a hashlock preimage is exactly 32 bytes (64 hex characters) -- see the composer spec's §8i"
+                ))
+            };
+            if s.len() != 64 {
+                return Err(refuse(s.len()));
             }
+            let bytes = hex::decode(s).map_err(|_| {
+                CliError::BadInput(
+                    "--hex is not hex; a hashlock preimage is exactly 32 bytes (64 hex characters) -- see the composer spec's §8i".to_string(),
+                )
+            })?;
             let mut x = Zeroizing::new([0u8; 32]);
             x.copy_from_slice(&bytes);
             Ok(Derived {
@@ -2349,7 +2538,7 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
         writeln!(stderr, "One phrase per policy. Spending any path of a wsh wallet publishes this digest. Never use this phrase as a passphrase or a password anywhere else -- a spend publishes the preimage, and anyone can then test guesses at the phrase itself.").ok();
         match d.method {
             Some(Method::Sha256) => {
-                writeln!(stderr, "WARNING: this is the brainwallet construction: anyone holding the digest tests 10^10 phrases per second. A phrase a person chose is not safe here; use six diceware words or --random.").ok();
+                writeln!(stderr, "WARNING: This is the brainwallet construction: anyone holding the digest tests 10^10 phrases per second. A phrase a person chose is not safe here; use six diceware words or --random.").ok();
             }
             Some(Method::Hardened) => {
                 if d.phrase_chars.unwrap_or(0) < 20 {
@@ -2381,13 +2570,31 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
 /// instead of truncating. For `--random` only: that artifact is a function of
 /// nothing and cannot be re-made (SPEC_ms_hashlock §4.1).
 pub(crate) fn write_artifact_create_new(path: &std::path::Path, body: &str) -> Result<()> {
-    if path.exists() {
-        return Err(CliError::Usage(format!(
-            "--out {} already exists; a --random preimage will not overwrite it (choose another file, or move the old one first)",
-            path.display()
-        )));
+    use std::io::Write;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
     }
-    write_artifact(path, body)
+    // O_CREAT|O_EXCL: the check and the create are ONE syscall, so nothing can
+    // slip a file in between them and be truncated (R0 r0 fidelity I-4).
+    let mut f = match opts.open(path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(CliError::Usage(format!(
+                "--out {} already exists; a --random preimage will not overwrite it (choose another file, or move the old one first)",
+                path.display()
+            )));
+        }
+        Err(e) => {
+            return Err(CliError::BadInput(format!("failed to write --out {}: {}", path.display(), e)));
+        }
+    };
+    f.write_all(body.as_bytes())
+        .map_err(|e| CliError::BadInput(format!("failed to write --out {}: {}", path.display(), e)))?;
+    Ok(())
 }
 ```
 
@@ -2416,7 +2623,8 @@ git commit -m "ms-cli: ms hashlock -- five sources, one at a time; the record on
 - Modify: `crates/ms-cli/src/cmd/combine.rs:154-167` (fragment: one arm)
 - Modify: `crates/ms-cli/src/cmd/payload_lang.rs:37-61` (fragment: the typed refusal; the helper returns `Result`)
 - Modify: `crates/ms-cli/src/cmd/verify.rs`, `crates/ms-cli/src/cmd/derive.rs` (fragment: `?` on the helper's new `Result`)
-- Modify: `crates/ms-cli/src/cmd/inspect.rs:160-232` (fragment: rules 6/8/9/10, `reason_text`, version line)
+- Modify: `crates/ms-cli/src/cmd/inspect.rs:160-232` (fragment: verdict rules 6/8/9/10, the rule-6b tag/kind check OUTSIDE the per-kind arms, `reason_text`, version line)
+- Modify: `crates/ms-cli/src/cmd/split.rs:127-132` (fragment: `PayloadKind::Preimage => ("hash", None)`)
 - Test: `crates/ms-cli/tests/hashlock_other_verbs.rs`
 
 **Interfaces:**
@@ -2474,15 +2682,13 @@ fn decode_prints_kind_hex_and_digest_and_never_words() {
         String::from_utf8_lossy(&out.stderr)
     );
     let so = String::from_utf8_lossy(&out.stdout);
-    assert!(so.contains("preimage"), "{so}");
-    assert!(so.contains(HEX32), "{so}");
-    assert!(so.contains(H), "{so}");
-    for w in ["abandon", "sentence", "entry", "word"] {
-        assert!(
-            !so.to_ascii_lowercase().contains(w),
-            "a preimage rendered as words:\n{so}"
-        );
-    }
+    // STRUCTURAL, not a word blocklist (R0 r0 tests I-3): exactly three
+    // labelled lines, so any extra line -- words, a phrase, anything -- fails.
+    let lines: Vec<&str> = so.lines().collect();
+    assert_eq!(lines.len(), 3, "decode's text output for a preimage is exactly three lines:\n{so}");
+    assert!(lines[0].starts_with("kind:") && lines[0].contains("preimage"), "{so}");
+    assert!(lines[1].starts_with("preimage:") && lines[1].contains(HEX32), "{so}");
+    assert!(lines[2].starts_with("digest:") && lines[2].contains(H), "{so}");
 }
 
 #[test]
@@ -2496,7 +2702,7 @@ fn decode_json_carries_kind_and_digest() {
     assert_eq!(v["kind"], "preimage");
     assert_eq!(v["preimage_hex"], HEX32);
     assert_eq!(v["digest"], H);
-    assert!(v.get("phrase").is_none() && v.get("mnemonic").is_none());
+    assert_eq!(v.as_object().unwrap().len(), 3, "exactly kind, preimage_hex, digest: {v}");
 }
 
 /// MUTATION: leave inspect.rs's rule-6/8 copies untouched -> `unknown-tag`
@@ -2574,6 +2780,33 @@ fn combine_prints_a_recovered_preimage_as_decode_does() {
     assert!(so.contains(HEX32) && so.contains(H), "{so}");
 }
 
+/// C-1 (R0 r0 fidelity): a forged single whose id and prefix disagree is a
+/// FormatViolation (exit 2) with the spec's wording, on decode and on inspect --
+/// never "unhandled ms_codec::Error variant" at exit 1, never "would decode".
+/// MUTATION: delete the TagKindMismatch arm in From<ms_codec::Error>.
+#[test]
+fn tag_kind_mismatch_is_a_format_violation_on_decode_and_a_reason_on_inspect() {
+    use ms_codec::codex32::{Codex32String, Fe};
+    let mut seed = vec![0x00u8];
+    seed.extend_from_slice(&[0xab; 32]);
+    let forged = Codex32String::from_seed("ms", 0, "hash", Fe::S, &seed).unwrap().to_string();
+    let out = ms().args(["decode", "-"]).write_stdin(forged.clone()).output().unwrap();
+    assert_eq!(out.status.code(), Some(2), "{}", String::from_utf8_lossy(&out.stderr));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("names a different kind than the prefix byte"), "{err}");
+    assert!(!err.contains("unhandled"), "{err}");
+    let out = ms().args(["inspect", "-"]).write_stdin(forged).output().unwrap();
+    let so = String::from_utf8_lossy(&out.stdout);
+    assert!(so.contains("tag-kind-mismatch") && so.contains("would NOT decode"), "{so}");
+}
+
+/// I-3 (R0 r0 fidelity): split.rs's PayloadKind catch-all was swept too.
+#[test]
+fn split_kind_match_has_a_preimage_arm() {
+    let s = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cmd/split.rs")).unwrap();
+    assert!(s.contains("PayloadKind::Preimage =>"), "split.rs's kind match must name the preimage kind");
+}
+
 /// repair is unchanged and benign on the kind (adversarial M-3).
 #[test]
 fn repair_on_an_undamaged_preimage_plate_is_a_no_op() {
@@ -2643,6 +2876,11 @@ edit("crates/ms-cli/src/cmd/combine.rs", [
     ("        // ms_codec::Payload is #[non_exhaustive]; guard against future variants.\n        _ => unreachable!(\"combine_shares returned an unknown Payload variant\"),\n    };",
      "        Payload::Preimage(x) => {\n            // A recovered preimage prints as `decode` does and never as words.\n            return crate::cmd::decode::emit_preimage(x, args.json);\n        }\n        // ms_codec::Payload is #[non_exhaustive]; guard against future variants.\n        _ => unreachable!(\"combine_shares returned an unknown Payload variant\"),\n    };"),
 ])
+# I-3 (R0 r0 fidelity): the fifth value-returning catch-all over the three
+# kind types, unreachable through today's CLI (F-468) and swept anyway.
+edit("crates/ms-cli/src/cmd/split.rs", [
+    ('        PayloadKind::Entr => ("entr", None),', '        PayloadKind::Preimage => ("hash", None),\n        PayloadKind::Entr => ("entr", None),'),
+])
 edit("crates/ms-cli/src/cmd/payload_lang.rs", [
     (") -> (Zeroizing<Vec<u8>>, CliLanguage, bool) {\n    match payload {\n        Payload::Entr(b) => (Zeroizing::new(b), cli_lang, cli_lang_defaulted),",
      ") -> crate::error::Result<(Zeroizing<Vec<u8>>, CliLanguage, bool)> {\n    Ok(match payload {\n        // A preimage is not a seed: refuse HERE, before the catch-all, with\n        // the executable remedy (SPEC_ms_hashlock §5; review I-3).\n        Payload::Preimage(_) => {\n            return Err(crate::error::CliError::BadInput(\n                \"this is a hashlock preimage plate, not a seed backup; use `ms hashlock <ms1>` (or `ms hashlock --in FILE`) to re-derive its digest\".to_string(),\n            ))\n        }\n        Payload::Entr(b) => (Zeroizing::new(b), cli_lang, cli_lang_defaulted),"),
@@ -2654,11 +2892,19 @@ edit("crates/ms-cli/src/cmd/inspect.rs", [
     ("        InspectKind::Mnem => VALID_MNEM_STR_LENGTHS,\n        _ => VALID_STR_LENGTHS,",
      "        InspectKind::Mnem => VALID_MNEM_STR_LENGTHS,\n        InspectKind::Preimage => VALID_PREIMAGE_STR_LENGTHS,\n        _ => VALID_STR_LENGTHS,"),
     ("        InspectKind::Mnem => {\n            // payload_bytes = [lang_byte, entropy...]; valid if len - 1 ∈ VALID_ENTR_LENGTHS.",
-     "        InspectKind::Preimage => {\n            if report.payload_bytes.len() != 32 {\n                reasons.push(\"payload-length-mismatch\");\n            }\n            if tag_bytes != TAG_HASH {\n                reasons.push(\"tag-kind-mismatch\");\n            }\n        }\n        InspectKind::Mnem => {\n            // payload_bytes = [lang_byte, entropy...]; valid if len - 1 ∈ VALID_ENTR_LENGTHS."),
+     "        InspectKind::Preimage => {\n            if report.payload_bytes.len() != 32 {\n                reasons.push(\"payload-length-mismatch\");\n            }\n        }\n        InspectKind::Mnem => {\n            // payload_bytes = [lang_byte, entropy...]; valid if len - 1 ∈ VALID_ENTR_LENGTHS."),
+    # C-2 (R0 r0 fidelity): rule 6b, the tag/kind check, sits OUTSIDE the
+    # per-kind arms so a `hash` id over a seed payload (or `entr` over a
+    # preimage) is a reason on every kind -- `ms inspect` must never say
+    # "would decode" for a string `ms decode` refuses.
+    ("    // Rule 8: prefix byte must be a recognised kind (0x00 = entr, 0x02 = mnem).",
+     "    // Rule 6b (SPEC_ms_hashlock §1 rule 2): a single's id must name the kind\n    // its prefix byte carries. Checked for EVERY recognised kind, not inside\n    // one arm, because the failure this guards is exactly the mismatch.\n    let expected_tag = match report.kind {\n        InspectKind::Entr | InspectKind::Mnem => Some(TAG_ENTR),\n        InspectKind::Preimage => Some(TAG_HASH),\n        _ => None,\n    };\n    if let Some(expected) = expected_tag {\n        if (tag_bytes == TAG_ENTR || tag_bytes == TAG_HASH) && tag_bytes != expected {\n            reasons.push(\"tag-kind-mismatch\");\n        }\n    }\n    // Rule 8: prefix byte must be a recognised kind (0x00 = entr, 0x02 = mnem)."),
     ("        \"unknown-tag\" => \"tag not in v0.1 RESERVED_TAG_TABLE\",\n        \"non-zero-prefix\" => \"prefix byte is not a recognised kind (0x00=entr, 0x02=mnem)\",",
      "        \"unknown-tag\" => \"tag not in the accept set (entr, hash)\",\n        \"tag-kind-mismatch\" => \"the id names a different kind than the prefix byte carries\",\n        \"non-zero-prefix\" => \"prefix byte is not a recognised kind (0x00=entr, 0x02=mnem, 0x03=preimage)\","),
     ("            InspectKind::Mnem => \"v0.2\",\n            _ => \"v0.1\",",
      "            InspectKind::Mnem => \"v0.2\",\n            InspectKind::Preimage => \"v0.8\",\n            _ => \"v0.1\","),
+    ("            \"string length not in valid set for this kind ([50,56,62,69,75] entr / [51,58,64,70,77] mnem)\"",
+     "            \"string length not in valid set for this kind ([50,56,62,69,75] entr / [51,58,64,70,77] mnem / [75] preimage)\""),
 ])
 ```
 
@@ -2668,6 +2914,11 @@ plan carries them so the two cannot drift):
 ```python
 edit("crates/ms-cli/src/cmd/inspect.rs", [
     ("use ms_codec::consts::{", "use ms_codec::consts::{TAG_HASH, VALID_PREIMAGE_STR_LENGTHS, "),
+])
+# I-2 (R0 r0 fidelity): the whole-range refusal loop must skip 0x03, which is
+# no longer undefined, and pin what 0x03 does instead.
+edit("crates/ms-codec/tests/forward_compat.rs", [
+    ("        if prefix == 0x02 {", "        // 0x03 is the preimage kind now (SPEC_ms_hashlock §1): a 17-byte 0x03\n        // payload is refused by LENGTH, not by prefix -- hashlock_kind.rs's\n        // `preimage_prefix_is_refused_by_length_not_prefix` pins what it does.\n        if prefix == 0x02 || prefix == 0x03 {"),
 ])
 edit("crates/ms-codec/src/inspect.rs", [
     ("use crate::consts::MNEM_PREFIX;", "use crate::consts::{MNEM_PREFIX, PREIMAGE_PREFIX};"),
@@ -2812,7 +3063,7 @@ fn record_via_argv(phrase: &str, method: &str) -> (Option<i32>, String, String) 
 /// Byte-exact through BOTH channels, equal to the codec's own answer.
 #[test]
 fn byte_exact_rows_on_both_channels() {
-    for phrase in ["  a  b ", "a-b,c", "correct-horse,battery staple"] {
+    for phrase in ["  a  b ", "a-b,c", "correct-horse,battery staple", "Correct Horse Battery Staple"] {
         let expect = {
             let x = ms_codec::hashlock::preimage_sha256(phrase.as_bytes());
             let h = ms_codec::hashlock::digest(&x);
@@ -2919,6 +3170,17 @@ fn hex64_either_case_is_redirected_to_hex_on_stdin_and_short_hex_is_accepted() {
     }
     let (code, _, se) = record_via_stdin(b"beef", "sha256");
     assert_eq!(code, Some(0), "{se}");
+}
+
+/// The 64-hex guard is EXACTLY 64: a longer all-hex phrase and a 64-character
+/// phrase with one non-hex character are both accepted (R0 r0 tests I-4).
+#[test]
+fn hex_looking_phrases_of_other_lengths_are_accepted() {
+    let eighty = "deadbeef".repeat(10);
+    assert_eq!(record_via_stdin(eighty.as_bytes(), "sha256").0, Some(0));
+    let mut sixty_four = "c3e97525442520da4cffd5f57aae3f6273990017f2e0fa30c056e32172e22016".to_string();
+    sixty_four.replace_range(63..64, "z");
+    assert_eq!(record_via_stdin(sixty_four.as_bytes(), "sha256").0, Some(0));
 }
 
 #[test]
@@ -3189,9 +3451,8 @@ fn random_json_with_out_succeeds() {
         .starts_with("ms10hashsq"));
 }
 
-/// The record feeds the composer's packer unmodified (§12.6): the spelling
-/// is stdin with NO --in. Skipped only if `me` is not installed -- and then
-/// it SAYS so on stderr and still passes the shape check.
+/// The record's SHAPE is what `me sysw pack` reads from stdin (§12.6: no
+/// `--in`). A pure shape check; the cross-repo run is acceptance item 6.
 #[test]
 fn record_line_shape_is_what_me_sysw_pack_reads() {
     let out = ms()
@@ -3463,8 +3724,10 @@ Expected: a `ms-hashlock.1` (or the verb inside `ms.1`) is generated from
 clap; the `gen_man.rs` test passes. Then, in mnemonic-toolkit, add the
 `ms hashlock` section to `docs/manual/src/40-cli-reference/43-ms.md` with
 every flag from `HashlockArgs` and the §9 item-4 note ("the by-hand recipe is
-`--method sha256`"), and run the toolkit's flag-coverage lint
-(`grep -rn "flag-coverage\|flag_coverage" mnemonic-toolkit/docs mnemonic-toolkit/scripts | head -3` names it). That edit lands in the toolkit repo via its own
+`--method sha256`"), and run the toolkit's manual lint, which carries the flag-coverage gate:
+`make -C /scratch/code/shibboleth/mnemonic-toolkit/docs/manual lint`
+(`docs/manual/README.md:39`: markdownlint + cspell + lychee + flag-coverage +
+glossary-coverage + index check). That edit lands in the toolkit repo via its own
 staging ritual, referenced from this repo's `design/FOLLOWUPS.md` at tier
 `cross-repo` per RELEASE_PROCESS item 6.
 
@@ -3480,7 +3743,7 @@ git commit -m "records: MIGRATION v0.7 -> v0.8 (five invariants, the third reade
 ### Task 11: Release — H0 first, then 0.8.0 and 0.18.0 together
 
 **Files:**
-- Modify: `crates/ms-codec/Cargo.toml`, `crates/ms-cli/Cargo.toml` (Task 2/5 fragments already bumped them; confirm)
+- Modify: `crates/ms-codec/Cargo.toml`, `crates/ms-cli/Cargo.toml` (Task 1 bumped both and the pin; confirm they read 0.8.0 / 0.18.0 / `=0.8.0`)
 - Modify: `CHANGELOG.md` (the corpus SHA and the date)
 
 - [ ] **Step 1: The H0 gate — before anything is tagged**
@@ -3490,8 +3753,13 @@ Run, and paste the outputs into the release commit message:
    and the H0 fork merge SHA: the flashed device's version line reads
    `bg<that sha>` and `sysw.Classify` on the corpus's `kind[0].ms1` is NOT
    `ClassCodex32Secret` (the fork's H0 test names it).
-2. `me`'s H0 commit: `me sysw pack` fed the same string refuses it as inert
-   (not `RecordKind::Ms`), on a `me` built at the bump.
+2. `me`'s H0 commit, on a `me` built at its ms-codec 0.8 bump:
+   `printf '%s\n' "$PLATE" | me sysw pack --out /tmp/h0.bin` exits **4** with
+   `not a form this container can place` (the inert classification: not
+   `RecordKind::Ms`, no new class; the same refusal `me` 0.7 gives today by
+   accident of its pin, now by rule), and `me`'s record-class vector row for the
+   preimage string is present (`grep -n "ms1-preimage" crates/me-cli/src/seal/record.rs`
+   names it). Paste both outputs.
 If either is missing, STOP: the release waits (spec §9, §12.7).
 
 - [ ] **Step 2: The per-release checklist, in order**
@@ -3536,10 +3804,20 @@ claimed that pin was "done" while no code block carried it; it is now Task
 2's `preimage_field_is_zeroizing`, a type-level assertion the compiler
 enforces); §12 → Task 11 Step 3; §13 → nothing to build; §14 → the citations below.
 
-**Placeholder scan.** The corpus's `"…"` cells are the implementer's to fill
-from the two external tools and are named as such with the `provenance`
-field; no other TBD/TODO. `derive_share` in Task 2's `forge_shares` helper is
-flagged to be confirmed against the vendored codex32's exported name.
+**Placeholder scan.** The corpus's numeric `"…"` cells are the implementer's
+to fill from the two external tools and are named as such with the
+`provenance` field; every PHRASE is a literal (R0 r0 fidelity: four rows had
+bracketed descriptions, now replaced); no other TBD/TODO. (`forge_shares` uses
+`Codex32String::interpolate_at`, measured — gate run 5 replaced the guessed name.)
+
+**R0 round 0 (fidelity) folded here:** the three `From<ms_codec::Error>` arms
+(C-1); inspect's rule-6b check outside the per-kind arms (C-2); both Cargo
+bumps in Task 1 (I-1); `forward_compat.rs`'s loop (I-2); `split.rs`'s arm
+(I-3); `create_new` semantics (I-4); one shape predicate (I-5); `--hex` at
+63/64/65 both cases (I-6); the entr-32 and mnem seed-backup refusals (I-7);
+the prompt as a unit-tested function (I-8); `--hex` parsed by the verb with
+§8i and both spellings (I-9); `--hashlock-phrase -` refused, a labelled
+controller default (I-10); the Minors and Nits as listed in the fold commit.
 
 **Type consistency.** `Payload::Preimage(Zeroizing<[u8; 32]>)` everywhere;
 `PayloadKind::single_tag(self) -> Tag`; `hashlock::preimage_random() ->
