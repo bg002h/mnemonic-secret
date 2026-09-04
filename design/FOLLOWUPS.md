@@ -668,3 +668,24 @@ ways: toolkit defaults to BIP-87, `ms` rules `270028'`, the fork ships `48'/…/
 can never be mistaken for BIP-48.
 
 - **Status:** CLOSED 2026-09-02 by composer Stage 1 (bip48-p2tr added; both comments rewritten). **Tier:** was docs + feature.
+
+### `toolkit-manual-ms-hashlock-chapter` — the `ms hashlock` section of the toolkit manual is not written (repo: **mnemonic-toolkit**; owning phase: **H1 Task 10 / the 0.18.0 release, Task 11**)
+
+- **Surfaced:** 2026-09-04, H1 Task 10 Step 3. The H1 implementer's brief scoped
+  it to this repo and this worktree only, so no cross-repo edit was made.
+- **Where:** `mnemonic-toolkit/docs/manual/src/40-cli-reference/43-ms.md`.
+- **What:** add the `ms hashlock` section with every flag of `HashlockArgs`
+  (measured from the binary: `--hashlock-phrase`, `--hashlock-phrase-stdin`,
+  `--hex`, `--in`, `--random`, `--method`, `--out`, `--json`,
+  `--no-engraving-card`, `--group-size`, `--separator`,
+  `--allow-argv-secret`, plus the `<MS1>` positional), and MIGRATION §9 item 4's
+  note that the by-hand recipe "hash the passphrase to 32 bytes, then hash
+  again" is `--method sha256`, NOT the default. Then run the toolkit's manual
+  lint, which carries the flag-coverage gate:
+  `make -C mnemonic-toolkit/docs/manual lint`.
+- **Why it matters here:** SPEC_ms_hashlock §10 puts the manual chapter in
+  LOCKSTEP with the release, so this gates ms-cli 0.18.0 (plan Task 11), not
+  H1's merge. The man page needs nothing: `cmd/gen_man.rs` walks
+  `clap::CommandFactory`, and `ms gen-man` already emits `ms-hashlock.1`
+  (verified; `tests/gen_man.rs` 5 passed).
+- **Status:** open. **Tier:** `cross-repo` (RELEASE_PROCESS item 6).
