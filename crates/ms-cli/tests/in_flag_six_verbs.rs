@@ -1,9 +1,11 @@
 //! **P2 row 1 — `--in FILE` on the six verbs whose `--in` binding is unambiguous.**
 //!
-//! `decode`, `verify`, `inspect`, `repair`, `derive`, `combine`. §6d's per-verb
-//! table gives each of these exactly one channel for `--in` to bind to — the
-//! positional (`--ms1` on `repair`, the share list on `combine`) — which is why
-//! they need no ruling and `encode`/`split` do.
+//! `decode`, `verify`, `inspect`, `repair`, `derive`, `combine` — and, since
+//! ms-cli 0.18.0, `hashlock`, which makes seven. (The file's NAME is history;
+//! the table below is the authority.) §6d's per-verb table gives each of these
+//! exactly one channel for `--in` to bind to — the positional (`--ms1` on
+//! `repair`, the share list on `combine`, the preimage plate on `hashlock`) —
+//! which is why they need no ruling and `encode`/`split` do.
 //!
 //! **The gate is an EQUALITY, never a bare success.** stdout *and* stderr must
 //! be byte-equal to the same invocation fed on stdin, at the same exit code. A
@@ -25,6 +27,10 @@ use std::io::Write;
 const PHRASE: &str =
     "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const MS1: &str = "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f";
+/// The preimage plate the hashlock corpus pins (`kind[0].ms1`, X = 0xab*32).
+/// `hashlock`'s `--in` binds to THIS, the ms1 — never to a phrase (L20).
+const PREIMAGE_MS1: &str =
+    "ms10hashsqw46h2at4w46h2at4w46h2at4w46h2at4w46h2at4w46h2at4w46kzv2ncy60u7z9c";
 
 fn ms() -> Command {
     Command::cargo_bin("ms").unwrap()
@@ -112,6 +118,15 @@ fn in_on_repair_equals_the_stdin_run() {
     assert_in_equals_stdin(&["repair", "--ms1", "-"], &["repair"], MS1, "repair");
 }
 
+/// `hashlock`'s `--in` is the SEVENTH, and it binds to the preimage ms1 (L20,
+/// SPEC_ms_hashlock §4.1) — not to the phrase, which has its own two channels.
+/// The equality gate is what proves the binding: a `--in` clap accepted and the
+/// verb ignored would still exit 0 while deriving from whatever stdin held.
+#[test]
+fn in_on_hashlock_equals_the_stdin_run() {
+    assert_in_equals_stdin(&["hashlock", "-"], &["hashlock"], PREIMAGE_MS1, "hashlock");
+}
+
 /// `combine`'s channel is the variadic `<SHARES>...`, and `--in` reads **one
 /// share per line**, display separators stripped, exactly as the stdin path
 /// already does.
@@ -158,7 +173,9 @@ fn in_on_combine_accepts_grouped_shares() {
 /// that silently falls back exits 0 and this goes RED.
 #[test]
 fn a_missing_in_file_names_the_path_and_does_not_fall_back_to_stdin() {
-    for verb in ["decode", "verify", "inspect", "derive", "repair"] {
+    for verb in [
+        "decode", "verify", "inspect", "derive", "repair", "hashlock",
+    ] {
         let out = ms()
             .args([verb, "--in", "/nonexistent/ms-p2-no-such-file.txt"])
             .write_stdin(MS1.to_string())
@@ -192,6 +209,7 @@ fn in_together_with_dash_refuses_on_every_verb() {
         vec!["derive", "-", "--in", &path],
         vec!["repair", "--ms1", "-", "--in", &path],
         vec!["combine", "-", "--in", &path],
+        vec!["hashlock", "-", "--in", &path],
     ];
     for args in cases {
         let out = ms()
