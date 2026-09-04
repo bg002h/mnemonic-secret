@@ -64,7 +64,8 @@
 /// words cannot carry material at all.
 ///
 /// `ms` nests no subcommands, so exactly one word is ever appended.
-const SUBCOMMANDS: [&str; 12] = [
+const SUBCOMMANDS: [&str; 13] = [
+    "hashlock",
     "derive",
     "encode",
     "decode",
@@ -79,11 +80,17 @@ const SUBCOMMANDS: [&str; 12] = [
     "help",
 ];
 
-/// The nine flag-keyed secret channels, as strings. No parse, no clap.
+/// The five flag-keyed secret channels, as strings. No parse, no clap.
 ///
 /// `--passphrase-stdin` is deliberately NOT here and cannot be caught by
 /// accident: the match is EQUALITY, not a prefix test.
-const SECRET_FLAGS: [&str; 4] = ["--phrase", "--hex", "--ms1", "--passphrase"];
+const SECRET_FLAGS: [&str; 5] = [
+    "--phrase",
+    "--hex",
+    "--ms1",
+    "--passphrase",
+    "--hashlock-phrase",
+];
 
 /// The bech32 character set. A codex32 string's data part draws from it alone,
 /// which is what separates an `ms1` string from a FILENAME that merely starts
@@ -113,7 +120,9 @@ fn argv_candidates(token: &str) -> Vec<String> {
 /// What a token looks like, or `None`. The returned string NAMES A CLASS and
 /// never reproduces any of the value.
 fn material_class(candidate: &str) -> Option<&'static str> {
-    if is_ms1_shaped(candidate) {
+    // ONE predicate for the ms1 shape, shared with the phrase channels: the
+    // normalisation is inside it (SPEC_ms_hashlock §4.3; R0 r0 tests C-1).
+    if looks_like_ms1(candidate) {
         return Some("an ms1 string (or one share of an ms1 share-set)");
     }
     if is_phrase_shaped(candidate) {
@@ -131,6 +140,15 @@ fn material_class(candidate: &str) -> Option<&'static str> {
 /// `ms1-2026-08-23-backup.txt` is a FILENAME beginning with the HRP; it carries
 /// `-` and `.`, neither of which is in the charset, so it is not material and
 /// `ms verify --in ms1-2026-08-23-backup.txt` is still accepted.
+/// `is_ms1_shaped` over the NORMALISED token: trimmed, lowercased, display
+/// separators stripped. The one predicate both the argv guard and the phrase
+/// channels call, so the two cannot drift (SPEC_ms_hashlock §4.3). An
+/// uppercase plate string -- the BIP-173/QR spelling `ms decode` accepts --
+/// is caught here and only here.
+pub(crate) fn looks_like_ms1(raw: &str) -> bool {
+    is_ms1_shaped(&raw.trim().to_ascii_lowercase())
+}
+
 fn is_ms1_shaped(s: &str) -> bool {
     // **Display separators are stripped first, because `ms` strips them on
     // INTAKE.** A share read off a plate arrives grouped -- `ms12un98 qcjj5
@@ -257,7 +275,8 @@ fn override_applies(argv: &[String]) -> bool {
     argv.iter().any(|t| t == ALLOW_FLAG)
         && matches!(
             argv.get(1).map(|t| t.trim()),
-            Some("encode")
+            Some("hashlock")
+                | Some("encode")
                 | Some("decode")
                 | Some("inspect")
                 | Some("verify")
@@ -380,6 +399,7 @@ fn flag_class(flag: &str) -> &'static str {
         "--phrase" => "a BIP-39 mnemonic",
         "--hex" => "raw hex entropy",
         "--ms1" => "an ms1 string",
+        "--hashlock-phrase" => "a hashlock phrase",
         _ => "a BIP-39 passphrase",
     }
 }
