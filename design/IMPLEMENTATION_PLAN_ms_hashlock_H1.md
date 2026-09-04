@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**STATUS: BUILD GATE GREEN (2026-09-04); not yet R0-reviewed.** The gate is
+**STATUS: R0 GREEN 2026-09-04 (0 Critical / 0 Important open).** Round 0: fidelity (opus, `ms-hashlock-H1-plan-R0-r0-fidelity.md`, 2C/10I/9M/3N) + tests/mutation (sonnet, `ms-hashlock-H1-plan-R0-r0-tests.md`, 0C/4I/3M/1N), one fold (`3592532`, gate run 13 green). Round 1: fold verification (sonnet, `ms-hashlock-H1-plan-R0-r1-fold-verification.md`): 16/16 C+I FIXED, both Criticals and all four tests-lens Importants executed, corpus rows re-derived; 2 new Importants, both RECORDS (the fold message's Minor ledger; the C-1 arms' task attribution), folded in the r1 fold as wording only — no code changed, so the gate is not re-run and no further round is dispatched (proportional re-review). Lens-closure: fidelity, tests/mutation, fold-verification. Previous STATUS: BUILD GATE GREEN (2026-09-04); not yet R0-reviewed.** The gate is
 `scripts/plan-build-gate-ms.sh` (Task 0): eleven runs to green, every earlier run
 a real finding (see the commit messages); R0 = fidelity (opus) + tests (sonnet,
 mutation beside every test); re-validate immediately before the implementer.
@@ -459,11 +459,14 @@ open(sentinel, "w").write("wired\n")
 print("hand-wire complete")
 ```
 
-(The remaining fragments — `decode.rs`'s `emit_preimage`, `combine.rs`,
-`payload_lang.rs`, `inspect.rs`, `split.rs`, `forward_compat.rs`, the three
-`From<ms_codec::Error>` arms in `error.rs` — are added to this script by Tasks
-5 and 8, in the same exact-anchor form; each task's Step names the `edit(...)`
-entry it appends.)
+(The remaining fragments are added to this script in the same exact-anchor
+form by the task that owns them, and each task's Step names the `edit(...)`
+entry it appends: `forward_compat.rs`'s loop by Task 2 Step 5; the three
+`From<ms_codec::Error>` arms in `crates/ms-cli/src/error.rs` by Task 5 Step 3
+(they live in the SAME `edit("crates/ms-cli/src/error.rs", [...])` call as
+`CliError::Usage`, so applying that entry byte for byte applies them too);
+`decode.rs`'s `emit_preimage`, `combine.rs`, `payload_lang.rs`, `inspect.rs`
+and `split.rs` by Task 8.)
 
 - [ ] **Step 3: Run the gate on this plan and confirm it extracts, builds and refuses correctly**
 
@@ -1389,7 +1392,7 @@ git commit -m "ms-codec: hashlock corpus v0.8 with external provenance; the thre
 
 **Files:**
 - Modify: `crates/ms-cli/src/argv_guard.rs:67-79,85-86,104-111,134-145,256-269,378-385` (fragment)
-- Modify: `crates/ms-cli/src/error.rs:22,49-56` (fragment: `CliError::Usage`, exit 64)
+- Modify: `crates/ms-cli/src/error.rs:22,49-56` (fragment: `CliError::Usage`, exit 64) AND the three `From<ms_codec::Error>` arms for `PreimageLengthMismatch`, `TagKindMismatch`, `RandomnessUnavailable` (fidelity C-1) — one `edit(...)` entry in the hand-wire script carries both, and this task applies it whole. Task 8's `tag_kind_mismatch_is_a_format_violation_on_decode_and_a_reason_on_inspect` relies on the arms being in place from here.
 - Test: `crates/ms-cli/tests/hashlock_sources.rs` (Create; the guard rows)
 
 **Interfaces:**
@@ -2625,6 +2628,7 @@ git commit -m "ms-cli: ms hashlock -- five sources, one at a time; the record on
 - Modify: `crates/ms-cli/src/cmd/verify.rs`, `crates/ms-cli/src/cmd/derive.rs` (fragment: `?` on the helper's new `Result`)
 - Modify: `crates/ms-cli/src/cmd/inspect.rs:160-232` (fragment: verdict rules 6/8/9/10, the rule-6b tag/kind check OUTSIDE the per-kind arms, `reason_text`, version line)
 - Modify: `crates/ms-cli/src/cmd/split.rs:127-132` (fragment: `PayloadKind::Preimage => ("hash", None)`)
+- Consumes (not modified here): the three `From<ms_codec::Error>` arms in `crates/ms-cli/src/error.rs`, applied by Task 5 Step 3; `tag_kind_mismatch_is_a_format_violation_on_decode_and_a_reason_on_inspect` needs them.
 - Test: `crates/ms-cli/tests/hashlock_other_verbs.rs`
 
 **Interfaces:**
@@ -3809,6 +3813,25 @@ to fill from the two external tools and are named as such with the
 `provenance` field; every PHRASE is a literal (R0 r0 fidelity: four rows had
 bracketed descriptions, now replaced); no other TBD/TODO. (`forge_shares` uses
 `Codex32String::interpolate_at`, measured — gate run 5 replaced the guessed name.)
+
+**R0 round 0 (tests lens) folded here:** I-1 `case_is_bytes_too` and the
+mixed-case corpus row; I-2 eleven measured derivation rows with provenance and
+`corpus_rows_are_filled_and_re_derive`, which reads the shipped file and fails
+on a placeholder; I-3 decode's structural three-line check on top of the
+never-words list; I-4 `hex_looking_phrases_of_other_lengths_are_accepted`; M-1
+Task 5 Step 2's Expected names which tests already fail on clap's exit 64. M-2
+was no defect; M-3 and N-1 are recorded.
+
+**R0 round 1 (fold verification, sonnet) folded here:** the C-1 arms are
+attributed to Task 5 Step 3 everywhere (Task 0's parenthetical, Task 5's and
+Task 8's Files lists) — one fact, one owner. LEDGER CORRECTION for the round-0
+fold's commit message, which called M-2, M-3, M-4, M-6, M-7 and N-2 "recorded,
+not folded": the verifier's diff shows M-2 (3-variant doc comment), M-3 (one
+stdin test each), M-6 (`hex::decode` as the one predicate), M-7 (the test's
+doc comment) and N-2 (spec §7 casing) WERE folded, and M-4 partially (the
+corpus's `downgrade` object exists; no shipped test re-runs it post-H1 — still
+recorded). Open Minors/Nits after both rounds: M-4 (half), N-1, tests M-3,
+tests N-1.
 
 **R0 round 0 (fidelity) folded here:** the three `From<ms_codec::Error>` arms
 (C-1); inspect's rule-6b check outside the per-kind arms (C-2); both Cargo
