@@ -103,6 +103,10 @@ pub fn run(args: DecodeArgs) -> Result<u8> {
             }
             (wire_cli_lang, false)
         }
+        // A preimage is rendered by `emit_preimage`, never as words, and the
+        // verb RETURNS here: the second match below (entropy extraction) is
+        // never reached for this kind and keeps its catch-all (SPEC_ms_hashlock §5).
+        Payload::Preimage(x) => return emit_preimage(x, args.json),
         // ms_codec::Payload is #[non_exhaustive]; guard against future variants.
         _ => unreachable!("ms-codec decode returned unknown Payload variant"),
     };
@@ -193,6 +197,40 @@ fn emit_text(
         println!("language: {} ({} words)", language, word_count);
     }
     Ok(())
+}
+
+/// Render a preimage: kind, hex, digest. NEVER words -- a preimage is not
+/// entropy, and a 24-word rendering would be a seed nobody holds
+/// (SPEC_ms_hashlock §5).
+pub(crate) fn emit_preimage(x: &[u8; 32], json: bool) -> crate::error::Result<u8> {
+    use std::io::Write;
+    let h = ms_codec::hashlock::digest(x);
+    let hx = hex::encode(x);
+    let hh = hex::encode(h);
+    let mut out = std::io::stdout().lock();
+    if json {
+        writeln!(
+            out,
+            "{}",
+            serde_json::json!({"kind": "preimage", "preimage_hex": hx, "digest": hh})
+        )
+        .ok();
+    } else {
+        writeln!(
+            out,
+            "kind:      preimage (hashlock, 32 bytes / 64 hex characters)"
+        )
+        .ok();
+        writeln!(out, "preimage:  {hx}").ok();
+        writeln!(out, "digest:    {hh}").ok();
+    }
+    drop(out);
+    let mut err = std::io::stderr().lock();
+    crate::advisory::emit_output_class_advisory(
+        crate::advisory::OutputClass::PrivateKeyMaterial,
+        &mut err,
+    );
+    Ok(0)
 }
 
 #[cfg(test)]

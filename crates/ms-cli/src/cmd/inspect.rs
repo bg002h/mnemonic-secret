@@ -6,8 +6,8 @@
 
 use clap::Args;
 use ms_codec::consts::{
-    MNEM_LANGUAGE_NAMES, RESERVED_NOT_EMITTED_V01, TAG_ENTR, VALID_ENTR_LENGTHS,
-    VALID_MNEM_STR_LENGTHS, VALID_STR_LENGTHS,
+    MNEM_LANGUAGE_NAMES, RESERVED_NOT_EMITTED_V01, TAG_ENTR, TAG_HASH, VALID_ENTR_LENGTHS,
+    VALID_MNEM_STR_LENGTHS, VALID_PREIMAGE_STR_LENGTHS, VALID_STR_LENGTHS,
 };
 use ms_codec::{InspectKind, InspectReport};
 use serde_json::to_string;
@@ -159,7 +159,7 @@ fn analyze(report: &InspectReport, str_len: usize) -> (bool, Vec<&'static str>) 
     // Push rule 6 BEFORE rule 7 in ascending order if applicable; in our v0.1
     // shape only one of {entr accept-set, reserved-not-emitted, unknown}
     // applies, so at most one of these two reasons fires.
-    if tag_bytes != TAG_ENTR {
+    if tag_bytes != TAG_ENTR && tag_bytes != TAG_HASH {
         if RESERVED_NOT_EMITTED_V01.contains(&tag_bytes) {
             // Rule 7: tag is reserved-not-emitted in v0.1.
             // (Pushed after rule 6 logically — but only one of {6, 7} fires
@@ -171,6 +171,19 @@ fn analyze(report: &InspectReport, str_len: usize) -> (bool, Vec<&'static str>) 
             reasons.push("unknown-tag");
         }
     }
+    // Rule 6b (SPEC_ms_hashlock §1 rule 2): a single's id must name the kind
+    // its prefix byte carries. Checked for EVERY recognised kind, not inside
+    // one arm, because the failure this guards is exactly the mismatch.
+    let expected_tag = match report.kind {
+        InspectKind::Entr | InspectKind::Mnem => Some(TAG_ENTR),
+        InspectKind::Preimage => Some(TAG_HASH),
+        _ => None,
+    };
+    if let Some(expected) = expected_tag {
+        if (tag_bytes == TAG_ENTR || tag_bytes == TAG_HASH) && tag_bytes != expected {
+            reasons.push("tag-kind-mismatch");
+        }
+    }
     // Rule 8: prefix byte must be a recognised kind (0x00 = entr, 0x02 = mnem).
     // Only flag non-zero-prefix if the kind is Unknown (not a recognised v0.2 type).
     if report.kind == InspectKind::Unknown {
@@ -179,6 +192,7 @@ fn analyze(report: &InspectReport, str_len: usize) -> (bool, Vec<&'static str>) 
     // Rule 9: total string length must be in the valid set for the detected kind.
     let valid_lengths: &[usize] = match report.kind {
         InspectKind::Mnem => VALID_MNEM_STR_LENGTHS,
+        InspectKind::Preimage => VALID_PREIMAGE_STR_LENGTHS,
         _ => VALID_STR_LENGTHS,
     };
     if !valid_lengths.contains(&str_len) {
@@ -190,6 +204,11 @@ fn analyze(report: &InspectReport, str_len: usize) -> (bool, Vec<&'static str>) 
     match report.kind {
         InspectKind::Entr if tag_bytes == TAG_ENTR => {
             if !VALID_ENTR_LENGTHS.contains(&report.payload_bytes.len()) {
+                reasons.push("payload-length-mismatch");
+            }
+        }
+        InspectKind::Preimage => {
+            if report.payload_bytes.len() != 32 {
                 reasons.push("payload-length-mismatch");
             }
         }
@@ -209,14 +228,15 @@ fn analyze(report: &InspectReport, str_len: usize) -> (bool, Vec<&'static str>) 
 fn reason_text(tag: &'static str) -> &'static str {
     match tag {
         "unexpected-string-length" => {
-            "string length not in valid set for this kind ([50,56,62,69,75] entr / [51,58,64,70,77] mnem)"
+            "string length not in valid set for this kind ([50,56,62,69,75] entr / [51,58,64,70,77] mnem / [75] preimage)"
         }
         "wrong-hrp" => "HRP is not \"ms\"",
         "threshold-not-zero" => "threshold not 0 (v0.1 is single-string only)",
         "share-index-not-secret" => "share-index not 's' (BIP-93 requires 's' for threshold=0)",
         "reserved-tag-not-emitted" => "tag is reserved-not-emitted in v0.1; deferred to v0.2+",
-        "unknown-tag" => "tag not in v0.1 RESERVED_TAG_TABLE",
-        "non-zero-prefix" => "prefix byte is not a recognised kind (0x00=entr, 0x02=mnem)",
+        "unknown-tag" => "tag not in the accept set (entr, hash)",
+        "tag-kind-mismatch" => "the id names a different kind than the prefix byte carries",
+        "non-zero-prefix" => "prefix byte is not a recognised kind (0x00=entr, 0x02=mnem, 0x03=preimage)",
         "payload-length-mismatch" => {
             "payload length not valid for kind (entr: [16,20,24,28,32] B; mnem: [17,21,25,29,33] B)"
         }
@@ -228,6 +248,7 @@ fn emit_text(report: &InspectReport, would_decode: bool, reasons: &[&'static str
     if would_decode {
         let version = match report.kind {
             InspectKind::Mnem => "v0.2",
+            InspectKind::Preimage => "v0.8",
             _ => "v0.1",
         };
         println!("OK: would decode {}", version);

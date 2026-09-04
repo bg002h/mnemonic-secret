@@ -101,7 +101,7 @@ pub fn run(mut args: VerifyArgs) -> Result<u8> {
             cli_lang,
             defaulted,
             &mut stderr,
-        ),
+        )?,
         Err(ms_codec::Error::ReservedTagNotEmittedInV01 { got }) => {
             // Exit 3 path: print the success-shaped "valid future format" message.
             // emit_future_format always returns Err(FutureFormat), so propagate

@@ -37,8 +37,15 @@ pub(crate) fn payload_entropy_and_language(
     cli_lang: CliLanguage,
     cli_lang_defaulted: bool,
     stderr: &mut impl Write,
-) -> (Zeroizing<Vec<u8>>, CliLanguage, bool) {
-    match payload {
+) -> crate::error::Result<(Zeroizing<Vec<u8>>, CliLanguage, bool)> {
+    Ok(match payload {
+        // A preimage is not a seed: refuse HERE, before the catch-all, with
+        // the executable remedy (SPEC_ms_hashlock §5; review I-3).
+        Payload::Preimage(_) => {
+            return Err(crate::error::CliError::BadInput(
+                "this is a hashlock preimage plate, not a seed backup; use `ms hashlock <ms1>` (or `ms hashlock --in FILE`) to re-derive its digest".to_string(),
+            ))
+        }
         Payload::Entr(b) => (Zeroizing::new(b), cli_lang, cli_lang_defaulted),
         Payload::Mnem {
             language: wire_code,
@@ -59,7 +66,7 @@ pub(crate) fn payload_entropy_and_language(
         }
         // ms_codec::Payload is #[non_exhaustive]; guard against future variants.
         _ => unreachable!("ms-codec decode returned unknown Payload variant"),
-    }
+    })
 }
 
 #[cfg(test)]
@@ -75,7 +82,8 @@ mod tests {
             CliLanguage::English,
             true,
             &mut buf,
-        );
+        )
+        .unwrap();
         assert_eq!(&entropy[..], &[0u8; 16]);
         assert_eq!(lang, CliLanguage::English);
         assert!(defaulted);
@@ -91,7 +99,8 @@ mod tests {
             CliLanguage::French,
             false,
             &mut buf,
-        );
+        )
+        .unwrap();
         assert_eq!(&entropy[..], &[0u8; 16]);
         assert_eq!(lang, CliLanguage::French);
         assert!(!defaulted);
@@ -110,7 +119,8 @@ mod tests {
             CliLanguage::English,
             true, // defaulted (flag omitted)
             &mut buf,
-        );
+        )
+        .unwrap();
         assert_eq!(&entropy[..], &[0u8; 16]);
         assert_eq!(lang, CliLanguage::French);
         assert!(!defaulted, "a real wire language is never 'defaulted'");
@@ -129,7 +139,8 @@ mod tests {
             CliLanguage::English,
             false, // explicit --language english
             &mut buf,
-        );
+        )
+        .unwrap();
         assert_eq!(lang, CliLanguage::French);
         assert!(!defaulted);
         let s = String::from_utf8(buf).unwrap();
@@ -151,7 +162,8 @@ mod tests {
             CliLanguage::French,
             false, // explicit --language french
             &mut buf,
-        );
+        )
+        .unwrap();
         assert_eq!(lang, CliLanguage::French);
         assert!(!defaulted);
         assert!(buf.is_empty(), "wire == cli → no note");

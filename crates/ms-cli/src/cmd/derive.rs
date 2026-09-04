@@ -436,7 +436,7 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
                     cli_lang,
                     defaulted,
                     &mut stderr,
-                );
+                )?;
             let m = Mnemonic::from_entropy_in(eff_lang.into(), &entropy[..])
                 .map_err(CliError::Bip39)?;
             (m, eff_lang, eff_defaulted)

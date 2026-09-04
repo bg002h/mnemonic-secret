@@ -162,6 +162,10 @@ pub fn run(mut args: CombineArgs) -> Result<u8> {
             let lang = CliLanguage::from_code(*wire_code).unwrap_or(CliLanguage::English);
             (Zeroizing::new(entropy.clone()), lang, "mnem")
         }
+        Payload::Preimage(x) => {
+            // A recovered preimage prints as `decode` does and never as words.
+            return crate::cmd::decode::emit_preimage(x, args.json);
+        }
         // ms_codec::Payload is #[non_exhaustive]; guard against future variants.
         _ => unreachable!("combine_shares returned an unknown Payload variant"),
     };

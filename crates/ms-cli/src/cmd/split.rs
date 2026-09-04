@@ -122,6 +122,7 @@ pub fn run(mut args: SplitArgs) -> Result<u8> {
     // re-read the id off the first share for the report.
     let id = share_id(&shares[0]);
     let (kind, language): (&'static str, Option<&'static str>) = match payload.kind() {
+        PayloadKind::Preimage => ("hash", None),
         PayloadKind::Entr => ("entr", None),
         PayloadKind::Mnem => (
             "mnem",
