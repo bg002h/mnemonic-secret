@@ -451,7 +451,7 @@ source = "git+https://github.com/bg002h/mnemonic-engrave?rev=6c24e62823e6c1ac02a
 
 [[package]]
 name = "ms-cli"
-version = "0.17.1"
+version = "0.18.0"
 dependencies = [
  "assert_cmd",
  "bip39",
@@ -471,7 +471,7 @@ dependencies = [
 
 [[package]]
 name = "ms-codec"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "bip39",
  "getrandom 0.3.4",

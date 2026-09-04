@@ -1,6 +1,6 @@
 //! Tag type — 4-byte codex32-alphabet validated type tag.
 
-use crate::consts::TAG_ENTR;
+use crate::consts::{TAG_ENTR, TAG_HASH};
 use crate::error::{Error, Result};
 
 /// codex32 alphabet (BIP-173 lowercase bech32 charset).
@@ -14,6 +14,9 @@ pub struct Tag([u8; 4]);
 impl Tag {
     /// The v0.1 emit-tag for BIP-39 entropy.
     pub const ENTR: Tag = Tag(TAG_ENTR);
+
+    /// The v0.8 emit-tag for a hashlock preimage single (id `hash`).
+    pub const HASH: Tag = Tag(TAG_HASH);
 
     /// Construct a Tag from raw 4-byte input WITHOUT alphabet validation.
     /// Reserved for tooling (e.g., `inspect()`) that needs to surface whatever
