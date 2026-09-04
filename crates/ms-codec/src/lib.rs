@@ -45,6 +45,7 @@ pub mod consts;
 pub mod decode;
 pub mod encode;
 pub mod error;
+pub mod hashlock;
 pub mod inspect;
 pub mod payload;
 pub mod shares;
