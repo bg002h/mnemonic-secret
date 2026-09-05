@@ -363,9 +363,24 @@ tests/hashlock_negative_content.rs test result: ok.  1 passed; 0 failed; 0 ignor
 `cargo +1.95.0 fmt --all -- --check` — **exit 0, no output**.
 
 `cargo nextest run --workspace --locked --no-fail-fast` (the parallel runner)
-— `535 tests run: 535 passed, 0 failed, 11 skipped`. (nextest counts test
-binaries' cases only; `cargo test`'s 555 additionally counts doc-tests and the
-`--bin ms` unit tests it reports separately.)
+— **`554 tests run: 554 passed, 11 skipped`**.
+
+> **CORRECTED 2026-09-04 (post-impl review C-2).** This line first read
+> `535 tests run: 535 passed, 0 failed, 11 skipped`, with a parenthetical
+> claiming nextest "counts test binaries' cases only" while `cargo test`
+> additionally counts "doc-tests and the `--bin ms` unit tests". **Both halves
+> were false.** 535 is Task 8's number, correctly reported earlier in this
+> document and then carried into the final-gate section unchanged; Task 9 added
+> 19 cases (535 + 19 = 554). And nextest DOES run the `--bin ms` unit tests —
+> 72 of them in the run that was captured at `a150ba7`
+> (`grep -c "ms-cli::bin/ms"`). The real gap between `cargo test`'s 555 and
+> nextest's 554 was exactly the one doc-test,
+> `crates/ms-codec/src/lib.rs - (line 16)`, which nextest does not run.
+> As written the parenthetical made a 20-case discrepancy look routine — the
+> shape that would have absorbed a real regression of 19 dropped tests without
+> anyone noticing. The figures in this paragraph are the ones measured at
+> `a150ba7`; the "Post-review fold" section below carries the gate re-run at
+> the fold's own tip.
 
 ---
 
@@ -471,3 +486,150 @@ release) are cross-repo, device or release items and were not run — see below.
 | `51fa1d0` | Task 9 — the CLI test matrix |
 | `78ab6a2` | Task 10 — MIGRATION, CHANGELOG, the cross-repo follow-up |
 | *this commit* | the report |
+
+---
+
+# Post-review fold — `a150ba7` → `e901654`
+
+**Review folded:** `design/agent-reports/ms-hashlock-H1-post-impl-review.md`
+(committed on ms `master` at `b776253`), verdict **NOT GREEN — 2C / 3I / 6M /
+2N**. Its findings are the specification for this fold; its prescribed fixes
+were treated as suggestions, and **every finding was reproduced on the shipped
+code before anything was changed**.
+
+Eight commits, one per finding or per tightly-related pair, on the same branch.
+Nothing pushed; `master` untouched.
+
+## Environment note, found on the first command of the fold
+
+The clean tip `a150ba7` failed **three** tests before a line of this fold was
+written:
+
+```
+FAIL ms-cli::hashlock_other_verbs secret_flags_doc_comment_counts_five
+FAIL ms-cli::hashlock_other_verbs unreachable_catch_all_count_is_pinned
+FAIL ms-cli::whitespace_only_separator the_display_grouping_conformance_pin_is_untouched
+called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, … }
+```
+
+Not a defect in the branch. All three read source files through
+`env!("CARGO_MANIFEST_DIR")`, which is baked in at COMPILE time — and the shared
+`CARGO_TARGET_DIR` still held test binaries built by the reviewer's worktree
+(`ms-worktrees/h1-review`, since removed), so the path they were compiled with
+no longer existed. `cargo clean -p ms-cli -p ms-codec` (13.2 GiB, 36 121 files)
+and a rebuild restored `554 tests run: 554 passed, 11 skipped` — the reviewer's
+own baseline, reproduced. Worth recording: **a shared `CARGO_TARGET_DIR` across
+git worktrees can hand you a red suite that has nothing to do with your code**,
+and the tests it breaks are exactly the ones that read the repo from disk.
+
+## Finding → commit → the command or mutation that proves it
+
+| # | finding | commit | proof |
+| --- | --- | --- | --- |
+| **C-1** | the `--json` `PrivateKeyMaterial` advisory had no test that could fail | `77d13fa` | BEFORE: deleting the advisory left `554 tests run: 554 passed, 11 skipped` and the mutant wrote **0 bytes** to stderr (`wc -c`) with the preimage on stdout. AFTER, same mutation: `554 tests run: 553 passed, 1 failed` — `FAIL ms-cli::hashlock_outputs json_both_variants`, `left: ""`, `right: "warning: stdout carries private key material (can spend) — redirect or encrypt (e.g. '> file.txt' or '\| age -e ...')"`. Reverted. |
+| **C-2** | the report's final-gate nextest count was false (535 claimed, 554 measured) and its explanation was false too | *this commit* | Re-measured at THIS tip: `cargo nextest run --workspace --locked --no-fail-fast` → `559 tests run: 559 passed, 11 skipped`. The false sentence is deleted; the corrected paragraph names the real gap (one doc-test) and records that nextest **does** run the `--bin ms` unit tests — **74** of them at this tip (`grep -c "ms-cli::bin/ms"`). |
+| **I-1** | the prompt said "then Enter" and Enter could not end the read | `537c9e3` | BEFORE, real pty: `AFTER-ENTER(2s): b'correct horse battery staple\r\n'` → `STILL BLOCKED -> killing`; only Ctrl-D finished it. AFTER: `AFTER-ENTER(2s): b'…staple\r\nhash:3cf5d421…\r\n'`, `EXITED, status: 0`. New unit test `a_terminal_read_ends_at_the_newline_the_prompt_asks_for` drives the tty branch with a reader that PANICS on a second read; reverting to `read_to_end` → `FAILED … read past the first line: the terminal branch would block here`. Reverted. |
+| **I-2** | `--separator` had no value parser | `2222c9f` | BEFORE: `ms hashlock --in X.txt --separator q` produced `ms10hqashsqq0p7ja…` (90 chars, unengravable — `q` is in the codex32 charset) while `ms encode --separator q` refused. AFTER: exit **64**, `invalid separator "q"; expected \`space\`…`, byte-identical to encode's. New `separator_is_refused_exactly_as_encode_refuses_it` compares the two verbs' refusal sentences for `q`, `-`, `,`; reverting the attribute → `FAILED … left: Some(0), right: Some(64)`. Reverted. |
+| **N-1** | `--group-size` was `u8` here, `u16` on encode/split | `2222c9f` | BEFORE: `--group-size 256` → `256 is not in 0..=255` on hashlock, accepted on encode. AFTER: exit 0. `group_size_accepts_what_encode_accepts` fails on the revert. |
+| **I-3** | an omitted `--hashlock-phrase` value swallowed the next flag and derived from it at exit 0 | `74a9653` | BEFORE, the reviewer's exact command: `ms hashlock --allow-argv-secret --hashlock-phrase --json --no-engraving-card < /dev/null` → `hash:329367945b164ccb91c6b124ab903227e34f468e9f82c5806b1ca4a194d4c613`, exit 0 — PBKDF2 of the six bytes `--json`, confirmed in python. AFTER: **exit 64**, no `hash:` line, `error: --hashlock-phrase was given "--json", which is a flag and not a value…`. `an_omitted_phrase_value_does_not_swallow_the_next_flag` covers it and the two spellings that must still work; disabling the guard → `FAILED … left: Some(0), right: Some(64)`. Reverted. |
+| **M-3** | three test names/doc comments over-promised | `e7e88b6` | (a) renamed `…_the_total_is_55` → `…_the_total_is_67`. (b) `lockstep_100_and_101` now drives BOTH rows with the corpus's own phrases. (c) `out_is_owner_only` now covers all three writer paths — and that closed a real hole: `opts.mode(0o600)` → `0o644` in `write_artifact_create_new` gives `559 tests run: 558 passed, 1 failed`, `left: 420, right: 384`, and **exactly one test in 559 catches it**, the row this fold added. Reverted. |
+| **M-4** | stale line citation in the new CI step | `7258b03` | Cited `rust.yml:118-119`; the step is at 124-125 after the preflight was inserted. The citation is REMOVED rather than renumbered, because a line number in a file that gains steps goes stale by construction. Workflow re-parsed with python `yaml` — three steps, in order. |
+| **M-5** | `write_artifact`'s doc comment was orphaned onto `write_artifact_create_new` | `7258b03` | Fixed in the tree **and** in `scripts/plan-handwire-ms-hashlock.py`, whose `"pub(crate) fn write_artifact("` anchor caused it. Verified mechanically: replaying the script's `out.rs` entry onto `git show 4dbff0b:crates/ms-cli/src/out.rs` and `diff`ing against the committed file is **empty**. |
+| **M-6** | two tests wrote to fixed paths in the shared `/tmp` | `dbb042d` | Latent, as the reviewer said — and the path belongs to `--random`, the one writer for which a stale file is fatal: `ms hashlock --random --out /tmp/…` twice → `exit=0` then `exit=64`. nextest measured here: "Starting 367 tests across 71 binaries" on 24 cores. Both now use `tempfile::tempdir()`; no fixed `/tmp` path remains in either hashlock test file. |
+| **M-1** | `ms inspect` prints a preimage with no advisory | `e901654` | **Filed, not fixed** (secret-handling, non-gating by the 2026-08-27 ruling). Reproduction re-run at this tip and written into the entry, including the control showing it is pre-existing and wider than the new kind. Owning phase: 0.18.0 release. |
+| **M-2** | the terminal echoes the phrase | `e901654` | **Filed, not fixed** (same ruling). pty transcript re-captured at this tip, with the termios remedy, the restore-on-every-exit-path caveat, and the note that `--passphrase-stdin` shares the shape. Owning phase: 0.18.0 release. |
+| **N-2** | no 76-character `0x03` string exists | — | **Nothing to do**; the reviewer's own arithmetic (`22 + ceil(8N/5)`: N=33→75, N=34→77) and the 74-character control already stand. No change made. |
+
+## Deviations from the review's prescribed fixes
+
+- **I-3, the "absent value" half.** The controller's decision named "a value
+  that begins with `-` **or is absent**" as the usage error. The absent case was
+  measured and left ALONE: with the flag as the last token `substitute` already
+  passes it through and clap answers `a value is required for
+  '--hashlock-phrase <TEXT>' but none was supplied` at exit 64. Adding a second
+  path would have replaced a better message with a worse one for no behavioural
+  gain. Only the flag-shaped case was changed.
+- **M-3(b), first attempt.** The 101-character row was first written as
+  `"a".repeat(101)` pinned against the corpus's `hardened_x`, and went red —
+  `left: c2dbab3f…, right: abe28ff3…`. The corpus's 101 row is a specific
+  phrase, not an `"a"`-repeat. Fixed by driving the test with the corpus's own
+  100/101 phrases, which is what §8's lockstep rows actually are.
+- **C-2 is folded in this commit rather than its own**, because its fix is a
+  count that must be measured at the tip the report describes, and that tip does
+  not exist until the other seven commits are in.
+- **I-3 added a public enum variant.** `argv_guard::Decision::Usage(String)` is
+  new, and `the_refusal_never_reproduces_the_value`'s match gained an arm that
+  `panic!`s naming the distinction, so a future variant cannot be absorbed
+  silently.
+
+## Final gate — CI's own commands, once each, at `e901654`
+
+`cargo test --workspace --locked` — **exit 0**. Tail:
+
+```
+   Doc-tests ms_codec
+
+running 1 test
+test crates/ms-codec/src/lib.rs - (line 16) ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+```
+
+Summed over every `test result:` line of that one captured run:
+**560 passed, 0 failed, 11 ignored.**
+
+`cargo nextest run --workspace --locked --no-fail-fast` — **exit 0**:
+
+```
+     Summary [   0.284s] 559 tests run: 559 passed, 11 skipped
+```
+
+**560 vs 559 is exactly the one doc-test** above, which nextest does not run.
+nextest runs the `--bin ms` unit tests too — 74 of them here
+(`grep -c "ms-cli::bin/ms"` on the captured log). This is the measurement C-2
+was about; it is stated here from a run at the tip being reported, not carried
+from an earlier task.
+
+The eight hashlock binaries inside the `cargo test` run:
+
+```
+tests/hashlock_kind.rs             test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+tests/hashlock_derivation.rs       test result: ok.  8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+tests/hashlock_repro.rs            test result: ok.  2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+tests/hashlock_sources.rs          test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+tests/hashlock_other_verbs.rs      test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+tests/hashlock_outputs.rs          test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+tests/hashlock_phrase_rule.rs      test result: ok.  7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+tests/hashlock_negative_content.rs test result: ok.  1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+```
+
+`cargo clippy --workspace --all-targets --locked -- -D warnings` — **exit 0**:
+
+```
+    Checking ms-codec v0.8.0 (/scratch/code/shibboleth/ms-worktrees/hashlock-h1/crates/ms-codec)
+    Checking ms-cli v0.18.0 (/scratch/code/shibboleth/ms-worktrees/hashlock-h1/crates/ms-cli)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 1.64s
+```
+
+`cargo fmt --all -- --check` — **exit 0, zero bytes of output** (repo-pinned
+1.85.0). `cargo +1.95.0 fmt --all -- --check` — **exit 0, zero bytes of output**
+(the toolchain CI's fmt job actually uses).
+
+## Fold commits, oldest first
+
+| SHA | finding(s) |
+| --- | --- |
+| `77d13fa` | C-1 — the advisory gets a test that can fail |
+| `537c9e3` | I-1 — the terminal read ends at the newline the prompt asks for |
+| `2222c9f` | I-2 + N-1 — `--separator` binds to the shared parser, `--group-size` takes encode's type |
+| `74a9653` | I-3 — a flag is not a secret |
+| `7258b03` | M-5 + M-4 — un-orphaned doc comment, stale citation removed |
+| `e7e88b6` | M-3 — three names/doc comments now match their bodies |
+| `dbb042d` | M-6 — per-test temp dirs |
+| `e901654` | M-1 + M-2 — filed as follow-ups, not fixed (secret-handling ruling) |
+| *this commit* | C-2 — the false count corrected, this section appended |
+
+**Still not done, unchanged by this fold:** Task 11 (the release — its H0 gate
+has not shipped and its steps are pushes and tags), the mnemonic-toolkit manual
+chapter (cross-repo, filed), and `scripts/plan-build-gate-ms.sh` (the brief
+forbids running it).
