@@ -689,3 +689,61 @@ can never be mistaken for BIP-48.
   `clap::CommandFactory`, and `ms gen-man` already emits `ms-hashlock.1`
   (verified; `tests/gen_man.rs` 5 passed).
 - **Status:** open. **Tier:** `cross-repo` (RELEASE_PROCESS item 6).
+
+### `ms-inspect-prints-a-preimage-with-no-output-class-advisory` — `ms inspect` puts the preimage on stdout and says nothing, while `ms decode` on the same string fires the advisory (repo: **mnemonic-secret**; owning phase: **0.18.0 release**)
+
+- **Surfaced:** 2026-09-04, H1 post-implementation review M-1
+  (`design/agent-reports/ms-hashlock-H1-post-impl-review.md`). Logged, not
+  fixed, per the operator's 2026-08-27 ruling: a secret-handling defect is
+  never Critical and never Important and may not hold a gate.
+- **Where:** `crates/ms-cli/src/cmd/inspect.rs` (no
+  `advisory::emit_output_class_advisory` call anywhere in it) against
+  `crates/ms-cli/src/cmd/decode.rs::emit_preimage`, which does call it.
+- **Reproduction** (re-run at branch `hashlock-h1`, this cycle's tip):
+
+  ```
+  $ ms hashlock --hashlock-phrase-stdin --out X.txt --no-engraving-card < phrase.txt
+  $ ms inspect --in X.txt
+  OK: would decode v0.8
+  ...
+  payload_bytes: c3e97525442520da4cffd5f57aae3f6273990017f2e0fa30c056e32172e22016
+  kind: preimage
+                                    <- stderr: 0 bytes
+  $ ms decode --in X.txt
+  ...
+  warning: stdout carries private key material (can spend) — redirect or encrypt (e.g. '> file.txt' or '| age -e ...')
+  ```
+
+- **Scope, measured:** PRE-EXISTING and wider than the new kind — `ms inspect`
+  on an entr single prints its entropy the same way and is equally silent
+  (checked as a control). So this is not an H1 regression; H1 extended an
+  existing shape to a third kind. Fixing it means deciding whether `inspect`
+  should emit the advisory for every secret-bearing kind, which is an
+  `inspect`-wide change, not a hashlock one.
+- **Status:** open. **Tier:** `secret-handling` (non-gating by the 2026-08-27
+  ruling).
+
+### `hashlock-phrase-stdin-echoes-the-phrase-at-a-terminal` — the phrase is echoed by the terminal while it is typed (repo: **mnemonic-secret**; owning phase: **0.18.0 release**)
+
+- **Surfaced:** 2026-09-04, H1 post-implementation review M-2. Logged, not
+  fixed, per the operator's 2026-08-27 ruling.
+- **Where:** `crates/ms-cli/src/hashlock_phrase.rs::read_phrase_stdin` — it
+  prints the prompt and reads, and never disables terminal ECHO.
+- **Reproduction** (real pty, re-run at this cycle's tip, after the I-1 fix):
+
+  ```
+  AFTER-SPAWN(1s): b'Type the hashlock phrase, then Enter.\r\n'
+  AFTER-ENTER(2s): b'correct horse battery staple\r\nhash:3cf5d421...\r\n'
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the phrase, echoed
+  ```
+
+- **Notes for whoever takes it:** the phrase is the input to the preimage, so a
+  shoulder-surfer or a scrollback buffer gets the material a spend would
+  otherwise have to publish. The remedy is the usual `termios` ECHO dance
+  around the read (and it must be restored on every exit path, including a
+  refusal and a panic). It applies only to the TERMINAL branch;
+  `--hashlock-phrase-stdin` from a pipe or a redirected file echoes nothing.
+  The sibling channels (`ms derive --passphrase-stdin`) have the same shape, so
+  a fix should be considered CLI-wide rather than verb-local.
+- **Status:** open. **Tier:** `secret-handling` (non-gating by the 2026-08-27
+  ruling).
