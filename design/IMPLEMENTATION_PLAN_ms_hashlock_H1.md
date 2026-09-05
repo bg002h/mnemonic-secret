@@ -70,10 +70,11 @@ Copied from the spec; every task's requirements include these.
   items of §9; **H0 ships before the 0.18.0 release** (§9, §10).
 - **Secret discipline:** `--hashlock-phrase` joins `SECRET_FLAGS`; refusals
   never echo the phrase; the phrase's VALUE is never normalised (§4.3, §6).
-- **CONTROLLER DEFAULT awaiting the operator (spec §4.1 is silent):**
+- **OPERATOR RULING L27 (2026-09-05; was a controller default, spec §4.1 is silent):**
   `--hashlock-phrase -` is REFUSED naming `--hashlock-phrase-stdin`, never
-  derived from the one-byte phrase `-` (R0 r0 fidelity I-10). Every other
-  secret flag reads `-` as stdin; this verb has a flag for that.
+  derived from the one-byte phrase `-` (R0 r0 fidelity I-10) — kept over
+  "treat `-` as stdin" and "accept `-` as a phrase". Every other secret flag
+  reads `-` as stdin; this verb has a flag for that.
 - **Process:** Rust-primary; persist reports verbatim in their own commit;
   a fold is authorship and re-earns the gate; stage paths explicitly.
 

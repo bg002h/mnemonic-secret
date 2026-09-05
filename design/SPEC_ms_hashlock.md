@@ -15,11 +15,14 @@ lenses (correctness 1C/7I/6M/2N, adversarial 4C/4I/5M/1N, tests-vector
 sonnet fold verification GREEN (28/28 C+I fixed, spot-checks reproduced, no
 new contradiction). Lenses run: correctness, adversarial (with the operator
 journeys inside it), tests/vectors, fold-verification. The journey lens is
-assigned to the composer spec fold by brainstorm 4.5. **Three controller
-defaults await the operator and are labelled in place**: §1 rule 2
-(`TagKindMismatch`), §4.1 (`--random` requires `--out`; narrows L21), §9 (H0
-precedes the 0.18.0 release; reorders 4.5). A veto folds the section back and
-re-verifies. Next: the H1 plan.
+assigned to the composer spec fold by brainstorm 4.5. **The three controller
+defaults (plus the H1 plan's fourth) were put to the operator on 2026-09-05
+and are now RULINGS, labelled in place**: L24 §1 rule 2 (`TagKindMismatch`:
+refuse the mismatch — kept); L25 §4.1 (`--random` requires `--out`; narrows
+L21 — kept); L26 §9 (release order: the operator chose "release regardless of
+the device" — H0 is merged and pushed in both repos, and 0.18.0 does NOT wait
+for a measured flash/boot; the controller flashed nothing); L27 (H1 plan:
+`--hashlock-phrase -` refused — kept). Next: the H1 release.
 
 **Base SHA.** mnemonic-secret `master` `7fc1e58` (ms-codec 0.7.0, ms-cli
 0.17.1). Every line citation in §14 was re-grepped at that SHA while this spec
@@ -113,9 +116,9 @@ with a site:
    — the fail-closed direction, and the only rule under which "no misread
    converts one kind into the other" is a property a test can pin. The check
    applies to singles only: a share-set's id is random by construction and
-   names no kind. (Controller default, listed for the operator's veto in the
-   fold record; the alternative is pure prefix dispatch, under which an
-   `ms10hash…` plate could decode as a seed.)
+   names no kind. (OPERATOR RULING L24, 2026-09-05: refuse the mismatch —
+   kept over "trust the prefix byte, warn" and "trust the id, warn"; under
+   pure prefix dispatch an `ms10hash…` plate could decode as a seed.)
 3. **`RESERVED_ID_BLOCKLIST` gains `hash`** (five entries today: `entr`,
    `seed`, `xprv`, `mnem`, `prvk`; `consts.rs:71`), so a share set can never
    draw an id that impersonates a preimage single. This list is consulted only
@@ -338,7 +341,8 @@ one natural line, `ms hashlock --random --json --no-engraving-card | jq -r
 .hash_record | me sysw pack`: exit 0, the policy is funded, and `preimage_hex`
 went down a pipe nobody read (R0 r0 adversarial C-1). So `--json` no longer
 satisfies the gate; `--random --out FILE --json` is fine. **This narrows L21 and
-is a controller default pending the operator's word**, recorded in the fold.
+is OPERATOR RULING L25 (2026-09-05): `--out FILE` required — kept over
+"`--out` or `--json`" and "bare `--random`".**
 
 **Under `--random`, `--out` refuses to overwrite** (`create_new`; exit 64 naming
 the existing file). The 2026-08-26 overwrite ruling was made for artifacts that
@@ -712,8 +716,11 @@ L22's rule, moved forward), with the record-class vector row, merged and
 `0x03` as inert in the same release window as `me`'s ms-codec 0.8 bump (H1b as
 already planned, now with a "before, not after" constraint). This reorders
 4.5's sequence — H0 precedes the 0.18.0 release rather than following it as
-H2 — and is a controller default pending the operator's word, recorded in the
-fold.
+H2. OPERATOR RULING L26 (2026-09-05): H0 is merged and pushed in both repos
+(engrave 024dd08, fork main c4a64fc) and the operator chose **"release
+regardless of the device"** — 0.18.0 does not wait for a measured flash or
+boot; the controller flashed nothing. A device still on 839fa5aa cuts a
+preimage plate as a seed until it is flashed.
 ---
 
 ## §10. Lockstep, SemVer and provenance
