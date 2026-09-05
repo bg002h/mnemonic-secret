@@ -8,6 +8,9 @@ const PHRASE: &str = "correct horse battery staple";
 const H_HARD: &str = "hash:3cf5d421caf2a9c8eb9de1d400866ea7d475e6ba978861bb0167a37cb70a4c12";
 const H_SHA: &str = "hash:b867db875479bcc0287352cdaa4a1755689b8338777d0915e9acd9f6edbc96cb";
 const HEX32: &str = "c3e97525442520da4cffd5f57aae3f6273990017f2e0fa30c056e32172e22016";
+/// `advisory.rs`'s `OutputClass::PrivateKeyMaterial` line, byte for byte. Named
+/// in full so no other stderr text can satisfy the assertion by accident.
+const ADVISORY: &str = "warning: stdout carries private key material (can spend) \u{2014} redirect or encrypt (e.g. '> file.txt' or '| age -e ...')";
 
 fn ms() -> Command {
     Command::cargo_bin("ms").unwrap()
@@ -154,10 +157,22 @@ fn random_card_names_the_file_not_a_plate() {
 }
 
 /// Both `--json` variants; every hex lowercase; the advisory fires.
+///
+/// `--no-engraving-card` on the first invocation is LOAD-BEARING, not tidiness:
+/// with the card on stderr the advisory assertion below is satisfied by the
+/// card's own first line ("... -- the secret. ...") and cannot fail. Measured:
+/// deleting the advisory from `cmd/hashlock.rs` left the whole workspace green
+/// at 554/554 (post-impl review C-1). The assertion now names the advisory's
+/// OWN line, byte for byte, on a stream the card is not on.
 #[test]
 fn json_both_variants() {
     let out = ms()
-        .args(["hashlock", "--hashlock-phrase-stdin", "--json"])
+        .args([
+            "hashlock",
+            "--hashlock-phrase-stdin",
+            "--json",
+            "--no-engraving-card",
+        ])
         .write_stdin(PHRASE)
         .output()
         .unwrap();
@@ -170,17 +185,22 @@ fn json_both_variants() {
         let s = v[k].as_str().unwrap();
         assert_eq!(s, s.to_ascii_lowercase(), "{k} must be lowercase hex");
     }
-    assert!(
-        String::from_utf8_lossy(&out.stderr).contains("private key material")
-            || String::from_utf8_lossy(&out.stderr)
-                .to_ascii_lowercase()
-                .contains("secret")
+    // The `PrivateKeyMaterial` advisory's own line (advisory.rs), verbatim.
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr).trim_end(),
+        ADVISORY,
+        "under --json --no-engraving-card, stderr must be exactly the PrivateKeyMaterial advisory (spec §4.4, §11)"
     );
     let out = ms()
-        .args(["hashlock", "--hex", "-", "--json"])
+        .args(["hashlock", "--hex", "-", "--json", "--no-engraving-card"])
         .write_stdin(HEX32)
         .output()
         .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr).trim_end(),
+        ADVISORY,
+        "the supplied-preimage variant carries the same secret on stdout"
+    );
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert!(
         v.get("method").is_none(),
