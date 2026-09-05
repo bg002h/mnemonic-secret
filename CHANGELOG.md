@@ -4,7 +4,7 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
-## ms-cli [0.18.0] — unreleased
+## ms-cli [0.18.0] — 2026-09-05
 
 ### What's new
 - `ms hashlock`: derive a 32-byte hashlock preimage from a phrase (hardened
@@ -27,7 +27,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Migration notes
 - See MIGRATION.md v0.7 → v0.8. `CliError::Usage` (exit 64) is new.
 
-## ms-codec [0.8.0] — unreleased
+## ms-codec [0.8.0] — 2026-09-05
 
 ### What's new
 - Kind `0x03`, id `hash`: `Payload::Preimage`, `Tag::HASH`, the accept set
