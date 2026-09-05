@@ -12,6 +12,7 @@ mod cmd;
 mod codex32_friendly;
 mod error;
 mod format;
+mod hashlock_phrase;
 mod language;
 // Inline copy of mnemonic-toolkit's mlock module per SPEC §5 + §6 G6.
 // Test helpers (failure_count_for_test, first_errno_for_test, etc.) are
@@ -83,6 +84,12 @@ enum Command {
         after_long_help = "EXAMPLES:\n  ms decode ms10entrs…\n  ms decode - < engraved.txt\n  ms decode <ms1> --language french\n  ms decode <ms1> --json | jq .phrase"
     )]
     Decode(cmd::decode::DecodeArgs),
+
+    /// Derive a hashlock preimage from a phrase (or take one), print the `hash:` record, and back the preimage up as an ms1 plate string.
+    #[command(
+        after_long_help = "EXAMPLES:\n  ms hashlock --hashlock-phrase-stdin < phrase.txt\n  ms hashlock --hashlock-phrase-stdin --method sha256 < phrase.txt\n  ms hashlock --random --out preimage.txt\n  ms hashlock --in preimage.txt\n  ms hashlock --hashlock-phrase-stdin < phrase.txt | me sysw pack --out payload.bin"
+    )]
+    Hashlock(cmd::hashlock::HashlockArgs),
 
     /// Inspect an ms1 string's structural fields and decoder verdict.
     #[command(
@@ -192,6 +199,10 @@ fn main() -> ExitCode {
             eprintln!("ms: {msg}");
             return ExitCode::from(1);
         }
+        argv_guard::Decision::Usage(msg) => {
+            eprintln!("error: {msg}");
+            return ExitCode::from(64);
+        }
         argv_guard::Decision::Proceed(v) => v,
     };
 
@@ -220,6 +231,7 @@ fn main() -> ExitCode {
         Command::Derive(args) => cmd::derive::run(args),
         Command::Encode(args) => cmd::encode::run(args),
         Command::Decode(args) => cmd::decode::run(args),
+        Command::Hashlock(args) => cmd::hashlock::run(args),
         Command::Inspect(args) => cmd::inspect::run(args),
         Command::Verify(args) => cmd::verify::run(args),
         Command::Vectors(args) => cmd::vectors::run(args),
@@ -251,6 +263,7 @@ fn is_json_mode(cmd: &Command) -> bool {
         Command::Derive(a) => a.json,
         Command::Encode(a) => a.json,
         Command::Decode(a) => a.json,
+        Command::Hashlock(a) => a.json,
         Command::Inspect(a) => a.json,
         Command::Verify(a) => a.json,
         Command::Vectors(_) => false, // vectors output is always JSON-shaped

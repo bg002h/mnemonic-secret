@@ -25,6 +25,27 @@ fn exit_code_table_format_violation() {
         .code(1);
 }
 
+/// `CliError::Usage` — the verb's OWN usage error, SPEC §6's exit 64, as
+/// distinct from clap's below. `ms hashlock` with no source is the first cell
+/// of this variant (SPEC_ms_hashlock §4.1). The MESSAGE is asserted too: clap's
+/// unrecognized-subcommand error is also 64, so a code-only row would pass on a
+/// binary that never learned the verb.
+#[test]
+fn exit_code_table_verb_usage_is_64() {
+    let out = Command::cargo_bin("ms")
+        .unwrap()
+        .args(["hashlock"])
+        .write_stdin(String::new())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(64));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("no source given") && err.contains("exactly one source"),
+        "the verb's own usage error, not clap's:\n{err}"
+    );
+}
+
 #[test]
 fn exit_code_table_clap_usage() {
     // No subcommand → exit 64.

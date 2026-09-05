@@ -20,6 +20,16 @@ pub fn encode(tag: Tag, payload: &Payload) -> Result<String> {
             got: *tag.as_bytes(),
         });
     }
+    // SPEC_ms_hashlock §1 rule 2, emit side: never mint a single whose tag
+    // names a different kind than its prefix byte -- decode would refuse it.
+    // Placed AFTER the reserved-not-emitted check so `seed`/`xprv` keep the
+    // v0.1 SPEC §4 rule 7 error they have always returned.
+    if tag != payload.kind().single_tag() {
+        return Err(Error::TagKindMismatch {
+            tag: *tag.as_bytes(),
+            prefix: crate::envelope::prefix_of(payload),
+        });
+    }
     // §3.5: payload length validation.
     payload.validate()?;
     // Hand off to envelope.

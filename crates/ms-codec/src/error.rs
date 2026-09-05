@@ -58,6 +58,20 @@ pub enum Error {
         /// The 4-byte reserved tag (one of seed/xprv/mnem/prvk in v0.1).
         got: [u8; 4],
     },
+    /// A `0x03` payload whose length after the prefix byte is not 32 (SPEC_ms_hashlock §1).
+    PreimageLengthMismatch {
+        /// Bytes after the prefix byte -- the would-be X. Expected 32.
+        got: usize,
+    },
+    /// A single's tag names one kind and its prefix byte another (SPEC_ms_hashlock §1 rule 2).
+    TagKindMismatch {
+        /// The 4-byte tag observed.
+        tag: [u8; 4],
+        /// The prefix byte observed.
+        prefix: u8,
+    },
+    /// The OS CSPRNG could not fill the buffer (`getrandom` failed closed).
+    RandomnessUnavailable,
     /// Reserved-prefix byte was not 0x00 (SPEC §4 rule 8).
     ReservedPrefixViolation {
         /// The non-zero prefix byte that was observed.
@@ -199,6 +213,16 @@ impl fmt::Display for Error {
                 "tag {:?} reserved-not-emitted in v0.1; deferred to v0.2+",
                 std::str::from_utf8(got).unwrap_or("<non-utf8>")
             ),
+            Error::PreimageLengthMismatch { got } => write!(
+                f,
+                "preimage payload is {got} bytes after the prefix; a hashlock preimage is exactly 32 bytes (64 hex characters)"
+            ),
+            Error::TagKindMismatch { tag, prefix } => write!(
+                f,
+                "tag {:?} does not name the kind the prefix byte 0x{prefix:02x} carries; refusing rather than reading one kind as another",
+                String::from_utf8_lossy(tag)
+            ),
+            Error::RandomnessUnavailable => write!(f, "the OS random source is unavailable; no preimage was produced"),
             Error::ReservedPrefixViolation { got } => {
                 write!(f, "reserved-prefix byte was 0x{:02x}, expected 0x00", got)
             }

@@ -16,6 +16,45 @@
 
 use crate::error::{CliError, Result};
 
+/// Like `write_artifact`, but REFUSES an existing path (exit 64, naming it)
+/// instead of truncating. For `--random` only: that artifact is a function of
+/// nothing and cannot be re-made (SPEC_ms_hashlock §4.1).
+///
+/// The refusal names the PATH and never the artifact, for the same reason
+/// `write_artifact`'s does.
+pub(crate) fn write_artifact_create_new(path: &std::path::Path, body: &str) -> Result<()> {
+    use std::io::Write;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    // O_CREAT|O_EXCL: the check and the create are ONE syscall, so nothing can
+    // slip a file in between them and be truncated (R0 r0 fidelity I-4).
+    let mut f = match opts.open(path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(CliError::Usage(format!(
+                "--out {} already exists; a --random preimage will not overwrite it (choose another file, or move the old one first)",
+                path.display()
+            )));
+        }
+        Err(e) => {
+            return Err(CliError::BadInput(format!(
+                "failed to write --out {}: {}",
+                path.display(),
+                e
+            )));
+        }
+    };
+    f.write_all(body.as_bytes()).map_err(|e| {
+        CliError::BadInput(format!("failed to write --out {}: {}", path.display(), e))
+    })?;
+    Ok(())
+}
+
 /// Write `body` to `path`, owner-only, naming the path on failure.
 ///
 /// The refusal names the PATH and never the artifact: a message that echoed

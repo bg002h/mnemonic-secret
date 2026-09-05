@@ -251,7 +251,7 @@ fn flags_of<'a>(v: &'a serde_json::Value, verb: &str) -> Vec<&'a str> {
 }
 
 #[test]
-fn the_schema_names_every_flag_p2_added_and_the_total_is_55() {
+fn the_schema_names_every_flag_p2_added_and_the_total_is_67() {
     let v = schema_json();
     for verb in MATERIAL_VERBS {
         let flags = flags_of(&v, verb);
@@ -280,8 +280,12 @@ fn the_schema_names_every_flag_p2_added_and_the_total_is_55() {
         .map(|s| s["flags"].as_array().map(|a| a.len()).unwrap_or(0))
         .sum();
     assert_eq!(
-        total, 55,
-        "36 before P2, plus --in x8, --allow-argv-secret x8 and --out x3. A \
+        total, 67,
+        "36 before P2, plus --in x8, --allow-argv-secret x8 and --out x3 (55), \
+         plus `ms hashlock`'s twelve (--hashlock-phrase, \
+         --hashlock-phrase-stdin, --hex, --in, --random, --method, --out, \
+         --json, --no-engraving-card, --group-size, --separator, \
+         --allow-argv-secret; `<MS1>` is a positional, not a flag). A \
          different total means a flag reached the binary and not the schema, or \
          the reverse -- either way the GUI's mirror would be describing a \
          different program."

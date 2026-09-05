@@ -7,6 +7,7 @@ pub mod derive;
 pub mod encode;
 pub mod gen_man;
 pub mod gui_schema;
+pub mod hashlock;
 pub mod inspect;
 pub mod payload_lang;
 pub mod repair;

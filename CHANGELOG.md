@@ -4,6 +4,44 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.18.0] — unreleased
+
+### What's new
+- `ms hashlock`: derive a 32-byte hashlock preimage from a phrase (hardened
+  PBKDF2 by default, or `--method sha256`), take one with `--hex`, re-read one
+  from a plate (`<ms1>`, `-`, `--in FILE`), or draw one with `--random`. Prints
+  the `hash:` record on stdout (`… | me sysw pack`), the preimage plate string
+  to `--out` (owner-only; never overwritten under `--random`), and a card on
+  stderr whose first line says it carries the preimage. `--random` requires
+  `--out FILE`.
+- `decode`, `inspect`, `combine` read the new kind; `derive` and `verify`
+  refuse it with `ms hashlock <ms1>` as the remedy; `repair` is unchanged.
+- The argv guard learns `--hashlock-phrase`; the ms1-shape test now
+  case-folds INSIDE the predicate, so an uppercase plate string is caught on
+  every channel.
+
+### What didn't change
+- Every entr and mnem string, byte for byte. `ms encode --hex` still emits
+  `entr`; `ms hashlock` is the only door that creates the kind.
+
+### Migration notes
+- See MIGRATION.md v0.7 → v0.8. `CliError::Usage` (exit 64) is new.
+
+## ms-codec [0.8.0] — unreleased
+
+### What's new
+- Kind `0x03`, id `hash`: `Payload::Preimage`, `Tag::HASH`, the accept set
+  and the tag/kind consistency check on decode and encode;
+  `ms_codec::hashlock` (both derivations, the random source, the digest).
+- Corpus `tests/vectors/hashlock-v0.8.json`, SHA-256 `a46c197a3640fe8af4ca4370b46a9637466649227163ce6761bb032354811d30`.
+
+### What didn't change
+- v0.1/v0.2 wire bytes; the share axis.
+
+### Migration notes
+- Source-breaking for exhaustive matches on `InspectKind`; every catch-all
+  over `Payload`/`PayloadKind` needs a `Preimage` arm (MIGRATION.md v0.8).
+
 ## ms-cli [0.17.1] — 2026-09-02
 
 Release infrastructure only; no code change since 0.17.0. `ms-cli-v0.17.0`

@@ -28,8 +28,8 @@
 
 use crate::codex32::{Codex32String, Fe};
 use crate::consts::{
-    CHECKSUM_LEN_SHORT, HRP, MNEM_PREFIX, RESERVED_PREFIX, SEPARATOR, SHARE_INDEX_V01,
-    THRESHOLD_V01,
+    CHECKSUM_LEN_SHORT, HRP, MNEM_PREFIX, PREIMAGE_PREFIX, RESERVED_PREFIX, SEPARATOR,
+    SHARE_INDEX_V01, THRESHOLD_V01,
 };
 use crate::error::{Error, Result};
 use crate::payload::Payload;
@@ -114,6 +114,7 @@ pub(crate) fn wire_string(c: &Codex32String) -> String {
 /// - `0x00` (`RESERVED_PREFIX`) → `Payload::Entr(rest)`
 /// - `0x02` (`MNEM_PREFIX`)     → `Payload::Mnem { language: rest[0], entropy: rest[1..] }`
 ///   (`.validate()` is called to reject unknown language codes immediately)
+/// - `0x03` (`PREIMAGE_PREFIX`) → `Payload::Preimage(rest)` iff rest is 32 bytes
 /// - any other prefix            → `Err(Error::ReservedPrefixViolation)`
 pub(crate) fn discriminate(c: &Codex32String) -> Result<(Tag, Payload)> {
     let s = wire_string(c);
@@ -185,6 +186,7 @@ pub(crate) fn discriminate(c: &Codex32String) -> Result<(Tag, Payload)> {
 ///
 /// - `0x00` (`RESERVED_PREFIX`) → `Payload::Entr(rest)`
 /// - `0x02` (`MNEM_PREFIX`)     → `Payload::Mnem { language: rest[0], entropy: rest[1..] }`
+/// - `0x03` (`PREIMAGE_PREFIX`) → `Payload::Preimage(rest)` iff rest is 32 bytes
 /// - any other prefix          → `Err(Error::ReservedPrefixViolation)`
 ///
 /// `validate()` rejects unknown language codes / bad payload lengths. NOTE:
@@ -212,6 +214,16 @@ pub(crate) fn dispatch_payload(data: &[u8]) -> Result<Payload> {
             p.validate()?;
             p
         }
+        PREIMAGE_PREFIX => {
+            // 0x03 -> Preimage: LENGTH CHECK BEFORE CONSTRUCTION, so the entr
+            // length error never names a legal entr length as illegal and no
+            // slice index can panic (SPEC_ms_hashlock §1).
+            let rest = &data[1..];
+            let x: [u8; 32] = rest
+                .try_into()
+                .map_err(|_| Error::PreimageLengthMismatch { got: rest.len() })?;
+            Payload::Preimage(Zeroizing::new(x))
+        }
         other => {
             return Err(Error::ReservedPrefixViolation { got: other });
         }
@@ -226,8 +238,17 @@ pub(crate) fn dispatch_payload(data: &[u8]) -> Result<Payload> {
 /// - `Payload::Mnem { language, entropy }` → `[0x02][language][entropy...]`
 ///
 /// The returned buffer is `Zeroizing` so it scrubs on drop (secret material).
-/// `Payload` is a closed 2-variant enum within this crate (`#[non_exhaustive]`
+/// `Payload` is a closed 3-variant enum within this crate (`#[non_exhaustive]`
 /// only affects downstream crates), so the match is exhaustive.
+/// The prefix byte a payload writes on the wire, for error reporting.
+pub(crate) fn prefix_of(p: &Payload) -> u8 {
+    match p {
+        Payload::Entr(_) => RESERVED_PREFIX,
+        Payload::Mnem { .. } => MNEM_PREFIX,
+        Payload::Preimage(_) => PREIMAGE_PREFIX,
+    }
+}
+
 pub(crate) fn payload_wire_bytes(p: &Payload) -> Zeroizing<Vec<u8>> {
     match p {
         Payload::Entr(e) => {
@@ -235,6 +256,13 @@ pub(crate) fn payload_wire_bytes(p: &Payload) -> Zeroizing<Vec<u8>> {
             let mut v = Zeroizing::new(Vec::with_capacity(1 + e.len()));
             v.push(RESERVED_PREFIX);
             v.extend_from_slice(e);
+            v
+        }
+        Payload::Preimage(x) => {
+            // [0x03 preimage-prefix] || X
+            let mut v = Zeroizing::new(Vec::with_capacity(33));
+            v.push(PREIMAGE_PREFIX);
+            v.extend_from_slice(&x[..]);
             v
         }
         Payload::Mnem { language, entropy } => {

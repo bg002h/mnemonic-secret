@@ -10,7 +10,8 @@
 
 use crate::codex32::Codex32String;
 use crate::consts::{
-    RESERVED_NOT_EMITTED_V01, TAG_ENTR, VALID_MNEM_STR_LENGTHS, VALID_STR_LENGTHS,
+    RESERVED_NOT_EMITTED_V01, TAG_ENTR, TAG_HASH, VALID_MNEM_STR_LENGTHS,
+    VALID_PREIMAGE_STR_LENGTHS, VALID_STR_LENGTHS,
 };
 use crate::envelope;
 use crate::error::{Error, Result};
@@ -28,6 +29,7 @@ fn allowed_for_kind(kind: PayloadKind) -> &'static [usize] {
     match kind {
         PayloadKind::Entr => VALID_STR_LENGTHS,
         PayloadKind::Mnem => VALID_MNEM_STR_LENGTHS,
+        PayloadKind::Preimage => VALID_PREIMAGE_STR_LENGTHS,
     }
 }
 
@@ -82,6 +84,20 @@ pub fn decode(s: &str) -> Result<(Tag, Payload)> {
     // behavior (`Payload::Entr(Vec<u8>)` shape is unchanged — bare-by-design per
     // the deferred public-API slug; callers wrap at their use site, see payload.rs).
     let payload = match *tag.as_bytes() {
+        // Rule 6b (SPEC_ms_hashlock §1 rule 2): a single's tag must name the
+        // kind its prefix byte carries. Checked BEFORE the per-tag arms so a
+        // `hash` tag over a seed payload, or `entr` over a preimage, is refused
+        // rather than read as the other kind.
+        x if (x == TAG_ENTR || x == TAG_HASH) && tag != payload.kind().single_tag() => {
+            return Err(Error::TagKindMismatch {
+                tag: x,
+                prefix: crate::envelope::prefix_of(&payload),
+            });
+        }
+        x if x == TAG_HASH => {
+            // A preimage single: length is structural in the variant.
+            payload
+        }
         x if x == TAG_ENTR => {
             match payload {
                 Payload::Entr(data) => {
@@ -95,6 +111,14 @@ pub fn decode(s: &str) -> Result<(Tag, Payload)> {
                     // §4 rule 10: validate (language range + entropy length).
                     p.validate()?;
                     p
+                }
+                // Unreachable: rule 6b above refused the mismatch. Kept as a
+                // typed error, never a panic.
+                other => {
+                    return Err(Error::TagKindMismatch {
+                        tag: x,
+                        prefix: crate::envelope::prefix_of(&other),
+                    })
                 }
             }
         }

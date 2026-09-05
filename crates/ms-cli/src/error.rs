@@ -20,6 +20,9 @@ use crate::codex32_friendly::friendly_codex32;
 pub enum CliError {
     /// User-input error: bad hex, missing args, runtime input failure.
     BadInput(String),
+    /// A usage error the verb itself detects (source arithmetic, a gate a flag
+    /// must satisfy): exit 64, the same code clap uses for its own.
+    Usage(String),
     /// BIP-39 phrase parse / checksum failure.
     Bip39(bip39::Error),
     /// codex32 parse / BCH-checksum failure (delegated from ms_codec).
@@ -53,6 +56,7 @@ impl CliError {
             | CliError::Codex32(_)
             | CliError::UnexpectedStringLength { .. }
             | CliError::PayloadLengthMismatch { .. } => 1,
+            CliError::Usage(_) => 64,
             CliError::FormatViolation { .. } => 2,
             CliError::FutureFormat { .. } => 3,
             CliError::VerifyPhraseMismatch => 4,
@@ -63,6 +67,7 @@ impl CliError {
     pub fn kind(&self) -> &'static str {
         match self {
             CliError::BadInput(_) => "BadInput",
+            CliError::Usage(_) => "Usage",
             CliError::Bip39(_) => "Bip39",
             CliError::Codex32(_) => "Codex32",
             CliError::UnexpectedStringLength { .. } => "UnexpectedStringLength",
@@ -79,6 +84,7 @@ impl CliError {
     pub fn message(&self) -> String {
         match self {
             CliError::BadInput(m) => m.clone(),
+            CliError::Usage(m) => m.clone(),
             CliError::Bip39(e) => friendly_bip39(e),
             CliError::Codex32(e) => friendly_codex32(e),
             CliError::UnexpectedStringLength { got } => {
@@ -271,6 +277,22 @@ impl From<ms_codec::Error> for CliError {
                 n, k
             )),
 
+            ms_codec::Error::PreimageLengthMismatch { got } => CliError::FormatViolation {
+                underlying_kind: "PreimageLengthMismatch",
+                message: format!("preimage payload is {got} bytes after the prefix; a hashlock preimage is exactly 32 bytes (64 hex characters)"),
+                details: Some(json!({ "got": got })),
+            },
+            ms_codec::Error::TagKindMismatch { tag, prefix } => CliError::FormatViolation {
+                underlying_kind: "TagKindMismatch",
+                message: format!(
+                    "the id {:?} names a different kind than the prefix byte 0x{prefix:02x} carries; refusing rather than reading one kind as another",
+                    std::str::from_utf8(&tag).unwrap_or("<non-utf8>")
+                ),
+                details: Some(json!({ "tag": std::str::from_utf8(&tag).unwrap_or("<non-utf8>"), "prefix": prefix })),
+            },
+            ms_codec::Error::RandomnessUnavailable => CliError::BadInput(
+                "the OS random source is unavailable; no preimage was produced".to_string(),
+            ),
             // ms_codec::Error is #[non_exhaustive]; v0.2+ may add variants.
             // If you hit this in production, ms-codec added a variant ms-cli
             // hasn't dispatched yet — add an arm above for the new variant.

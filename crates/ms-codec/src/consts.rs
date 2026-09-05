@@ -38,6 +38,15 @@ pub const TAG_ENTR: [u8; 4] = *b"entr";
 /// v0.2 mnem-prefix byte (type discriminator for Mnem payloads).
 pub const MNEM_PREFIX: u8 = 0x02;
 
+/// v0.8 preimage-prefix byte: `[0x03][X:32]`, a hashlock preimage (SPEC_ms_hashlock §1).
+pub const PREIMAGE_PREFIX: u8 = 0x03;
+
+/// The only string length a preimage single can have: 9 fixed + ceil(33*8/5)=53 payload + 13 cksum.
+pub const VALID_PREIMAGE_STR_LENGTHS: &[usize] = &[75];
+
+/// 4-byte type tag carried by preimage SINGLES (SPEC_ms_hashlock §1, L14).
+pub const TAG_HASH: [u8; 4] = *b"hash";
+
 /// Allowed v0.2 mnem total ms1 string lengths (byte-aligned: prefix + lang + entropy).
 /// Computed: 9 fixed + ceil((entropy_bytes + 2) * 8 / 5) payload symbols + 13 cksum.
 pub const VALID_MNEM_STR_LENGTHS: &[usize] = &[51, 58, 64, 70, 77];
@@ -68,7 +77,8 @@ pub const RESERVED_NOT_EMITTED_V01: &[[u8; 4]] = &[*b"seed", *b"xprv", *b"prvk"]
 ///
 /// **DISTINCT from `RESERVED_NOT_EMITTED_V01`** (the decoder-reject set, which
 /// dropped `mnem` in Cycle 1): `mnem` MUST stay in this id-blocklist.
-pub const RESERVED_ID_BLOCKLIST: &[[u8; 4]] = &[*b"entr", *b"seed", *b"xprv", *b"mnem", *b"prvk"];
+pub const RESERVED_ID_BLOCKLIST: &[[u8; 4]] =
+    &[*b"entr", *b"seed", *b"xprv", *b"mnem", *b"prvk", *b"hash"];
 
 #[cfg(test)]
 mod tests {

@@ -1,7 +1,7 @@
 //! Structural inspection of an ms1 string for debugging / future ms-cli.
 
 use crate::codex32::Codex32String;
-use crate::consts::MNEM_PREFIX;
+use crate::consts::{MNEM_PREFIX, PREIMAGE_PREFIX};
 use crate::envelope;
 use crate::error::Result;
 use crate::tag::Tag;
@@ -15,6 +15,8 @@ pub enum InspectKind {
     Entr,
     /// `mnem` — BIP-39 mnemonic entropy with language tag (0x02 prefix byte, v0.2).
     Mnem,
+    /// `hash` — a hashlock preimage (0x03 prefix byte, v0.8).
+    Preimage,
     /// Any other prefix byte — future or invalid.
     Unknown,
 }
@@ -25,6 +27,7 @@ impl InspectKind {
         match self {
             InspectKind::Entr => "entr",
             InspectKind::Mnem => "mnem",
+            InspectKind::Preimage => "preimage",
             InspectKind::Unknown => "unknown",
         }
     }
@@ -126,6 +129,7 @@ pub fn inspect(s: &str) -> Result<InspectReport> {
             let lang = payload_bytes.first().copied();
             (InspectKind::Mnem, lang)
         }
+        PREIMAGE_PREFIX => (InspectKind::Preimage, None),
         _ => (InspectKind::Unknown, None),
     };
 

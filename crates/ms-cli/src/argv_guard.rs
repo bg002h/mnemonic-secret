@@ -64,7 +64,8 @@
 /// words cannot carry material at all.
 ///
 /// `ms` nests no subcommands, so exactly one word is ever appended.
-const SUBCOMMANDS: [&str; 12] = [
+const SUBCOMMANDS: [&str; 13] = [
+    "hashlock",
     "derive",
     "encode",
     "decode",
@@ -79,11 +80,17 @@ const SUBCOMMANDS: [&str; 12] = [
     "help",
 ];
 
-/// The nine flag-keyed secret channels, as strings. No parse, no clap.
+/// The five flag-keyed secret channels, as strings. No parse, no clap.
 ///
 /// `--passphrase-stdin` is deliberately NOT here and cannot be caught by
 /// accident: the match is EQUALITY, not a prefix test.
-const SECRET_FLAGS: [&str; 4] = ["--phrase", "--hex", "--ms1", "--passphrase"];
+const SECRET_FLAGS: [&str; 5] = [
+    "--phrase",
+    "--hex",
+    "--ms1",
+    "--passphrase",
+    "--hashlock-phrase",
+];
 
 /// The bech32 character set. A codex32 string's data part draws from it alone,
 /// which is what separates an `ms1` string from a FILENAME that merely starts
@@ -113,7 +120,9 @@ fn argv_candidates(token: &str) -> Vec<String> {
 /// What a token looks like, or `None`. The returned string NAMES A CLASS and
 /// never reproduces any of the value.
 fn material_class(candidate: &str) -> Option<&'static str> {
-    if is_ms1_shaped(candidate) {
+    // ONE predicate for the ms1 shape, shared with the phrase channels: the
+    // normalisation is inside it (SPEC_ms_hashlock §4.3; R0 r0 tests C-1).
+    if looks_like_ms1(candidate) {
         return Some("an ms1 string (or one share of an ms1 share-set)");
     }
     if is_phrase_shaped(candidate) {
@@ -131,6 +140,15 @@ fn material_class(candidate: &str) -> Option<&'static str> {
 /// `ms1-2026-08-23-backup.txt` is a FILENAME beginning with the HRP; it carries
 /// `-` and `.`, neither of which is in the charset, so it is not material and
 /// `ms verify --in ms1-2026-08-23-backup.txt` is still accepted.
+/// `is_ms1_shaped` over the NORMALISED token: trimmed, lowercased, display
+/// separators stripped. The one predicate both the argv guard and the phrase
+/// channels call, so the two cannot drift (SPEC_ms_hashlock §4.3). An
+/// uppercase plate string -- the BIP-173/QR spelling `ms decode` accepts --
+/// is caught here and only here.
+pub(crate) fn looks_like_ms1(raw: &str) -> bool {
+    is_ms1_shaped(&raw.trim().to_ascii_lowercase())
+}
+
 fn is_ms1_shaped(s: &str) -> bool {
     // **Display separators are stripped first, because `ms` strips them on
     // INTAKE.** A share read off a plate arrives grouped -- `ms12un98 qcjj5
@@ -229,6 +247,11 @@ pub fn admitted(channel: &str) -> Option<&'static [String]> {
 pub enum Decision {
     /// Refuse, with this message. Exit 1.
     Refuse(String),
+    /// A USAGE error the guard itself detects on raw argv, with this message.
+    /// Exit 64, the same code clap gives for its own. Distinct from `Refuse`
+    /// because nothing secret was supplied: the operator wrote a malformed
+    /// command line, not a leaky one (post-impl review I-3).
+    Usage(String),
     /// Proceed, parsing THIS argv -- the original, or the substituted one.
     Proceed(Vec<String>),
 }
@@ -237,7 +260,10 @@ pub enum Decision {
 /// should parse.
 pub fn decide(argv: &[String]) -> Decision {
     if override_applies(argv) {
-        return Decision::Proceed(substitute(argv));
+        return match substitute(argv) {
+            Ok(v) => Decision::Proceed(v),
+            Err(msg) => Decision::Usage(msg),
+        };
     }
     match find_argv_material(argv) {
         Some((i, class, len)) => Decision::Refuse(refusal(argv, i, class, len)),
@@ -257,7 +283,8 @@ fn override_applies(argv: &[String]) -> bool {
     argv.iter().any(|t| t == ALLOW_FLAG)
         && matches!(
             argv.get(1).map(|t| t.trim()),
-            Some("encode")
+            Some("hashlock")
+                | Some("encode")
                 | Some("decode")
                 | Some("inspect")
                 | Some("verify")
@@ -270,7 +297,10 @@ fn override_applies(argv: &[String]) -> bool {
 
 /// Drop the override token, replace each material token with `-`, and seed the
 /// material into [`ADMITTED`].
-fn substitute(argv: &[String]) -> Vec<String> {
+///
+/// `Err` is a USAGE error (exit 64), not a secret refusal: see the flag-shaped
+/// value check below.
+fn substitute(argv: &[String]) -> std::result::Result<Vec<String>, String> {
     let mut map: std::collections::HashMap<String, Vec<String>> = Default::default();
     let mut out: Vec<String> = Vec::with_capacity(argv.len());
     let mut i = 0;
@@ -283,7 +313,30 @@ fn substitute(argv: &[String]) -> Vec<String> {
         let whole = token.trim().to_ascii_lowercase();
         if i > 0 && SECRET_FLAGS.contains(&whole.as_str()) {
             if let Some(value) = argv.get(i + 1) {
-                if value.trim() != "-" {
+                let v = value.trim();
+                // A FLAG IS NOT A VALUE. Without this, an omitted value made the
+                // guard swallow the next flag and admit its NAME as the secret:
+                // `ms hashlock --allow-argv-secret --hashlock-phrase --json
+                // --no-engraving-card` derived a preimage from the six-byte
+                // string `--json` and exited 0 (post-impl review I-3). `ms
+                // hashlock` is where that first became a SUCCESS, because the
+                // phrase rule admits every printable-ASCII string, so nothing
+                // downstream could reject it. A usage error, not a secret
+                // refusal: nothing secret was given, so there is nothing to
+                // protect and nothing to redact.
+                //
+                // A bare `-` is exempt -- it is the stdin sentinel, not a flag --
+                // and `--flag=-value` is the escape hatch for a value that
+                // really begins with `-` (handled by the `=` branch below).
+                if v != "-" && v.starts_with('-') {
+                    return Err(format!(
+                        "{whole} was given {v:?}, which is a flag and not a value. \
+                         Refusing rather than taking a flag's own name as the secret. \
+                         If the value really begins with `-`, spell it {whole}=<value>; \
+                         otherwise pass the secret on a private channel."
+                    ));
+                }
+                if v != "-" {
                     map.entry(whole.clone()).or_default().push(value.clone());
                     out.push(token);
                     out.push("-".to_string());
@@ -291,6 +344,8 @@ fn substitute(argv: &[String]) -> Vec<String> {
                     continue;
                 }
             }
+            // No next token at all: leave the valueless flag for clap, which
+            // already answers `a value is required for '<flag>'` at exit 64.
             out.push(token);
             i += 1;
             continue;
@@ -332,7 +387,7 @@ fn substitute(argv: &[String]) -> Vec<String> {
     }
     // `set` rather than `get_or_init`: one process, one substitution.
     let _ = ADMITTED.set(map);
-    out
+    Ok(out)
 }
 
 /// `(index, class, character length)` of the first argv token carrying
@@ -380,6 +435,7 @@ fn flag_class(flag: &str) -> &'static str {
         "--phrase" => "a BIP-39 mnemonic",
         "--hex" => "raw hex entropy",
         "--ms1" => "an ms1 string",
+        "--hashlock-phrase" => "a hashlock phrase",
         _ => "a BIP-39 passphrase",
     }
 }
@@ -516,6 +572,7 @@ mod tests {
         let msg = match decide(&argv(&["encode", "--phrase", seed])) {
             Decision::Refuse(m) => m,
             Decision::Proceed(_) => panic!("a seed on argv must be refused"),
+            Decision::Usage(m) => panic!("a seed on argv is a REFUSAL, not a usage error: {m}"),
         };
         for word in seed.split_whitespace() {
             assert!(

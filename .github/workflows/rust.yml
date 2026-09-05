@@ -115,8 +115,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: hashlock reproduction preflight (a missing tool fails HERE, never a test that could be skipped)
+        run: |
+          openssl version
+          openssl kdf --help >/dev/null
+          python3 -VV
+          python3 -c 'import hashlib; hashlib.pbkdf2_hmac("sha256", b"x", b"y", 1)'
       - name: cargo test -p ms-codec
         run: cargo test -p ms-codec
+      - name: hashlock reproduction test RAN (by name)
+        run: |
+          # The job runs `cargo test`, not nextest (the step above, measured) --
+          # so this assertion re-runs the ONE test by name rather than parsing
+          # that job's output. A line citation would go stale the next time a
+          # step is inserted, which is exactly what happened to its first draft.
+          cargo test -p ms-codec --locked --test hashlock_repro -- --exact hashlock_repro_three_ways 2>&1 | tee /tmp/repro.log
+          grep -E "test result: ok. 1 passed" /tmp/repro.log
 
   clippy-ms-codec:
     name: clippy (ms-codec)

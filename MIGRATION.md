@@ -23,3 +23,49 @@ v0.2 adds BIP-93 codex32 **K-of-N Shamir share encoding** for **both `entr` and 
 The `seed` / `xprv` payload framing — out of scope for v0.1 because they don't fit BIP-93's brackets — remains a *separate* design problem (a different sub-format / HRP / widened-bracket BCH). If a future payload kind shares HRP `ms`, it MUST claim a distinct prefix-byte value (`0x01`, `0x03`, …) on the kind axis; share-ness stays on the orthogonal threshold axis.
 
 These invariants are also captured in `design/SPEC_ms_v0_1.md` §5 (amended) + `design/SPEC_ms_v0_2_kofn.md`, and the source comments of `crates/ms-codec/src/envelope.rs`.
+
+## v0.7 → v0.8 (the hashlock preimage kind — `0x03`, id `hash`)
+
+v0.8 adds a THIRD payload kind on the prefix-byte axis: `0x03` = a hashlock
+preimage, exactly `[0x03][X:32]` (33 bytes, a 75-character single). Five
+invariants, each with a measured reason (`design/SPEC_ms_hashlock.md`):
+
+1. **Readers that dispatch on the prefix byte MUST treat `0x03` as a 32-byte
+   preimage and never as entropy.** `ms decode` prints it as kind + hex +
+   digest and never as words.
+2. **Length no longer implies kind.** A preimage single is 75 characters —
+   exactly entr-32 — and shares entr's leading payload character `q`. So
+   preimage SINGLES carry the id `hash` (`ms10hashsq…`), the id joins
+   `RESERVED_ID_BLOCKLIST`, and **a single whose id and prefix byte disagree
+   is refused** (`Error::TagKindMismatch`), never read as the other kind.
+3. **Sweep every catch-all over `Payload`, `PayloadKind` and `InspectKind`** —
+   `_ => <value>` arms as much as `_ => unreachable!` — because
+   `#[non_exhaustive]` means the compiler will not. `InspectKind` is NOT
+   `#[non_exhaustive]`, so adding `Preimage` is source-breaking for an
+   exhaustive match: loud, therefore safe.
+4. **The by-hand recipe this constellation documented before 0.18.0 — "hash
+   the passphrase to 32 bytes, then hash again" — is `ms hashlock --method
+   sha256`, NOT the default.** The default is the hardened method
+   (PBKDF2-HMAC-SHA256, salt `ms-hashlock-v1`, 100,000 iterations). A digest
+   made by hand reproduces only with `--method sha256`.
+5. **A third reader shape exists and it is the dangerous one: "decode
+   succeeded, therefore this is a seed."** Measured: `me`'s `validate_record`
+   maps ANY `ms_codec::decode` success to a secret seed record; the
+   SeedHammer fork's `isStrictMs1` has no prefix test at all. Neither
+   dispatches on the prefix, so items 1 and 3 do not reach them. **Before
+   this release ships, both are guarded (H0):** the fork's classifier treats
+   `0x03` as inert and is flashed; `me`'s record validator treats it as inert
+   in the same window as its ms-codec 0.8 bump.
+
+Older `ms` (ms-codec 0.7) refuses a `0x03` single with
+`reserved-prefix byte was 0x03` (exit 2) — a refusal, never a seed. The
+downgrade row in `scripts/plan-build-gate-ms.sh` step 6 proves it against the
+pre-0.8 tree.
+
+New API: `ms_codec::hashlock::{HASHLOCK_SALT, HASHLOCK_ITERATIONS,
+HASHLOCK_DKLEN, preimage_hardened, preimage_sha256, preimage_random, digest}`;
+`Payload::Preimage(Zeroizing<[u8; 32]>)`; `PayloadKind::Preimage` and
+`PayloadKind::single_tag`; `InspectKind::Preimage`; `Tag::HASH`;
+`Error::{PreimageLengthMismatch, TagKindMismatch, RandomnessUnavailable}`.
+Corpus: `crates/ms-codec/tests/vectors/hashlock-v0.8.json`, SHA-pinned in
+the CHANGELOG.
