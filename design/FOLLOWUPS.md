@@ -747,3 +747,22 @@ can never be mistaken for BIP-48.
   a fix should be considered CLI-wide rather than verb-local.
 - **Status:** open. **Tier:** `secret-handling` (non-gating by the 2026-08-27
   ruling).
+
+### `release-process-real-publish-step` — RELEASE_PROCESS.md stops at the publish DRY RUN; the real `cargo publish -p ms-codec` is undocumented (tier: process; owning phase: the next ms-codec release)
+
+- **Surfaced:** 2026-09-05, at the ms-codec 0.8.0 release. `design/RELEASE_PROCESS.md`
+  step 7 requires `cargo publish --dry-run` before the tag and step 8 tags and
+  pushes; nothing says when or how the crate actually reaches crates.io, yet
+  0.7.0 and now 0.8.0 are there. The controller published 0.8.0 on the fable
+  architect's decision (`design/agent-reports/decision-crates-io-publish-ms-codec-0.8.0.md`):
+  from a detached worktree at the tag `ms-codec-v0.8.0` (so `.cargo_vcs_info.json`
+  carries the tag's commit), `cargo publish -p ms-codec --locked`, no
+  `--allow-dirty`, ms-codec only (ms-cli carries a git-rev dependency and is
+  not publishable as-is); verified `max_version 0.8.0` on the crates.io API
+  (2026-09-05T03:28:43Z).
+- **Do:** add step 9 to RELEASE_PROCESS.md — publish from the tag's tree with
+  exactly that command, then verify with `curl https://crates.io/api/v1/crates/ms-codec`
+  and record the timestamp in the release commit or its follow-up record; state
+  that ms-cli is not published (releases ship as GitHub assets).
+- **Severity:** Minor (records). The publish itself is irreversible; the step
+  belongs in the checklist so it is never again a decision taken at the end.
