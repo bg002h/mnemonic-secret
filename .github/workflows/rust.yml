@@ -125,7 +125,10 @@ jobs:
         run: cargo test -p ms-codec
       - name: hashlock reproduction test RAN (by name)
         run: |
-          # The job runs `cargo test`, not nextest (rust.yml:118-119, measured).
+          # The job runs `cargo test`, not nextest (the step above, measured) --
+          # so this assertion re-runs the ONE test by name rather than parsing
+          # that job's output. A line citation would go stale the next time a
+          # step is inserted, which is exactly what happened to its first draft.
           cargo test -p ms-codec --locked --test hashlock_repro -- --exact hashlock_repro_three_ways 2>&1 | tee /tmp/repro.log
           grep -E "test result: ok. 1 passed" /tmp/repro.log
 

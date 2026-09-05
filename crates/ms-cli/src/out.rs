@@ -16,14 +16,12 @@
 
 use crate::error::{CliError, Result};
 
-/// Write `body` to `path`, owner-only, naming the path on failure.
-///
-/// The refusal names the PATH and never the artifact: a message that echoed
-/// what it failed to write would put the material in a second place at exactly
-/// the moment the operator is looking at the screen.
 /// Like `write_artifact`, but REFUSES an existing path (exit 64, naming it)
 /// instead of truncating. For `--random` only: that artifact is a function of
 /// nothing and cannot be re-made (SPEC_ms_hashlock §4.1).
+///
+/// The refusal names the PATH and never the artifact, for the same reason
+/// `write_artifact`'s does.
 pub(crate) fn write_artifact_create_new(path: &std::path::Path, body: &str) -> Result<()> {
     use std::io::Write;
     let mut opts = std::fs::OpenOptions::new();
@@ -57,6 +55,11 @@ pub(crate) fn write_artifact_create_new(path: &std::path::Path, body: &str) -> R
     Ok(())
 }
 
+/// Write `body` to `path`, owner-only, naming the path on failure.
+///
+/// The refusal names the PATH and never the artifact: a message that echoed
+/// what it failed to write would put the material in a second place at exactly
+/// the moment the operator is looking at the screen.
 pub(crate) fn write_artifact(path: &std::path::Path, body: &str) -> Result<()> {
     mnemonic_io_lib::write::write_private(path, body.as_bytes())
         .map_err(|e| CliError::BadInput(format!("failed to write --out {}: {}", path.display(), e)))
