@@ -241,6 +241,93 @@ fn random_json_with_out_succeeds() {
         .starts_with("ms10hashsq"));
 }
 
+/// I-2: `--separator` is bound to the SAME parser `ms encode` and `ms split`
+/// use, so the same input is refused here with the same message. MUTATION: drop
+/// `value_parser = crate::format::parse_separator` -> `q` is accepted and the
+/// card carries a 90-character "plate string" `ms` refuses on read-back,
+/// because `q` is in the codex32 charset and `strip_display_separators` leaves
+/// it in place.
+#[test]
+fn separator_is_refused_exactly_as_encode_refuses_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("X.txt");
+    assert!(ms()
+        .args([
+            "hashlock",
+            "--hashlock-phrase-stdin",
+            "--out",
+            p.to_str().unwrap(),
+            "--no-engraving-card",
+        ])
+        .write_stdin(PHRASE)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    for bad in ["q", "-", ","] {
+        let hl = ms()
+            .args(["hashlock", "--in", p.to_str().unwrap(), "--separator", bad])
+            .output()
+            .unwrap();
+        let enc = ms()
+            .args([
+                "encode",
+                "--hex",
+                "-",
+                "--separator",
+                bad,
+                "--no-engraving-card",
+            ])
+            .write_stdin(HEX32)
+            .output()
+            .unwrap();
+        assert_eq!(
+            hl.status.code(),
+            Some(64),
+            "--separator {bad:?} must be a usage error: {}",
+            String::from_utf8_lossy(&hl.stderr)
+        );
+        let hl_err = String::from_utf8_lossy(&hl.stderr);
+        let enc_err = String::from_utf8_lossy(&enc.stderr);
+        // The parser's own sentence, not merely "both refused".
+        let tail = |e: &str| e.split("': ").nth(1).unwrap_or("").trim().to_string();
+        assert_eq!(
+            tail(&hl_err),
+            tail(&enc_err),
+            "hashlock and encode must give the SAME refusal for {bad:?}:\n{hl_err}\n{enc_err}"
+        );
+        assert!(!tail(&hl_err).is_empty(), "{hl_err}");
+    }
+    // The one accepted spelling still works, on both spellings of it.
+    for good in ["space", " "] {
+        let out = ms()
+            .args(["hashlock", "--in", p.to_str().unwrap(), "--separator", good])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "--separator {good:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
+/// N-1: `--group-size` takes the same type as `ms encode` / `ms split`, so a
+/// value one verb accepts is not a parse error on another.
+#[test]
+fn group_size_accepts_what_encode_accepts() {
+    let out = ms()
+        .args(["hashlock", "--hex", "-", "--group-size", "256"])
+        .write_stdin(HEX32)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "--group-size 256 is accepted by encode and must not be a parse error here: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 /// The record's SHAPE is what `me sysw pack` reads from stdin (§12.6: no
 /// `--in`). A pure shape check; the cross-repo run is acceptance item 6.
 #[test]

@@ -73,10 +73,17 @@ pub struct HashlockArgs {
     #[arg(long)]
     pub no_engraving_card: bool,
     /// Group the ms1 on the card every N characters (0 = no grouping).
+    /// `u16` and the same default as `ms encode` / `ms split`, so the same
+    /// value is accepted by every verb that renders a grouped ms1 (review N-1).
     #[arg(long, default_value_t = 5)]
-    pub group_size: u8,
-    /// Group separator on the card.
-    #[arg(long, default_value_t = ' ')]
+    pub group_size: u16,
+    /// Separator: space|hyphen|comma (keyword) or the literal " "|-|, . SPEC §5.
+    ///
+    /// BOUND TO THE SHARED PARSER, like `ms encode` and `ms split`. Unbound, a
+    /// separator inside the codex32 charset (`--separator q`) produced a card
+    /// whose "plate string" `strip_display_separators` cannot clean up, so the
+    /// engraved 90-character result is one `ms` itself refuses (review I-2).
+    #[arg(long, default_value = "space", value_parser = crate::format::parse_separator)]
     pub separator: char,
     /// Admit a secret on argv (see `ms encode --help`).
     #[arg(long)]
