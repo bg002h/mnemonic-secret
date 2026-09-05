@@ -66,9 +66,6 @@ pub fn strip_one_trailing_newline(buf: &mut Vec<u8>) {
     }
 }
 
-/// Read the phrase from stdin, byte-verbatim. At a terminal, print one prompt
-/// line to stderr first (r2 review M-7: the first `ms` input a human types
-/// must not look like a hang).
 /// The one prompt line, printed iff stdin is a terminal. Split out so the
 /// terminal branch is unit-tested without a pty (R0 r0 fidelity I-8).
 pub fn prompt_if_terminal(is_tty: bool, stderr: &mut impl std::io::Write) {
@@ -77,17 +74,43 @@ pub fn prompt_if_terminal(is_tty: bool, stderr: &mut impl std::io::Write) {
     }
 }
 
-pub fn read_phrase_stdin() -> Result<Zeroizing<Vec<u8>>> {
-    use std::io::{IsTerminal, Read};
-    let stdin = std::io::stdin();
-    prompt_if_terminal(stdin.is_terminal(), &mut std::io::stderr().lock());
+/// Read the phrase bytes byte-verbatim, and END THE READ WHERE THE PROMPT SAYS
+/// IT ENDS.
+///
+/// At a TERMINAL the read stops at the first `\n` (`read_until`), because the
+/// prompt asks the operator to press Enter and Enter does not deliver EOF in
+/// canonical mode: on `read_to_end` the tool sat there after Enter and only
+/// Ctrl-D finished it, so the one prompt that exists to prevent a hang
+/// instructed the action that could not end it (post-impl review I-1, measured
+/// on a real pty). Nothing is lost by stopping at the newline: the phrase rule
+/// refuses a phrase containing `\n` as a non-printable byte anyway.
+///
+/// On a PIPE the read stays `read_to_end`, so a phrase file with no trailing
+/// newline still arrives whole and the byte-verbatim rule is unchanged.
+///
+/// Either way exactly one trailing `\r?\n` is stripped and nothing else.
+pub fn read_phrase_from(
+    is_tty: bool,
+    reader: &mut impl std::io::BufRead,
+) -> Result<Zeroizing<Vec<u8>>> {
     let mut buf: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::new());
-    stdin
-        .lock()
-        .read_to_end(&mut buf)
-        .map_err(|e| CliError::BadInput(format!("failed to read stdin: {e}")))?;
+    let read = if is_tty {
+        reader.read_until(b'\n', &mut buf)
+    } else {
+        reader.read_to_end(&mut buf)
+    };
+    read.map_err(|e| CliError::BadInput(format!("failed to read stdin: {e}")))?;
     strip_one_trailing_newline(&mut buf);
     Ok(buf)
+}
+
+/// `read_phrase_from` over the real stdin, with the prompt in front of it.
+pub fn read_phrase_stdin() -> Result<Zeroizing<Vec<u8>>> {
+    use std::io::IsTerminal;
+    let stdin = std::io::stdin();
+    let is_tty = stdin.is_terminal();
+    prompt_if_terminal(is_tty, &mut std::io::stderr().lock());
+    read_phrase_from(is_tty, &mut stdin.lock())
 }
 
 /// The rule. Order matters and is the spec's: empty, printable ASCII,
@@ -247,6 +270,54 @@ mod tests {
             pipe.is_empty(),
             "a pipe gets no prompt: it would land in the operator's output"
         );
+    }
+
+    /// A reader that yields its line and then PANICS if read again -- the shape
+    /// of a terminal in canonical mode after Enter, where the next read blocks
+    /// until EOF. `read_until(b'\n')` never asks for the second read;
+    /// `read_to_end` always does, so a revert to it turns this test red instead
+    /// of hanging a real operator (post-impl review I-1).
+    struct OneLineThenNeverEof {
+        line: &'static [u8],
+        pos: usize,
+    }
+
+    impl std::io::Read for OneLineThenNeverEof {
+        fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+            assert!(
+                self.pos < self.line.len(),
+                "read past the first line: the terminal branch would block here, \
+                 which is exactly the hang the prompt promises not to cause"
+            );
+            let n = std::cmp::min(out.len(), self.line.len() - self.pos);
+            out[..n].copy_from_slice(&self.line[self.pos..self.pos + n]);
+            self.pos += n;
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn a_terminal_read_ends_at_the_newline_the_prompt_asks_for() {
+        let mut r = std::io::BufReader::new(OneLineThenNeverEof {
+            line: b"correct horse battery staple\n",
+            pos: 0,
+        });
+        let got =
+            read_phrase_from(true, &mut r).expect("the tty branch must return after one line");
+        assert_eq!(&got[..], b"correct horse battery staple");
+    }
+
+    #[test]
+    fn a_pipe_read_still_runs_to_eof() {
+        // Unchanged for a pipe: everything arrives, including embedded
+        // newlines (which the phrase rule then refuses), and exactly one
+        // trailing newline is stripped.
+        let mut r = std::io::BufReader::new(std::io::Cursor::new(b"a\nb\n".to_vec()));
+        let got = read_phrase_from(false, &mut r).unwrap();
+        assert_eq!(&got[..], b"a\nb");
+        let mut r = std::io::BufReader::new(std::io::Cursor::new(b"no trailing newline".to_vec()));
+        let got = read_phrase_from(false, &mut r).unwrap();
+        assert_eq!(&got[..], b"no trailing newline");
     }
 
     #[test]
