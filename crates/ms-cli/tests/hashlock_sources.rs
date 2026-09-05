@@ -162,12 +162,19 @@ fn zero_sources_exits_64_listing_five() {
 /// subset of pairs -> the stdin-contention pair passes silently.
 #[test]
 fn every_two_source_pair_exits_64() {
+    // A PER-TEST temp dir, not a fixed path in the shared /tmp: nextest runs
+    // test binaries concurrently, so a fixed name is a collision waiting for
+    // the day one of these invocations starts reaching the write (post-impl
+    // review M-6). The dir is removed when it drops.
+    let dir = tempfile::tempdir().unwrap();
+    let rnd_out = dir.path().join("pair.txt");
+    let rnd_out = rnd_out.to_str().unwrap();
     let sources: &[&[&str]] = &[
         &["--allow-argv-secret", "--hashlock-phrase", PHRASE],
         &["--hashlock-phrase-stdin"],
         &["--hex", "-"],
         &["-"],
-        &["--random", "--out", "/tmp/ms-hashlock-pair-test.txt"],
+        &["--random", "--out", rnd_out],
     ];
     for i in 0..sources.len() {
         for j in (i + 1)..sources.len() {
@@ -189,21 +196,20 @@ fn every_two_source_pair_exits_64() {
             );
         }
     }
-    let _ = std::fs::remove_file("/tmp/ms-hashlock-pair-test.txt");
 }
 
 /// MUTATION: `--method` silently ignored with a supplied X.
 #[test]
 fn method_with_a_supplied_preimage_exits_64_for_all_three_sources() {
+    // Per-test temp dir, not a fixed /tmp name -- see the note in
+    // `every_two_source_pair_exits_64` (post-impl review M-6).
+    let dir = tempfile::tempdir().unwrap();
+    let rnd_out = dir.path().join("method.txt");
+    let rnd_out = rnd_out.to_str().unwrap();
     for args in [
         vec!["hashlock", "--hex", "-", "--method", "sha256"],
         vec![
-            "hashlock",
-            "--random",
-            "--out",
-            "/tmp/ms-hashlock-method-test.txt",
-            "--method",
-            "hardened",
+            "hashlock", "--random", "--out", rnd_out, "--method", "hardened",
         ],
         vec!["hashlock", "-", "--method", "sha256"],
     ] {
@@ -224,7 +230,6 @@ fn method_with_a_supplied_preimage_exits_64_for_all_three_sources() {
             "{args:?}"
         );
     }
-    let _ = std::fs::remove_file("/tmp/ms-hashlock-method-test.txt");
 }
 
 /// L21 as narrowed: `--random` needs `--out FILE`; `--json` alone does not
