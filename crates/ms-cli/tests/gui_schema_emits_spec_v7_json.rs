@@ -251,7 +251,7 @@ fn flags_of<'a>(v: &'a serde_json::Value, verb: &str) -> Vec<&'a str> {
 }
 
 #[test]
-fn the_schema_names_every_flag_p2_added_and_the_total_is_55() {
+fn the_schema_names_every_flag_p2_added_and_the_total_is_67() {
     let v = schema_json();
     for verb in MATERIAL_VERBS {
         let flags = flags_of(&v, verb);

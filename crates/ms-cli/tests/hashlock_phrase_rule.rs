@@ -206,13 +206,44 @@ fn printable_ascii_boundary_and_cap() {
     assert!(se.contains("empty"), "{se}");
 }
 
-/// The 100/101 lockstep rows derive identically on the host to the corpus.
+/// The 100/101 lockstep rows (spec §8), driven with the CORPUS's own phrases
+/// rather than an `"a"`-repeat, because these are the rows H2's device side is
+/// pinned against. Both halves are asserted, as the name promises: 100 derives
+/// through the CLI to the corpus's `hardened_h`, and 101 is REFUSED by the CLI
+/// while the CODEC still derives the corpus's `hardened_x` for it -- the cap is
+/// the CLI's rule, not the codec's, and a drift in either direction shows here.
+/// (The 101 refusal is also reached by `printable_ascii_boundary_and_cap`; the
+/// overlap is deliberate, this is the lockstep row.)
 #[test]
 fn lockstep_100_and_101() {
-    let p100 = "a".repeat(100);
-    let (code, so, _) = record_via_stdin(p100.as_bytes(), "hardened");
-    assert_eq!(code, Some(0));
-    let x = ms_codec::hashlock::preimage_hardened(p100.as_bytes());
-    let h = ms_codec::hashlock::digest(&x);
-    assert_eq!(so.trim(), format!("hash:{}", hex::encode(h)));
+    const P100: &str = "hashlock phrase row: one hundred printable characters kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk";
+    const P101: &str = "hashlock phrase row: one hundred printable characters kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk!";
+    assert_eq!(P100.len(), 100);
+    assert_eq!(P101.len(), 101);
+
+    let (code, so, se) = record_via_stdin(P100.as_bytes(), "hardened");
+    assert_eq!(code, Some(0), "100 characters must be accepted: {se}");
+    assert_eq!(
+        so.trim(),
+        "hash:70a5395386c769019faa4996aa61510f7760a1b32d6980173ccc57b3e68b4525",
+        "the corpus's 100-character hardened_h"
+    );
+    // ...and it is the codec's own answer, not a second constant.
+    let x = ms_codec::hashlock::preimage_hardened(P100.as_bytes());
+    assert_eq!(
+        so.trim(),
+        format!("hash:{}", hex::encode(ms_codec::hashlock::digest(&x)))
+    );
+
+    let (code, so, se) = record_via_stdin(P101.as_bytes(), "hardened");
+    assert_eq!(code, Some(1), "101 characters must be refused: {se}");
+    assert!(so.is_empty(), "a refused phrase produced a record:\n{so}");
+    assert!(se.contains("101") && se.contains("100"), "{se}");
+    // The CODEC still derives it -- the cap lives in the CLI. The corpus row
+    // says so ("the codec derives it; the CLI refuses it") and this pins it.
+    let x = ms_codec::hashlock::preimage_hardened(P101.as_bytes());
+    assert_eq!(
+        hex::encode(&x[..]),
+        "abe28ff3905421a9f8caae476f3685555bb94a11c55e767d3bd979e9e46f6a57"
+    );
 }

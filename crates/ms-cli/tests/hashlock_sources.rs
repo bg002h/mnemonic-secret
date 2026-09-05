@@ -529,13 +529,21 @@ fn an_omitted_phrase_value_does_not_swallow_the_next_flag() {
     );
 }
 
-/// `--out` is 0600 (owner-only) on every source.
+/// `--out` is 0600 (owner-only) on every source -- and "every source" is TWO
+/// code paths, not one: the four re-derivable sources go through
+/// `out::write_artifact` and `--random` through `out::write_artifact_create_new`,
+/// whose `OpenOptions::mode(0o600)` is its own line of code. The first draft of
+/// this test claimed the general case and exercised the phrase source only, so
+/// the `--random` writer's mode was untested (post-impl review M-3).
 #[cfg(unix)]
 #[test]
 fn out_is_owner_only() {
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("x.txt");
+    let mode_of = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+
+    // write_artifact: the phrase source, and an ms1 source for a second row.
+    let p = dir.path().join("phrase.txt");
     assert!(ms()
         .args([
             "hashlock",
@@ -549,8 +557,43 @@ fn out_is_owner_only() {
         .unwrap()
         .status
         .success());
+    assert_eq!(mode_of(&p), 0o600, "phrase source");
+
+    let h = dir.path().join("hex.txt");
+    assert!(ms()
+        .args([
+            "hashlock",
+            "--hex",
+            "-",
+            "--out",
+            h.to_str().unwrap(),
+            "--no-engraving-card"
+        ])
+        .write_stdin(HEX32)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert_eq!(mode_of(&h), 0o600, "--hex source");
+
+    // write_artifact_create_new: the OTHER writer, and the one holding the only
+    // copy of a value that exists nowhere else.
+    let r = dir.path().join("random.txt");
+    assert!(ms()
+        .args([
+            "hashlock",
+            "--random",
+            "--out",
+            r.to_str().unwrap(),
+            "--no-engraving-card"
+        ])
+        .output()
+        .unwrap()
+        .status
+        .success());
     assert_eq!(
-        std::fs::metadata(&p).unwrap().permissions().mode() & 0o777,
-        0o600
+        mode_of(&r),
+        0o600,
+        "--random source (write_artifact_create_new)"
     );
 }
