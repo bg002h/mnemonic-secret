@@ -199,6 +199,10 @@ fn main() -> ExitCode {
             eprintln!("ms: {msg}");
             return ExitCode::from(1);
         }
+        argv_guard::Decision::Usage(msg) => {
+            eprintln!("error: {msg}");
+            return ExitCode::from(64);
+        }
         argv_guard::Decision::Proceed(v) => v,
     };
 

@@ -441,6 +441,94 @@ fn hashlock_phrase_dash_is_refused_naming_the_stdin_flag() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("--hashlock-phrase-stdin"));
 }
 
+/// I-3: with the value omitted, the guard used to SWALLOW the next flag and
+/// admit its NAME as the phrase -- and `ms hashlock` is the first verb where
+/// that produced a SUCCESS, because §4.3 admits every printable-ASCII string
+/// so nothing downstream could reject `--json`. The reviewer's exact
+/// counterexample, which derived
+/// `hash:329367945b164ccb91c6b124ab903227e34f468e9f82c5806b1ca4a194d4c613` --
+/// PBKDF2 of the six bytes `--json` -- at exit 0.
+///
+/// MUTATION: drop the `v.starts_with('-')` guard in `argv_guard::substitute`
+/// -> exit 0 with that record on stdout.
+#[test]
+fn an_omitted_phrase_value_does_not_swallow_the_next_flag() {
+    let out = ms()
+        .args([
+            "hashlock",
+            "--allow-argv-secret",
+            "--hashlock-phrase",
+            "--json",
+            "--no-engraving-card",
+        ])
+        .write_stdin("")
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(64),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let so = String::from_utf8_lossy(&out.stdout);
+    assert!(!so.contains("hash:"), "a record was emitted anyway:\n{so}");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("--hashlock-phrase") && err.contains("flag and not a value"),
+        "the refusal must name the flag:\n{err}"
+    );
+
+    // The same shape on a flag that already lived in SECRET_FLAGS.
+    let out = ms()
+        .args([
+            "encode",
+            "--allow-argv-secret",
+            "--hex",
+            "--json",
+            "--no-engraving-card",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(64));
+
+    // The two spellings that must still work: `-` is the stdin sentinel (this
+    // verb then names --hashlock-phrase-stdin, its own controller default), and
+    // `--flag=<value>` is the escape hatch for a value that begins with `-`.
+    let out = ms()
+        .args([
+            "hashlock",
+            "--allow-argv-secret",
+            "--hashlock-phrase",
+            "-",
+            "--no-engraving-card",
+        ])
+        .write_stdin("")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(64));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--hashlock-phrase-stdin"));
+
+    let out = ms()
+        .args([
+            "hashlock",
+            "--allow-argv-secret",
+            "--hashlock-phrase=--json",
+            "--no-engraving-card",
+        ])
+        .write_stdin("")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "the `=` spelling is deliberate and must still admit it: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "hash:329367945b164ccb91c6b124ab903227e34f468e9f82c5806b1ca4a194d4c613"
+    );
+}
+
 /// `--out` is 0600 (owner-only) on every source.
 #[cfg(unix)]
 #[test]

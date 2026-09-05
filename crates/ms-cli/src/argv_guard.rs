@@ -247,6 +247,11 @@ pub fn admitted(channel: &str) -> Option<&'static [String]> {
 pub enum Decision {
     /// Refuse, with this message. Exit 1.
     Refuse(String),
+    /// A USAGE error the guard itself detects on raw argv, with this message.
+    /// Exit 64, the same code clap gives for its own. Distinct from `Refuse`
+    /// because nothing secret was supplied: the operator wrote a malformed
+    /// command line, not a leaky one (post-impl review I-3).
+    Usage(String),
     /// Proceed, parsing THIS argv -- the original, or the substituted one.
     Proceed(Vec<String>),
 }
@@ -255,7 +260,10 @@ pub enum Decision {
 /// should parse.
 pub fn decide(argv: &[String]) -> Decision {
     if override_applies(argv) {
-        return Decision::Proceed(substitute(argv));
+        return match substitute(argv) {
+            Ok(v) => Decision::Proceed(v),
+            Err(msg) => Decision::Usage(msg),
+        };
     }
     match find_argv_material(argv) {
         Some((i, class, len)) => Decision::Refuse(refusal(argv, i, class, len)),
@@ -289,7 +297,10 @@ fn override_applies(argv: &[String]) -> bool {
 
 /// Drop the override token, replace each material token with `-`, and seed the
 /// material into [`ADMITTED`].
-fn substitute(argv: &[String]) -> Vec<String> {
+///
+/// `Err` is a USAGE error (exit 64), not a secret refusal: see the flag-shaped
+/// value check below.
+fn substitute(argv: &[String]) -> std::result::Result<Vec<String>, String> {
     let mut map: std::collections::HashMap<String, Vec<String>> = Default::default();
     let mut out: Vec<String> = Vec::with_capacity(argv.len());
     let mut i = 0;
@@ -302,7 +313,30 @@ fn substitute(argv: &[String]) -> Vec<String> {
         let whole = token.trim().to_ascii_lowercase();
         if i > 0 && SECRET_FLAGS.contains(&whole.as_str()) {
             if let Some(value) = argv.get(i + 1) {
-                if value.trim() != "-" {
+                let v = value.trim();
+                // A FLAG IS NOT A VALUE. Without this, an omitted value made the
+                // guard swallow the next flag and admit its NAME as the secret:
+                // `ms hashlock --allow-argv-secret --hashlock-phrase --json
+                // --no-engraving-card` derived a preimage from the six-byte
+                // string `--json` and exited 0 (post-impl review I-3). `ms
+                // hashlock` is where that first became a SUCCESS, because the
+                // phrase rule admits every printable-ASCII string, so nothing
+                // downstream could reject it. A usage error, not a secret
+                // refusal: nothing secret was given, so there is nothing to
+                // protect and nothing to redact.
+                //
+                // A bare `-` is exempt -- it is the stdin sentinel, not a flag --
+                // and `--flag=-value` is the escape hatch for a value that
+                // really begins with `-` (handled by the `=` branch below).
+                if v != "-" && v.starts_with('-') {
+                    return Err(format!(
+                        "{whole} was given {v:?}, which is a flag and not a value. \
+                         Refusing rather than taking a flag's own name as the secret. \
+                         If the value really begins with `-`, spell it {whole}=<value>; \
+                         otherwise pass the secret on a private channel."
+                    ));
+                }
+                if v != "-" {
                     map.entry(whole.clone()).or_default().push(value.clone());
                     out.push(token);
                     out.push("-".to_string());
@@ -310,6 +344,8 @@ fn substitute(argv: &[String]) -> Vec<String> {
                     continue;
                 }
             }
+            // No next token at all: leave the valueless flag for clap, which
+            // already answers `a value is required for '<flag>'` at exit 64.
             out.push(token);
             i += 1;
             continue;
@@ -351,7 +387,7 @@ fn substitute(argv: &[String]) -> Vec<String> {
     }
     // `set` rather than `get_or_init`: one process, one substitution.
     let _ = ADMITTED.set(map);
-    out
+    Ok(out)
 }
 
 /// `(index, class, character length)` of the first argv token carrying
@@ -536,6 +572,7 @@ mod tests {
         let msg = match decide(&argv(&["encode", "--phrase", seed])) {
             Decision::Refuse(m) => m,
             Decision::Proceed(_) => panic!("a seed on argv must be refused"),
+            Decision::Usage(m) => panic!("a seed on argv is a REFUSAL, not a usage error: {m}"),
         };
         for word in seed.split_whitespace() {
             assert!(
