@@ -4,7 +4,7 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
-## ms-codec [0.9.0] — unreleased
+## ms-codec [0.9.0] — 2026-09-05
 
 **SemVer-MINOR, and the corpus SHA is what forces it.** Per-release checklist
 item 1: `tests/vectors/hashlock-v0.8.json` gains seven `qr_text` rows, so its
@@ -19,12 +19,16 @@ hash moves and the pre-1.0 breaking-change axis requires `0.X+1.0`.
   whose whole point is that no two readers of a phrase disagree about what one
   is. `ms-cli` delegates and keeps only its message rendering, so there is still
   exactly one implementation.
-- `qr_text(hardened, phrase)` — the text a hashlock PHRASE plate carries
-  (SPEC_hashlock_H6 §8.6), byte for byte: `hashlock v1`, a `method:` line and a
-  `phrase:` line, LF-separated, no trailing newline, the phrase LAST. The method
-  line renders its parameters from `HASHLOCK_SALT`, `HASHLOCK_ITERATIONS` and
-  `HASHLOCK_DKLEN` rather than from a literal, so a parameter change cannot leave
-  an engraved plate lying about how to reproduce the derivation.
+- `qr_text(hardened: bool, phrase: &str) -> Zeroizing<String>` — the text a
+  hashlock PHRASE plate carries (SPEC_hashlock_H6 §8.6), byte for byte:
+  `hashlock v1`, a `method:` line and a `phrase:` line, LF-separated, no trailing
+  newline, the phrase LAST. The method line renders its parameters from
+  `HASHLOCK_SALT`, `HASHLOCK_ITERATIONS` and `HASHLOCK_DKLEN` rather than from a
+  literal, so a parameter change cannot leave an engraved plate lying about how
+  to reproduce the derivation. **The return is `Zeroizing` because the phrase is
+  in it**, and the buffer is `Zeroizing` from the first byte with its capacity
+  reserved up front — not a finished `String` wrapped at the end, which would
+  protect only the copy.
 - Corpus `tests/vectors/hashlock-v0.8.json`, SHA-256
   `4f1819cdd0862b101afd48d0478e8f0b218f933dd3da449915fa3c5eaaba21d4` (was
   `a46c197a3640fe8af4ca4370b46a9637466649227163ce6761bb032354811d30`): a

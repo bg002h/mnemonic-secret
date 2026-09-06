@@ -47,8 +47,12 @@ fn qr_text_matches_every_corpus_row() {
             "sha256" => false,
             other => panic!("row {}: unknown method {other}", row.name),
         };
+        // `qr_text` returns `Zeroizing<String>` (the phrase is in it), so the
+        // comparison derefs to the `String` inside. Every other assertion below
+        // reaches `str`'s inherent methods through the same `Deref` and needed
+        // no change.
         let got = qr_text(hardened, &row.phrase);
-        assert_eq!(got, row.qr_text, "row {}", row.name);
+        assert_eq!(*got, row.qr_text, "row {}", row.name);
         assert_eq!(got.len(), row.bytes, "row {}: byte count", row.name);
         assert!(
             !got.ends_with('\n'),
