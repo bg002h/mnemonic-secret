@@ -69,3 +69,49 @@ HASHLOCK_DKLEN, preimage_hardened, preimage_sha256, preimage_random, digest}`;
 `Error::{PreimageLengthMismatch, TagKindMismatch, RandomnessUnavailable}`.
 Corpus: `crates/ms-codec/tests/vectors/hashlock-v0.8.json`, SHA-pinned in
 the CHANGELOG.
+
+## v0.8 → v0.9 (the hashlock PHRASE rule and its plate text move into `ms-codec`)
+
+v0.9 is **purely additive** — no wire byte, derivation, `Payload`/`Tag`/
+`InspectKind` variant, or existing-verb behaviour changes. It is forced to
+`0.X+1.0` by `RELEASE_PROCESS.md` item 1, not by an API break: the corpus
+`tests/vectors/hashlock-v0.8.json` gains seven `qr_text` rows, moving its
+SHA-256 from `a46c197a3640fe8af4ca4370b46a9637466649227163ce6761bb032354811d30`
+to `4f1819cdd0862b101afd48d0478e8f0b218f933dd3da449915fa3c5eaaba21d4`.
+
+Five new public items, all in `ms_codec::hashlock`:
+
+1. **`validate_phrase(bytes: &[u8]) -> Result<(), PhraseRefusal>`** and
+   **`PhraseRefusal`** — the hashlock PHRASE admission rule, moved in from
+   `ms-cli` (where it was a private predicate) so that every reader of a
+   phrase — `ms-cli` and `me sysw pack`'s `phrase:` record
+   (SPEC_hashlock_H6 §3.1) alike — applies the same rule byte for byte. `me`
+   depends on this crate, not on `ms-cli`'s binary, so the rule could not stay
+   private without a second implementation. `ms-cli` now delegates and keeps
+   only its message rendering.
+2. **`looks_like_ms1(raw: &str) -> bool`** — moved alongside `validate_phrase`
+   for the same reason (a phrase that merely looks like an `ms1` string is
+   refused, not treated as free text).
+3. **`HASHLOCK_PHRASE_MAX_CHARS: usize = 100`** — the length ceiling
+   `validate_phrase` enforces, exported so a caller can size a buffer or a
+   plate layout against it rather than hard-coding `100`.
+4. **`qr_text(hardened: bool, phrase: &str) -> Zeroizing<String>`** — the
+   exact text a hashlock PHRASE plate carries (SPEC_hashlock_H6 §8.6): a
+   `hashlock v1` line, a `method:` line rendered from `HASHLOCK_SALT`,
+   `HASHLOCK_ITERATIONS` and `HASHLOCK_DKLEN` (never a literal, so a parameter
+   change cannot leave an engraved plate lying about how to reproduce the
+   derivation), and a `phrase:` line last, LF-separated, no trailing newline.
+   The return is `Zeroizing` because the phrase is in it, and the buffer is
+   `Zeroizing` from the first byte with capacity reserved up front — not a
+   finished `String` wrapped at the end, which would protect only the copy.
+
+One internal convergence ships in the same commit, not a behaviour change: the
+moved rule's 64-hex check is now `b.is_ascii_hexdigit()` over the already-64-byte
+window instead of `hex::decode(s).is_ok()` — the same predicate over the same
+window, and it keeps the `hex` crate out of a codec that does not otherwise need
+it.
+
+**API + byte-identity.** Nothing is removed, renamed, or made
+`#[non_exhaustive]`; no existing signature changed. `ms-cli`'s `ms-codec`
+requirement moves from `=0.8.0` to `=0.9.0` in the same commit (the pin is
+exact, so the bump is not optional).

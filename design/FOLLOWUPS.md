@@ -57,6 +57,26 @@ Single source of truth for items that surfaced during a review or implementation
 
 ## Open items
 
+### `ms-codec-0-9-0-phrase-rule-two-consumers` — cross-repo: `ms-codec` 0.9.0's phrase rule / `qr_text` has two waiting consumers
+
+- **Surfaced:** 2026-09-05/06, H6 Task 1 (this repo's release step). `ms-codec` 0.9.0 moves the hashlock PHRASE admission rule (`validate_phrase`, `PhraseRefusal`, `looks_like_ms1`, `HASHLOCK_PHRASE_MAX_CHARS`) in from `ms-cli` and adds `qr_text` (see `MIGRATION.md` "v0.8 → v0.9"); this repo's release is Task 1 of `mnemonic-engrave/design/IMPLEMENTATION_PLAN_hashlock_H6_preimage_plates.md`.
+- **Where:** `crates/ms-codec/src/hashlock.rs` (the five new public items); consumers named below are in sibling repos.
+- **What:** two siblings depend on this release before their own H6 tasks can proceed: `mnemonic-engrave`'s `me-cli` bumps its exact `ms-codec` pin `=0.8.0` → `=0.9.0` and wires `phrase:` record support (Task 2, `crates/me-cli/Cargo.toml:53` + `sysw/composer_records.rs`); the SeedHammer fork re-vendors and re-pins its `hashlock/testdata/hashlock-v0.8.provenance.json` to the new corpus SHA `4f1819cdd0862b101afd48d0478e8f0b218f933dd3da449915fa3c5eaaba21d4` (Task 5b).
+- **Why deferred:** both consumer tasks are blocked on this crate being resolvable — `me` and the fork both build `--offline --locked` against a committed `vendor/`, so the crates.io publish (this repo's release step) has to land first.
+- **Status:** open — closes when both companion entries below report their task done.
+- **Companion:** `mnemonic-engrave/design/FOLLOWUPS.md` (Task 2's bump entry) and the SeedHammer fork's tracker (Task 5b's re-vendor + provenance-pin entry).
+- **Tier:** `cross-repo`.
+
+### `qr-text-no-realloc-property-unguarded` — `qr_text`'s no-reallocation property ships with no regression test
+
+- **Surfaced:** 2026-09-06, the H6 Task 1 pre-publish review (`mnemonic-engrave/design/agent-reports/hashlock-H6-A-pre-publish-review.md`, finding N-3).
+- **Where:** `crates/ms-codec/src/hashlock.rs::qr_text` (the `Zeroizing<String>` buffer, reserved at exact capacity before any `push_str`); the gap is in `crates/ms-codec/tests/hashlock_qr_text.rs::the_worst_case_is_194_bytes`.
+- **What:** `qr_text`'s doc comment and the pre-publish review both assert that the buffer is sized so no `push_str` can reallocate and abandon an unwiped copy of a phrase prefix — measured true today (`capacity() == len()` on all 9 shapes tried) — but nothing that ships checks it. Shortening the `with_capacity` arithmetic by `phrase.len()` reproduces the exact defect (capacity 188 != len 122, reallocated) and the shipped test suite does not notice, because the rendered text is byte-identical either way. A later edit to the method line or the labels that forgets the capacity arithmetic would reintroduce the leak silently and green.
+- **Fix (if pursued):** a four-line `assert_eq!(got.capacity(), got.len())` in `the_worst_case_is_194_bytes`.
+- **Why deferred:** this is a secret-handling property (an unwiped intermediate copy of a phrase prefix on reallocation), which per the operator ruling of 2026-08-27 is never Critical and never Important — logged for future optimization, not fixed as part of the release it was found on.
+- **Status:** open.
+- **Tier:** `v1+`.
+
 ### `parity-smoke-toolkit-version-drift` — `parity_smoke_ms_against_toolkit_v0_22_1` has been RED against the installed toolkit
 
 - **Surfaced 2026-08-15**, and it is **pre-existing**: it fails at `bf77f89`, i.e. before the BIP-48 template work. Not caused by that cycle; found by it.
