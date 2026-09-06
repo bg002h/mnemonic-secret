@@ -92,16 +92,6 @@ const SECRET_FLAGS: [&str; 5] = [
     "--hashlock-phrase",
 ];
 
-/// The bech32 character set. A codex32 string's data part draws from it alone,
-/// which is what separates an `ms1` string from a FILENAME that merely starts
-/// with the HRP.
-const BECH32_CHARSET: &str = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
-
-/// The shortest `ms1` string in the v0.1 length set is 50 characters and the
-/// shortest share is 49; 48 is below both and above anything a subcommand word
-/// or a short path could reach.
-const MIN_MS1_LEN: usize = 48;
-
 /// Every string a token could plausibly BE, normalised for classification.
 ///
 /// **Neither trimming nor case-folding is optional.** ` ms1…`, `ms1…` and an
@@ -146,21 +136,30 @@ fn material_class(candidate: &str) -> Option<&'static str> {
 /// uppercase plate string -- the BIP-173/QR spelling `ms decode` accepts --
 /// is caught here and only here.
 pub(crate) fn looks_like_ms1(raw: &str) -> bool {
-    is_ms1_shaped(&raw.trim().to_ascii_lowercase())
-}
-
-fn is_ms1_shaped(s: &str) -> bool {
-    // **Display separators are stripped first, because `ms` strips them on
-    // INTAKE.** A share read off a plate arrives grouped -- `ms12un98 qcjj5
-    // 3dhr9 ...` -- and `read_shares`/`read_input` both remove whitespace, `-`
-    // and `,` before decoding. A guard that classified the RAW token would let
-    // the grouped spelling of the very same secret through while refusing the
-    // unbroken one. Found during P2's implementation, when a test passing
-    // comma-grouped shares positionally was NOT refused.
-    let t: String = crate::format::strip_display_separators(s);
-    t.len() >= MIN_MS1_LEN
-        && t.starts_with("ms1")
-        && t[3..].chars().all(|c| BECH32_CHARSET.contains(c))
+    // DELEGATED to ms_codec::hashlock::looks_like_ms1 since H6, so the argv
+    // guard, the phrase rule and `me sysw pack`'s `phrase:` record all read one
+    // predicate -- and since R0 round 0 (fidelity M-3) there is NO second
+    // spelling left in this crate, which is what §3.1's "there is still exactly
+    // one implementation" says.
+    //
+    // The crate-local `is_ms1_shaped` this file used to keep "for the unit
+    // tests" was not equal to the codec's, and the assertion its own comment
+    // CLAIMED to make did not exist. Written, it fails: the local copy stripped
+    // display separators without case-folding, so it answered FALSE for
+    // `MS10ENTRSQ...` -- the uppercase spelling this function's doc comment
+    // says is "caught here and only here". Production was always correct
+    // (production calls THIS function); four unit rows were driving a
+    // production-dead function that disagreed with it, and they now drive this
+    // one.
+    //
+    // **Display separators are stripped before the test, because `ms` strips
+    // them on INTAKE.** A share read off a plate arrives grouped --
+    // `ms12un98 qcjj5 3dhr9 ...` -- and `read_shares`/`read_input` both remove
+    // whitespace, `-` and `,` before decoding, so a guard that classified the
+    // RAW token would let the grouped spelling of the very same secret through
+    // while refusing the unbroken one. The codec's predicate does the same
+    // stripping, and its own doc comment says so.
+    ms_codec::hashlock::looks_like_ms1(raw)
 }
 
 /// A quoted BIP-39 mnemonic: a legal word count, every word in some supported
@@ -501,21 +500,31 @@ mod tests {
             .collect()
     }
 
+    /// Driven through `looks_like_ms1` -- the ONE predicate, the one production
+    /// calls (H6 R0 round 0, fidelity M-3). These four rows used to drive a
+    /// crate-local copy that answered differently for the uppercase spelling.
     #[test]
     fn a_filename_that_merely_starts_with_the_hrp_is_not_material() {
         // The near-miss control, as a unit test so the reason is next to the
         // rule: `-` and `.` are outside the bech32 charset.
-        assert!(!is_ms1_shaped("ms1-2026-08-23-backup.txt"));
+        assert!(!looks_like_ms1("ms1-2026-08-23-backup.txt"));
         // ...and the grouped spelling of a real card IS material, because that
         // is what `ms` itself ingests.
-        assert!(is_ms1_shaped(
+        assert!(looks_like_ms1(
             "ms10e ntrsq qqqqq qqqqq qqqqq qqqqq qqqqq qqcj9 sxraq 34v7f"
         ));
-        assert!(is_ms1_shaped(
+        assert!(looks_like_ms1(
             "ms10e,ntrsq,qqqqq,qqqqq,qqqqq,qqqqq,qqqqq,qqcj9,sxraq,34v7f"
         ));
-        assert!(is_ms1_shaped(
+        assert!(looks_like_ms1(
             "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f"
+        ));
+        // THE UPPERCASE SPELLING, which the doc comment says is caught "here
+        // and only here" and which the deleted crate-local copy answered FALSE
+        // for. MUTATION: drop the codec's `to_ascii_lowercase` -> this row
+        // fails and the BIP-173/QR spelling of a plate walks onto argv.
+        assert!(looks_like_ms1(
+            "MS10ENTRSQQQQQQQQQQQQQQQQQQQQQQQQQQQQCJ9SXRAQ34V7F"
         ));
     }
 

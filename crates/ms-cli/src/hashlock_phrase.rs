@@ -115,31 +115,24 @@ pub fn read_phrase_stdin() -> Result<Zeroizing<Vec<u8>>> {
 
 /// The rule. Order matters and is the spec's: empty, printable ASCII,
 /// ms1-shape (BEFORE the cap), cap, 64-hex.
+///
+/// DELEGATED TO `ms_codec::hashlock::validate_phrase` since H6, and this
+/// function keeps only the mapping to the CLI's own refusal type and its
+/// `message()` rendering. The rule moved into the codec because `me sysw
+/// pack`'s `phrase:` record has to apply it byte for byte and `me` depends on
+/// `ms-codec`, not on this binary: leaving the rule here would have produced a
+/// third copy of a predicate whose whole point is that no two readers of a
+/// phrase disagree about what one is.
 pub fn validate_phrase(bytes: &[u8]) -> std::result::Result<(), PhraseRefusal> {
-    if bytes.is_empty() {
-        return Err(PhraseRefusal::Empty);
-    }
-    if let Some((at, &byte)) = bytes
-        .iter()
-        .enumerate()
-        .find(|(_, b)| !(0x20..=0x7e).contains(*b))
-    {
-        return Err(PhraseRefusal::NotPrintableAscii { byte, at });
-    }
-    // All bytes are printable ASCII now, so this is a &str.
-    let s = std::str::from_utf8(bytes).expect("printable ASCII is UTF-8");
-    if crate::argv_guard::looks_like_ms1(s) {
-        return Err(PhraseRefusal::Ms1Shaped);
-    }
-    if s.len() > HASHLOCK_PHRASE_MAX_CHARS {
-        return Err(PhraseRefusal::TooLong { chars: s.len() });
-    }
-    // The same predicate `--hex` parses with (the `hex` crate), so the two
-    // cannot disagree about what a pasted preimage looks like (spec §4.3).
-    if s.len() == 64 && hex::decode(s).is_ok() {
-        return Err(PhraseRefusal::Hex64);
-    }
-    Ok(())
+    ms_codec::hashlock::validate_phrase(bytes).map_err(|r| match r {
+        ms_codec::hashlock::PhraseRefusal::Empty => PhraseRefusal::Empty,
+        ms_codec::hashlock::PhraseRefusal::NotPrintableAscii { byte, at } => {
+            PhraseRefusal::NotPrintableAscii { byte, at }
+        }
+        ms_codec::hashlock::PhraseRefusal::Ms1Shaped => PhraseRefusal::Ms1Shaped,
+        ms_codec::hashlock::PhraseRefusal::TooLong { chars } => PhraseRefusal::TooLong { chars },
+        ms_codec::hashlock::PhraseRefusal::Hex64 => PhraseRefusal::Hex64,
+    })
 }
 
 #[cfg(test)]
