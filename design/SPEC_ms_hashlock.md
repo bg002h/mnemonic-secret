@@ -714,7 +714,11 @@ that makes a `0x03` string INERT (never `ClassCodex32Secret`, no new class;
 L22's rule, moved forward), with the record-class vector row, merged and
 **flashed to the operator's device**; (b) `me`'s `validate_record` treats kind
 `0x03` as inert in the same release window as `me`'s ms-codec 0.8 bump (H1b as
-already planned, now with a "before, not after" constraint). This reorders
+already planned, now with a "before, not after" constraint). F-503
+(2026-09-06): the device tests the 33-byte plate SHAPE under any id, and —
+under the preimage id `hash` only — the 0x03 KIND at every length; a 0x03
+payload of another length under another id stays a BIP-93 seed on the device
+(seam row `bip93-plain-payload-0x03`), which the host never packs. This reorders
 4.5's sequence — H0 precedes the 0.18.0 release rather than following it as
 H2. OPERATOR RULING L26 (2026-09-05): H0 is merged and pushed in both repos
 (engrave 024dd08, fork main c4a64fc) and the operator chose **"release
@@ -842,8 +846,9 @@ shipped and flashed:
    builds the container, and the composer's `Which hash?` payload route offers
    the record. (Measured spelling; `--in -` exits 2.)
 7. A `0x03` single fed to the flashed device is INERT — `sysw.Classify` is not
-   `ClassCodex32Secret` and no engrave path offers it — and fed to `me` at the
-   0.8 bump is inert likewise (H0, §9).
+   `ClassCodex32Secret` (at every length under the id `hash`, F-503) and no
+   engrave path offers it — and fed to `me` at the 0.8 bump is inert likewise
+   (H0, §9).
 8. The corpus SHA pin, MIGRATION section, CHANGELOG, manual chapter, both
    version bumps, the publish dry run and both tags are in the same release.
 ---
