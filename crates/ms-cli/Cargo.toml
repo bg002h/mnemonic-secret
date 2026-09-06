@@ -17,7 +17,7 @@ name = "ms"
 path = "src/main.rs"
 
 [dependencies]
-ms-codec = { path = "../ms-codec", version = "=0.8.0" }
+ms-codec = { path = "../ms-codec", version = "=0.9.0" }
 # THE SHARED IO MECHANISM, BY GIT REV -- never `path =`.
 #
 # `ms`'s CI is wider than most: `freebsd-compile-gate` and both `musl-check`

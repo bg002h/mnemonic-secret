@@ -4,6 +4,48 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-codec [0.9.0] — unreleased
+
+**SemVer-MINOR, and the corpus SHA is what forces it.** Per-release checklist
+item 1: `tests/vectors/hashlock-v0.8.json` gains seven `qr_text` rows, so its
+hash moves and the pre-1.0 breaking-change axis requires `0.X+1.0`.
+
+### What's new
+- The hashlock PHRASE RULE, moved in from `ms-cli`, where it was private to the
+  binary: `validate_phrase`, `PhraseRefusal`, `looks_like_ms1` and
+  `HASHLOCK_PHRASE_MAX_CHARS`. `me sysw pack`'s `phrase:` record
+  (SPEC_hashlock_H6 §3.1) must apply the rule byte for byte and `me` depends on
+  this crate, not on `ms-cli`; the alternative was a third copy of a predicate
+  whose whole point is that no two readers of a phrase disagree about what one
+  is. `ms-cli` delegates and keeps only its message rendering, so there is still
+  exactly one implementation.
+- `qr_text(hardened, phrase)` — the text a hashlock PHRASE plate carries
+  (SPEC_hashlock_H6 §8.6), byte for byte: `hashlock v1`, a `method:` line and a
+  `phrase:` line, LF-separated, no trailing newline, the phrase LAST. The method
+  line renders its parameters from `HASHLOCK_SALT`, `HASHLOCK_ITERATIONS` and
+  `HASHLOCK_DKLEN` rather than from a literal, so a parameter change cannot leave
+  an engraved plate lying about how to reproduce the derivation.
+- Corpus `tests/vectors/hashlock-v0.8.json`, SHA-256
+  `4f1819cdd0862b101afd48d0478e8f0b218f933dd3da449915fa3c5eaaba21d4` (was
+  `a46c197a3640fe8af4ca4370b46a9637466649227163ce6761bb032354811d30`): a
+  seven-row `qr_text` array and `format` at v0.9. The fork's
+  `hashlock/testdata/hashlock-v0.8.provenance.json` re-pins to this hash.
+
+### What didn't change
+- **No behaviour change to any existing verb.** Every wire byte, every
+  derivation, every `Payload`/`Tag`/`InspectKind` variant, and every refusal
+  sentence an operator sees. The one edit inside the moved rule is a
+  convergence, not a change: the 64-hex test is `b.is_ascii_hexdigit()` over the
+  already-64-byte window instead of `hex::decode(s).is_ok()` — the same
+  predicate over the same window, and it keeps the `hex` crate out of a codec
+  that does not otherwise need it.
+
+### Migration notes
+- Purely additive to the public API (five items). No source-breaking change:
+  nothing was removed, renamed or made non-exhaustive.
+- `ms-cli`'s `ms-codec` requirement moves from `=0.8.0` to `=0.9.0` in the same
+  commit; the pin is exact, so the bump is not optional.
+
 ## ms-cli [0.18.0] — 2026-09-05
 
 ### What's new
