@@ -280,11 +280,11 @@ fn the_schema_names_every_flag_p2_added_and_the_total_is_67() {
         .map(|s| s["flags"].as_array().map(|a| a.len()).unwrap_or(0))
         .sum();
     assert_eq!(
-        total, 67,
+        total, 68,
         "36 before P2, plus --in x8, --allow-argv-secret x8 and --out x3 (55), \
-         plus `ms hashlock`'s twelve (--hashlock-phrase, \
+         plus `ms hashlock`'s thirteen (--hashlock-phrase, \
          --hashlock-phrase-stdin, --hex, --in, --random, --method, --out, \
-         --json, --no-engraving-card, --group-size, --separator, \
+         --json, --no-engraving-card, --emit-record, --group-size, --separator, \
          --allow-argv-secret; `<MS1>` is a positional, not a flag). A \
          different total means a flag reached the binary and not the schema, or \
          the reverse -- either way the GUI's mirror would be describing a \

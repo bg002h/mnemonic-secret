@@ -4,6 +4,24 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [Unreleased]
+
+### What's new
+- **`ms hashlock --emit-record`** prints the `phrase:` record that `me sysw pack
+  --pack-preimage` admits, so a HASHLOCK PHRASE plate can be cut from a
+  host-derived phrase without hand-encoding `<method>,<phrase>` as hex (F-495).
+  It requires a phrase source — `--hex`, `--random` and an ms1 input have no
+  phrase, and asking for a record there is a usage error rather than a silent
+  omission. The record carries the phrase, so it goes on the stderr card beside
+  the preimage and never on stdout, which still carries only the public digest;
+  `--json` carries it too, in the object that already announces it holds the
+  secret.
+
+  The wire form belongs to `mnemonic-engrave`
+  (`sysw::composer_records::phrase_record`), which is its only consumer, so
+  `tests/hashlock_emit_record.rs` pins the emitted bytes against that repo's
+  committed corpus rows rather than against this implementation.
+
 ## ms-codec [0.9.0] — 2026-09-05
 
 **SemVer-MINOR, and the corpus SHA is what forces it.** Per-release checklist

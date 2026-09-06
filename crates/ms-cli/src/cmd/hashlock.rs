@@ -72,6 +72,14 @@ pub struct HashlockArgs {
     /// Suppress the stderr card.
     #[arg(long)]
     pub no_engraving_card: bool,
+    /// Also print a `phrase:` record for `me sysw pack --pack-preimage`, so a
+    /// PHRASE-form plate can be cut from this phrase without hand-encoding the
+    /// hex. Requires a phrase source: `--hex` and `--random` have no phrase to
+    /// record, and asking for one there is a usage error rather than a silent
+    /// omission. THE RECORD CARRIES THE PHRASE, so it goes on the card beside
+    /// the preimage and never on stdout, which carries only the public digest.
+    #[arg(long)]
+    pub emit_record: bool,
     /// Group the ms1 on the card every N characters (0 = no grouping).
     /// `u16` and the same default as `ms encode` / `ms split`, so the same
     /// value is accepted by every verb that renders a grouped ms1 (review N-1).
@@ -149,6 +157,12 @@ struct Derived {
     method: Option<Method>,
     phrase_chars: Option<usize>,
     source: &'static str,
+    /// The phrase itself, retained ONLY for `--emit-record` (F-495) and
+    /// `Zeroizing` like every other phrase-bearing value here. Without the flag
+    /// this stays `None`, so the default path drops the phrase exactly where it
+    /// always did — at the end of `derive` — rather than carrying it through
+    /// `run` for a caller that will not use it.
+    phrase: Option<Zeroizing<Vec<u8>>>,
 }
 
 fn derive(args: &HashlockArgs, source: SourceKind) -> Result<Derived> {
@@ -195,6 +209,7 @@ fn derive(args: &HashlockArgs, source: SourceKind) -> Result<Derived> {
                 } else {
                     "phrase (stdin)"
                 },
+                phrase: args.emit_record.then(|| bytes.clone()),
             })
         }
         SourceKind::Hex => {
@@ -226,6 +241,7 @@ fn derive(args: &HashlockArgs, source: SourceKind) -> Result<Derived> {
                 method: None,
                 phrase_chars: None,
                 source: "preimage supplied (--hex)",
+                phrase: None,
             })
         }
         SourceKind::Ms1 => {
@@ -236,7 +252,8 @@ fn derive(args: &HashlockArgs, source: SourceKind) -> Result<Derived> {
             )?;
             let (_tag, payload) = ms_codec::decode(&s)?;
             match payload {
-                Payload::Preimage(x) => Ok(Derived { x, method: None, phrase_chars: None, source: "preimage supplied (ms1 plate)" }),
+                Payload::Preimage(x) => Ok(Derived { x, method: None, phrase_chars: None, source: "preimage supplied (ms1 plate)",
+                    phrase: None }),
                 _ => Err(CliError::BadInput(
                     "that is a seed backup, not a hashlock preimage; a preimage plate reads ms10hash... (32 bytes, 64 hex characters)".to_string(),
                 )),
@@ -255,6 +272,7 @@ fn derive(args: &HashlockArgs, source: SourceKind) -> Result<Derived> {
                 method: None,
                 phrase_chars: None,
                 source: "random (OS CSPRNG)",
+                phrase: None,
             })
         }
     }
@@ -291,6 +309,17 @@ fn method_line(d: &Derived) -> String {
 
 pub fn run(args: HashlockArgs) -> Result<u8> {
     let source = pick_source(&args)?;
+    // Refused here rather than ignored: a flag that asks for a record and
+    // silently produces none sends the operator looking for output that was
+    // never going to come (F-495).
+    if args.emit_record && !matches!(source, SourceKind::Phrase { .. }) {
+        return Err(CliError::Usage(
+            "--emit-record needs a phrase: the `phrase:` record carries the phrase and the \
+             method that derives its preimage, and --hex, --random and an ms1 input have no \
+             phrase to record. Cut a PREIMAGE plate from the ms1 string instead."
+                .into(),
+        ));
+    }
     let is_random = matches!(source, SourceKind::Random);
     let d = derive(&args, source)?;
     let h = digest(&d.x);
@@ -304,6 +333,31 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
             crate::out::write_artifact(path, &format!("{ms1}\n"))?;
         }
     }
+
+    // F-495: the `phrase:` record `me sysw pack --pack-preimage` admits, so a
+    // PHRASE-form plate can be cut without hand-encoding hex. The wire form
+    // belongs to mnemonic-engrave (`sysw::composer_records::phrase_record`);
+    // this composes the same two fields and `tests/hashlock_emit_record.rs`
+    // pins the bytes against that repo's committed corpus rows, so the two
+    // spellings cannot drift without this suite going red.
+    let phrase_record: Option<Zeroizing<String>> = match (&d.phrase, d.method) {
+        (Some(ph), Some(m)) => {
+            let method = match m {
+                Method::Hardened => "hardened",
+                Method::Sha256 => "sha256",
+            };
+            let mut body = Zeroizing::new(String::with_capacity(
+                "phrase:".len() + (method.len() + 1 + ph.len()) * 2,
+            ));
+            body.push_str("phrase:");
+            for b in method.as_bytes().iter().chain(b",").chain(ph.iter()) {
+                use std::fmt::Write as _;
+                write!(&mut *body, "{b:02x}").ok();
+            }
+            Some(body)
+        }
+        _ => None,
+    };
 
     let mut stdout = std::io::stdout().lock();
     if args.json {
@@ -329,6 +383,11 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
         if let Some(n) = d.phrase_chars {
             o.insert("phrase_chars".into(), (n as u64).into());
         }
+        // Only under --emit-record, and this object already announces that it
+        // carries the secret; the record carries the phrase verbatim.
+        if let Some(r) = phrase_record.as_deref() {
+            o.insert("phrase_record".into(), r.as_str().into());
+        }
         writeln!(stdout, "{}", serde_json::Value::Object(o)).ok();
     } else {
         writeln!(stdout, "{record}").ok();
@@ -348,6 +407,15 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
         writeln!(stderr, "preimage (ms1):  {grouped}").ok();
         writeln!(stderr, "preimage (hex):  {}", hex(&d.x[..])).ok();
         writeln!(stderr, "method:          {}", method_line(&d)).ok();
+        if let Some(r) = phrase_record.as_deref() {
+            writeln!(stderr, "record (phrase): {r}").ok();
+            writeln!(
+                stderr,
+                "                 THIS RECORD CARRIES THE PHRASE. Feed it to `me sysw pack --pack-preimage` \
+                 to cut a HASHLOCK PHRASE plate; treat the file you put it in like the phrase itself."
+            )
+            .ok();
+        }
         if let Some(n) = d.phrase_chars {
             writeln!(stderr, "phrase:          {n} characters -- write the method line next to your phrase unless the phrase is cut on a HASHLOCK PHRASE plate, which carries it; if the method line is lost, try each method that shipped with the version named on this card (ms-cli {})", env!("CARGO_PKG_VERSION")).ok();
         }
