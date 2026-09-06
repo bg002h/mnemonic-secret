@@ -349,7 +349,7 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
         writeln!(stderr, "preimage (hex):  {}", hex(&d.x[..])).ok();
         writeln!(stderr, "method:          {}", method_line(&d)).ok();
         if let Some(n) = d.phrase_chars {
-            writeln!(stderr, "phrase:          {n} characters -- write the method line next to your phrase; it is on no plate; if the method line is lost, try each method that shipped with the version named on this card (ms-cli {})", env!("CARGO_PKG_VERSION")).ok();
+            writeln!(stderr, "phrase:          {n} characters -- write the method line next to your phrase unless the phrase is cut on a HASHLOCK PHRASE plate, which carries it; if the method line is lost, try each method that shipped with the version named on this card (ms-cli {})", env!("CARGO_PKG_VERSION")).ok();
         }
         writeln!(stderr, "The preimage must be exactly 32 bytes (64 hex characters): the script checks OP_SIZE 32 before OP_SHA256 (composer spec §8i, F-132).").ok();
         writeln!(stderr, "One phrase per policy. Spending any path of a wsh wallet publishes this digest. Never use this phrase as a passphrase or a password anywhere else -- a spend publishes the preimage, and anyone can then test guesses at the phrase itself.").ok();
