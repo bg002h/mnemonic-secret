@@ -74,3 +74,129 @@ mod tests {
         assert_eq!(&preimage_hardened(b"x")[..], &x[..]);
     }
 }
+
+// ─── The PHRASE RULE (SPEC_ms_hashlock §4.3) ────────────────────────────────
+//
+// IT LIVES HERE, IN THE CODEC, for the reason the module header already gives
+// for the derivation: one crate, one corpus, one SHA pin, one provenance pin
+// for the Go port. Until H6 the rule was `ms-cli`'s `validate_phrase`, private
+// to that binary; `me sysw pack`'s `phrase:` record must apply the SAME rule
+// byte for byte (SPEC_hashlock_H6 §3.1) and `me` depends on `ms-codec`, not on
+// `ms-cli`. Leaving it where it was would have produced a THIRD copy of a rule
+// whose whole point is that the host and the device cannot disagree about what
+// a phrase is.
+//
+// `ms-cli`'s `validate_phrase` now delegates here and keeps only its own
+// message rendering, so there is still exactly one implementation.
+
+/// The phrase cap. Its own constant on each side, lockstep-pinned; NOT the
+/// device's plate-legibility `passphrase.MaxLen`.
+pub const HASHLOCK_PHRASE_MAX_CHARS: usize = 100;
+
+/// The shortest string `looks_like_ms1` will call ms1-shaped.
+const MIN_MS1_LEN: usize = 48;
+
+const BECH32_CHARSET: &str = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+
+/// Why a phrase was refused. One variant per rule, in the order the rule
+/// checks them; the CALLER renders the sentence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhraseRefusal {
+    /// No bytes at all.
+    Empty,
+    /// A byte outside `0x20..=0x7E`, with the byte and its position.
+    NotPrintableAscii {
+        /// The offending byte.
+        byte: u8,
+        /// Its zero-based position.
+        at: usize,
+    },
+    /// An ms1 string — a preimage plate, not a phrase.
+    Ms1Shaped,
+    /// Over `HASHLOCK_PHRASE_MAX_CHARS`.
+    TooLong {
+        /// The length that was measured.
+        chars: usize,
+    },
+    /// Exactly 64 hex characters — a preimage in hex, not a phrase.
+    Hex64,
+}
+
+/// `looks_like_ms1` over the NORMALISED token: trimmed, ASCII-lowercased,
+/// display separators (whitespace, `-`, `,`) stripped, then at least 48
+/// characters, an `ms1` prefix and only bech32 characters.
+///
+/// NO CHECKSUM, deliberately. A GROUPED plate is what `ms hashlock`'s
+/// engraving card prints and therefore what an operator retypes, and a
+/// checksum test would answer false for it — so the guard would miss the one
+/// spelling it exists to catch.
+pub fn looks_like_ms1(raw: &str) -> bool {
+    let t: String = raw
+        .trim()
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '-' && *c != ',')
+        .collect();
+    t.len() >= MIN_MS1_LEN
+        && t.starts_with("ms1")
+        && t[3..].chars().all(|c| BECH32_CHARSET.contains(c))
+}
+
+/// The rule. ORDER MATTERS and is the spec's: empty, printable ASCII,
+/// ms1-shape (BEFORE the cap, so a grouped plate string gets the `--in`
+/// remedy and not "too long"), the cap, 64-hex.
+///
+/// It changes nothing: no trim, no case fold, no normalisation. The shape test
+/// works on a copy.
+pub fn validate_phrase(bytes: &[u8]) -> core::result::Result<(), PhraseRefusal> {
+    if bytes.is_empty() {
+        return Err(PhraseRefusal::Empty);
+    }
+    if let Some((at, &byte)) = bytes
+        .iter()
+        .enumerate()
+        .find(|(_, b)| !(0x20..=0x7e).contains(*b))
+    {
+        return Err(PhraseRefusal::NotPrintableAscii { byte, at });
+    }
+    // All bytes are printable ASCII now, so this is a &str.
+    let s = core::str::from_utf8(bytes).expect("printable ASCII is UTF-8");
+    if looks_like_ms1(s) {
+        return Err(PhraseRefusal::Ms1Shaped);
+    }
+    if s.len() > HASHLOCK_PHRASE_MAX_CHARS {
+        return Err(PhraseRefusal::TooLong { chars: s.len() });
+    }
+    if s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(PhraseRefusal::Hex64);
+    }
+    Ok(())
+}
+
+/// The QR text a hashlock PHRASE plate carries (SPEC_hashlock_H6 §8.6), byte
+/// for byte: three labelled lines, LF-separated, NO trailing newline, the
+/// phrase LAST.
+///
+/// The phrase is last so a reader knows where it ends: it may itself contain
+/// `:` and spaces, and everything after `phrase: ` on the final line is the
+/// phrase, verbatim, with real `0x20` spaces.
+///
+/// The method line names the ALGORITHM in full — not the `--method` selector —
+/// so a reader with the plate and no tool can reproduce the derivation. Its
+/// parameters are read from `HASHLOCK_SALT`, `HASHLOCK_ITERATIONS` and
+/// `HASHLOCK_DKLEN` and never from a literal, so a parameter change cannot
+/// leave the plate lying.
+///
+/// `hashlock v1` is the VERSION TAG of this TEXT, not of the derivation. A
+/// future parameter set gets `hashlock v2`.
+pub fn qr_text(hardened: bool, phrase: &str) -> String {
+    let method = if hardened {
+        format!(
+            "method: pbkdf2-hmac-sha256 iterations={HASHLOCK_ITERATIONS} salt={} dklen={HASHLOCK_DKLEN}",
+            core::str::from_utf8(HASHLOCK_SALT).expect("the salt is ASCII"),
+        )
+    } else {
+        "method: sha256".to_string()
+    };
+    format!("hashlock v1\n{method}\nphrase: {phrase}")
+}
