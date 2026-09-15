@@ -20,7 +20,7 @@ use std::path::PathBuf;
 
 use clap::{Args, ValueEnum};
 use ms_codec::hashlock::{
-    digest, preimage_hardened, preimage_random, preimage_sha256, HASHLOCK_DKLEN,
+    digest_sha256, preimage_hardened, preimage_random, preimage_sha256, HASHLOCK_DKLEN,
     HASHLOCK_ITERATIONS, HASHLOCK_SALT,
 };
 use ms_codec::{Payload, Tag};
@@ -322,7 +322,7 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
     }
     let is_random = matches!(source, SourceKind::Random);
     let d = derive(&args, source)?;
-    let h = digest(&d.x);
+    let h = digest_sha256(&d.x);
     let record = format!("hash:{}", hex(&h));
     let ms1 = ms_codec::encode(Tag::HASH, &Payload::Preimage(d.x.clone()))?;
 

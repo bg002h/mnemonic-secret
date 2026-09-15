@@ -204,7 +204,7 @@ fn emit_text(
 /// (SPEC_ms_hashlock §5).
 pub(crate) fn emit_preimage(x: &[u8; 32], json: bool) -> crate::error::Result<u8> {
     use std::io::Write;
-    let h = ms_codec::hashlock::digest(x);
+    let h = ms_codec::hashlock::digest_sha256(x);
     let hx = hex::encode(x);
     let hh = hex::encode(h);
     let mut out = std::io::stdout().lock();

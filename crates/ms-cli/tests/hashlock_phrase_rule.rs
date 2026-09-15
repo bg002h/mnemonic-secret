@@ -60,7 +60,7 @@ fn byte_exact_rows_on_both_channels() {
     ] {
         let expect = {
             let x = ms_codec::hashlock::preimage_sha256(phrase.as_bytes());
-            let h = ms_codec::hashlock::digest(&x);
+            let h = ms_codec::hashlock::digest_sha256(&x);
             format!("hash:{}", hex::encode(h))
         };
         let (code, so, se) = record_via_stdin(phrase.as_bytes(), "sha256");
@@ -232,7 +232,10 @@ fn lockstep_100_and_101() {
     let x = ms_codec::hashlock::preimage_hardened(P100.as_bytes());
     assert_eq!(
         so.trim(),
-        format!("hash:{}", hex::encode(ms_codec::hashlock::digest(&x)))
+        format!(
+            "hash:{}",
+            hex::encode(ms_codec::hashlock::digest_sha256(&x))
+        )
     );
 
     let (code, so, se) = record_via_stdin(P101.as_bytes(), "hardened");

@@ -55,12 +55,137 @@ pub fn preimage_random() -> Result<Zeroizing<[u8; 32]>> {
     Ok(x)
 }
 
-/// H = SHA-256(X): what the policy carries and the plate shows. Public.
-pub fn digest(preimage: &[u8; 32]) -> [u8; 32] {
+/// Which hash the SCRIPT commits to. Crate-local by design: the spec forbids a
+/// shared type across repo boundaries (§5), so every consumer defines its own
+/// and maps onto these functions.
+///
+/// NOT the same axis as the preimage METHOD (`preimage_hardened` vs
+/// `preimage_sha256`). The two share the token `sha256` and mean different
+/// things; four separate reviews of this cycle each found a defect caused by
+/// that collision. Where both could be read, name both or neither.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HashKind {
+    /// `sha256(X)`.
+    Sha256,
+    /// `sha256d(X)` = `sha256(sha256(X))`.
+    Hash256,
+    /// `ripemd160(X)`, the bare primitive.
+    Ripemd160,
+    /// `hash160(X)` = `ripemd160(sha256(X))`.
+    Hash160,
+}
+
+/// A digest and its width. The width is a CONSEQUENCE of the kind, never a
+/// separate thing to keep in sync.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DigestBytes {
+    /// A 32-byte digest: `sha256` or `hash256`.
+    B32([u8; 32]),
+    /// A 20-byte digest: `ripemd160` or `hash160`.
+    B20([u8; 20]),
+}
+
+impl DigestBytes {
+    /// The digest bytes, at their kind's width.
+    pub fn as_slice(&self) -> &[u8] {
+        match self {
+            DigestBytes::B32(b) => &b[..],
+            DigestBytes::B20(b) => &b[..],
+        }
+    }
+}
+
+impl HashKind {
+    /// THE ONE NAMED DISPATCH in this crate. Spec §10 requires the KAT to
+    /// exercise the dispatch and not only the four functions, because four
+    /// correct functions plus one mis-wired arm is the same lost-funds outcome
+    /// with a different cause.
+    pub fn digest(self, preimage: &[u8; 32]) -> DigestBytes {
+        match self {
+            HashKind::Sha256 => DigestBytes::B32(digest_sha256(preimage)),
+            HashKind::Hash256 => DigestBytes::B32(digest_hash256(preimage)),
+            HashKind::Ripemd160 => DigestBytes::B20(digest_ripemd160(preimage)),
+            HashKind::Hash160 => DigestBytes::B20(digest_hash160(preimage)),
+        }
+    }
+
+    /// The lowercase miniscript fragment name. Case is rejected, never folded.
+    pub fn token(self) -> &'static str {
+        match self {
+            HashKind::Sha256 => "sha256",
+            HashKind::Hash256 => "hash256",
+            HashKind::Ripemd160 => "ripemd160",
+            HashKind::Hash160 => "hash160",
+        }
+    }
+
+    /// The Script opcode the spending script actually contains.
+    ///
+    /// Spec §3 F1: every hash fragment lowers to
+    /// `OP_SIZE <32> OP_EQUALVERIFY <hashop> <h> OP_EQUAL`, and `<hashop>` is
+    /// THE VARIABLE -- only it and the digest width move. The engraving card
+    /// names this opcode, and it named `OP_SHA256` under every kind for one
+    /// release: a false statement about the object in the operator's hand, on
+    /// the one axis this whole cycle exists to disambiguate, in the line a
+    /// kind-confused operator would use to check themselves.
+    pub fn opcode(self) -> &'static str {
+        match self {
+            HashKind::Sha256 => "OP_SHA256",
+            HashKind::Hash256 => "OP_HASH256",
+            HashKind::Ripemd160 => "OP_RIPEMD160",
+            HashKind::Hash160 => "OP_HASH160",
+        }
+    }
+}
+
+/// H = SHA-256(X): what a sha256 policy carries and the plate shows. Public.
+pub fn digest_sha256(preimage: &[u8; 32]) -> [u8; 32] {
     let mut h = [0u8; 32];
     h.copy_from_slice(&Sha256::digest(preimage));
     h
 }
+
+/// H = SHA-256(SHA-256(X)) -- `sha256d`. THE DANGEROUS ONE: written one word
+/// short as `sha256(x)` it is still 32 bytes, still type-checks, still lowers,
+/// and Core still agrees with the address. Only the KAT catches it.
+pub fn digest_hash256(preimage: &[u8; 32]) -> [u8; 32] {
+    let once = Sha256::digest(preimage);
+    let mut h = [0u8; 32];
+    h.copy_from_slice(&Sha256::digest(once));
+    h
+}
+
+/// H = RIPEMD-160(X) -- the BARE primitive, not hash160.
+pub fn digest_ripemd160(preimage: &[u8; 32]) -> [u8; 20] {
+    use ripemd::Ripemd160;
+    let mut h = [0u8; 20];
+    h.copy_from_slice(&Ripemd160::digest(preimage));
+    h
+}
+
+/// H = RIPEMD-160(SHA-256(X)) -- `hash160`. Same width as ripemd160 and a
+/// different preimage relation (spec §3 F4).
+pub fn digest_hash160(preimage: &[u8; 32]) -> [u8; 20] {
+    use ripemd::Ripemd160;
+    let inner = Sha256::digest(preimage);
+    let mut h = [0u8; 20];
+    h.copy_from_slice(&Ripemd160::digest(inner));
+    h
+}
+
+// NO `digest` ALIAS. An earlier draft kept the old name as a `#[deprecated]`
+// shim "so phase 3 keeps compiling". Every internal call site then becomes a
+// deprecation warning, and `-D warnings` is a REQUIRED CI context. Measured by
+// building that counterfactual (2026-09-15): `clippy -p ms-codec
+// --all-targets` reports 14, `-p ms-cli --all-targets` 4. Without
+// `--all-targets` ms-codec reports 1, which is why a gate that drops the flag
+// does not see this at all. (An earlier record said "nine"; it did not
+// reproduce under any flag combination, and this file's own new unit tests are
+// two of the 14.)
+//
+// `digest` is renamed to `digest_sha256` and its call sites in THIS repo move
+// with it. Phase 3 (`me-cli`) is a different repo pinned to a git rev, so it
+// does not break until it chooses to bump.
 
 #[cfg(test)]
 mod tests {
@@ -72,6 +197,68 @@ mod tests {
         assert_eq!(x.len(), 32);
         // Two calls agree: the salt and count are constants, not state.
         assert_eq!(&preimage_hardened(b"x")[..], &x[..]);
+    }
+
+    /// The four functions are FOUR FUNCTIONS (spec §3 F4), and the two that
+    /// share a width are the pair with no structural signal — so they are
+    /// asserted to DIFFER, not merely to compute. The KAT in
+    /// `tests/hashlock_kat.rs` pins the VALUES against `python3 hashlib`;
+    /// this pins the STRUCTURE, and needs no corpus to do it.
+    #[test]
+    fn the_four_digests_are_four_different_functions() {
+        let x = [0xabu8; 32];
+        let s = digest_sha256(&x);
+        let d = digest_hash256(&x);
+        let r = digest_ripemd160(&x);
+        let h = digest_hash160(&x);
+        assert_ne!(
+            s, d,
+            "hash256 is sha256d, not sha256 — one word short is the whole defect"
+        );
+        assert_ne!(
+            r, h,
+            "hash160 is ripemd160(sha256(x)); ripemd160 is the bare primitive"
+        );
+        assert_eq!(s.len(), 32);
+        assert_eq!(d.len(), 32);
+        assert_eq!(r.len(), 20);
+        assert_eq!(h.len(), 20);
+    }
+
+    /// The dispatch is the thing every caller uses, so it is tested as such:
+    /// four correct functions behind one mis-wired arm is the same lost-funds
+    /// outcome with a different cause.
+    #[test]
+    fn the_dispatch_selects_the_matching_function() {
+        let x = [0x11u8; 32];
+        assert_eq!(
+            HashKind::Sha256.digest(&x),
+            DigestBytes::B32(digest_sha256(&x))
+        );
+        assert_eq!(
+            HashKind::Hash256.digest(&x),
+            DigestBytes::B32(digest_hash256(&x))
+        );
+        assert_eq!(
+            HashKind::Ripemd160.digest(&x),
+            DigestBytes::B20(digest_ripemd160(&x))
+        );
+        assert_eq!(
+            HashKind::Hash160.digest(&x),
+            DigestBytes::B20(digest_hash160(&x))
+        );
+    }
+
+    /// The tokens are the miniscript fragment names, lowercase. They are the
+    /// operand name on the engraving card's `for md compose:` line and the
+    /// `hash:<kind>:` tag in the record, so a typo here composes a wallet
+    /// nobody can spend.
+    #[test]
+    fn tokens_are_the_lowercase_fragment_names() {
+        assert_eq!(HashKind::Sha256.token(), "sha256");
+        assert_eq!(HashKind::Hash256.token(), "hash256");
+        assert_eq!(HashKind::Ripemd160.token(), "ripemd160");
+        assert_eq!(HashKind::Hash160.token(), "hash160");
     }
 }
 

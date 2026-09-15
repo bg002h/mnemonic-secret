@@ -16,7 +16,7 @@
 use std::process::Command;
 
 use ms_codec::hashlock::{
-    digest, preimage_hardened, HASHLOCK_DKLEN, HASHLOCK_ITERATIONS, HASHLOCK_SALT,
+    digest_sha256, preimage_hardened, HASHLOCK_DKLEN, HASHLOCK_ITERATIONS, HASHLOCK_SALT,
 };
 
 // LITERALS. Not the crate's constants.
@@ -109,5 +109,9 @@ fn hashlock_repro_three_ways() {
     for (i, b) in x.iter_mut().enumerate() {
         *b = u8::from_str_radix(&EXPECTED_X[2 * i..2 * i + 2], 16).unwrap();
     }
-    assert_eq!(hex(&digest(&x)), EXPECTED_H, "digest of the literal X");
+    assert_eq!(
+        hex(&digest_sha256(&x)),
+        EXPECTED_H,
+        "digest of the literal X"
+    );
 }

@@ -4,7 +4,8 @@
 //! not a regression pin. `hashlock_repro.rs` re-runs those tools in CI.
 
 use ms_codec::hashlock::{
-    digest, preimage_hardened, preimage_sha256, HASHLOCK_DKLEN, HASHLOCK_ITERATIONS, HASHLOCK_SALT,
+    digest_sha256, preimage_hardened, preimage_sha256, HASHLOCK_DKLEN, HASHLOCK_ITERATIONS,
+    HASHLOCK_SALT,
 };
 
 fn hex(b: &[u8]) -> String {
@@ -46,10 +47,10 @@ fn anchor_rows_both_methods_pin_x_and_h() {
     for (phrase, hx, hh, sx, sh) in ROWS {
         let x = preimage_hardened(phrase.as_bytes());
         assert_eq!(hex(&x[..]), *hx, "hardened X for {phrase:?}");
-        assert_eq!(hex(&digest(&x)), *hh, "hardened H for {phrase:?}");
+        assert_eq!(hex(&digest_sha256(&x)), *hh, "hardened H for {phrase:?}");
         let x = preimage_sha256(phrase.as_bytes());
         assert_eq!(hex(&x[..]), *sx, "sha256 X for {phrase:?}");
-        assert_eq!(hex(&digest(&x)), *sh, "sha256 H for {phrase:?}");
+        assert_eq!(hex(&digest_sha256(&x)), *sh, "sha256 H for {phrase:?}");
     }
 }
 
@@ -111,10 +112,18 @@ fn corpus_rows_are_filled_and_re_derive() {
         }
         let x = preimage_hardened(phrase.as_bytes());
         assert_eq!(hex(&x[..]), r["hardened_x"], "{phrase:?}: hardened X");
-        assert_eq!(hex(&digest(&x)), r["hardened_h"], "{phrase:?}: hardened H");
+        assert_eq!(
+            hex(&digest_sha256(&x)),
+            r["hardened_h"],
+            "{phrase:?}: hardened H"
+        );
         let x = preimage_sha256(phrase.as_bytes());
         assert_eq!(hex(&x[..]), r["sha256_x"], "{phrase:?}: sha256 X");
-        assert_eq!(hex(&digest(&x)), r["sha256_h"], "{phrase:?}: sha256 H");
+        assert_eq!(
+            hex(&digest_sha256(&x)),
+            r["sha256_h"],
+            "{phrase:?}: sha256 H"
+        );
     }
     // The kind row: the plate string and its entr-32 pair are the codec's own.
     let k0 = &v["kind"][0];
@@ -131,7 +140,7 @@ fn corpus_rows_are_filled_and_re_derive() {
     assert_eq!(plate, k0["ms1"].as_str().unwrap());
     let pair = ms_codec::encode(ms_codec::Tag::ENTR, &ms_codec::Payload::Entr(x.to_vec())).unwrap();
     assert_eq!(pair, k0["entr32_pair_ms1"].as_str().unwrap());
-    assert_eq!(hex(&digest(&x)), k0["digest"].as_str().unwrap());
+    assert_eq!(hex(&digest_sha256(&x)), k0["digest"].as_str().unwrap());
 }
 
 #[test]
@@ -147,7 +156,7 @@ fn digest_is_sha256_of_x() {
     // sha256 of 32 zero bytes, a public constant.
     let x = [0u8; 32];
     assert_eq!(
-        hex(&digest(&x)),
+        hex(&digest_sha256(&x)),
         "66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925"
     );
 }
