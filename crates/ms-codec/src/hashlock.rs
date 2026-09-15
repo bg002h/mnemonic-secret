@@ -392,7 +392,7 @@ pub fn validate_phrase(bytes: &[u8]) -> core::result::Result<(), PhraseRefusal> 
 /// can reallocate and abandon an unwiped buffer part-way through. The `method`
 /// line is deliberately NOT protected -- it is three compile-time constants and
 /// carries nothing of the phrase.
-pub fn qr_text(hardened: bool, phrase: &str) -> Zeroizing<String> {
+pub fn qr_text(hardened: bool, kind: HashKind, phrase: &str) -> Zeroizing<String> {
     const HEAD: &str = "hashlock v1\n";
     const LABEL: &str = "\nphrase: ";
     let method = if hardened {
@@ -403,11 +403,15 @@ pub fn qr_text(hardened: bool, phrase: &str) -> Zeroizing<String> {
     } else {
         "method: sha256".to_string()
     };
+    // ITS OWN LINE, never appended to `method:` -- H6 §6.5 pins that line at 73
+    // characters and the plate refuses an eleventh row at every font rung.
+    let kind_line = format!("\nhash: {}", kind.token());
     let mut out: Zeroizing<String> = Zeroizing::new(String::with_capacity(
-        HEAD.len() + method.len() + LABEL.len() + phrase.len(),
+        HEAD.len() + method.len() + kind_line.len() + LABEL.len() + phrase.len(),
     ));
     out.push_str(HEAD);
     out.push_str(&method);
+    out.push_str(&kind_line);
     out.push_str(LABEL);
     out.push_str(phrase);
     out
