@@ -129,9 +129,15 @@ fn hex_source_gets_the_unconditional_warning_and_no_write_it_down_line() {
     let se = String::from_utf8_lossy(&out.stderr);
     assert!(se.contains("publishes these 32 bytes in the clear"), "{se}");
     assert!(se.contains("preimage supplied"), "{se}");
+    // ASSERT THE STRUCTURE, NOT THE SENTENCE. This forbade the literal string
+    // "write the method line next to your phrase" -- which commit 3056360
+    // reworded, leaving an assertion that could never fire and a spec §4.4
+    // guarantee unprotected for two commits (R0 round 8, I-2). The guarantee is
+    // that a route with NO PHRASE emits no phrase line at all; the card's
+    // wording is free to change.
     assert!(
-        !se.contains("write the method line next to your phrase"),
-        "no phrase, no instruction:\n{se}"
+        !se.lines().any(|l| l.starts_with("phrase:")),
+        "no phrase on this route, so no `phrase:` line -- whatever it says:\n{se}"
     );
     assert!(
         !se.contains("brainwallet") && !se.contains("72 days"),
@@ -181,7 +187,7 @@ fn json_both_variants() {
     assert_eq!(v["method"]["iterations"], 100000);
     assert_eq!(v["method"]["salt"], "ms-hashlock-v1");
     assert_eq!(v["phrase_chars"], 28);
-    for k in ["digest", "preimage_hex", "sha256_operand"] {
+    for k in ["digest", "preimage_hex", "hash_operand"] {
         let s = v[k].as_str().unwrap();
         assert_eq!(s, s.to_ascii_lowercase(), "{k} must be lowercase hex");
     }

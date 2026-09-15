@@ -20,7 +20,7 @@ use std::path::PathBuf;
 
 use clap::{Args, ValueEnum};
 use ms_codec::hashlock::{
-    digest_sha256, preimage_hardened, preimage_random, preimage_sha256, HASHLOCK_DKLEN,
+    preimage_hardened, preimage_random, preimage_sha256, HashKind, HASHLOCK_DKLEN,
     HASHLOCK_ITERATIONS, HASHLOCK_SALT,
 };
 use ms_codec::{Payload, Tag};
@@ -48,6 +48,13 @@ pub struct HashlockArgs {
     /// Read the hashlock phrase from stdin, byte-verbatim (one trailing newline stripped).
     #[arg(long)]
     pub hashlock_phrase_stdin: bool,
+    /// Which hash the SCRIPT commits to: sha256, hash256, ripemd160, hash160.
+    /// Omit it and every kind's digest is listed on stderr (under --json, in
+    /// the object as `digests_by_kind`, with `kind_specified: false`) -- a
+    /// plate cut before this existed carries no kind, and a lookup beats an
+    /// impossible check. Case is rejected, never folded.
+    #[arg(long, value_name = "KIND", value_parser = parse_kind)]
+    pub kind: Option<HashKind>,
     /// An existing preimage: exactly 32 bytes (64 hex characters). `-` reads stdin.
     #[arg(long, value_name = "HEX")]
     pub hex: Option<String>,
@@ -118,6 +125,21 @@ impl SourceKind {
 }
 
 const FIVE_SOURCES: &str = "exactly one source: --hashlock-phrase TEXT, --hashlock-phrase-stdin, --hex HEX, an ms1 string (argument, `-`, or --in FILE), or --random";
+
+/// Parse the `--kind` token. Fully-qualified `core::result::Result` because this
+/// crate defines a ONE-parameter `Result` alias; a bare `Result<_, _>` is E0107.
+fn parse_kind(s: &str) -> core::result::Result<HashKind, String> {
+    match s {
+        "sha256" => Ok(HashKind::Sha256),
+        "hash256" => Ok(HashKind::Hash256),
+        "ripemd160" => Ok(HashKind::Ripemd160),
+        "hash160" => Ok(HashKind::Hash160),
+        other => Err(format!(
+            "unknown hash kind {other:?}: expected sha256, hash256, ripemd160 or hash160 \
+             (lowercase; case is rejected, never folded)"
+        )),
+    }
+}
 
 fn pick_source(args: &HashlockArgs) -> Result<SourceKind> {
     let mut chosen: Vec<SourceKind> = Vec::new();
@@ -322,8 +344,18 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
     }
     let is_random = matches!(source, SourceKind::Random);
     let d = derive(&args, source)?;
-    let h = digest_sha256(&d.x);
-    let record = format!("hash:{}", hex(&h));
+    let kind = args.kind.unwrap_or(HashKind::Sha256);
+    let hb = kind.digest(&d.x);
+    let h = hb.as_slice();
+    // SPEC S6's producer rule: BARE for sha256, explicit for the other three.
+    // A bare record MEANS sha256, so emitting one for another kind hands
+    // `me sysw pack` a digest it will read as sha256 -- the scheme S6 names as
+    // rejected, because it composes a wallet nobody can spend.
+    let record = if kind == HashKind::Sha256 {
+        format!("hash:{}", hex(h))
+    } else {
+        format!("hash:{}:{}", kind.token(), hex(h))
+    };
     let ms1 = ms_codec::encode(Tag::HASH, &Payload::Preimage(d.x.clone()))?;
 
     if let Some(path) = args.out.as_deref() {
@@ -362,12 +394,36 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
     let mut stdout = std::io::stdout().lock();
     if args.json {
         let mut o = serde_json::Map::new();
-        o.insert("digest".into(), hex(&h).into());
+        o.insert("digest".into(), hex(h).into());
         o.insert("hash_record".into(), record.clone().into());
         o.insert(
-            "sha256_operand".into(),
-            format!("sha256={}", hex(&h)).into(),
+            "hash_operand".into(),
+            format!("{}={}", kind.token(), hex(h)).into(),
         );
+        o.insert("kind".into(), kind.token().into());
+        if args.kind.is_none() {
+            // SPEC §13.4 for MACHINE consumers. Under `--json
+            // --no-engraving-card` -- and ONLY that pair -- stderr is pinned to
+            // exactly the advisory (§4.4, §11), so the stderr listing stands
+            // down there and the notice travels in this object instead. Under
+            // `--json` with the card it does BOTH, because the human is reading
+            // the card. (This comment said "suppressed under --json" for one
+            // round, which was the guard being one flag wider than its
+            // contract -- R0 round 5, I-1.) A consumer reading `hash_operand`
+            // alone would otherwise take the sha256 default for a stated
+            // choice.
+            o.insert("kind_specified".into(), false.into());
+            let mut by = serde_json::Map::new();
+            for k in [
+                HashKind::Sha256,
+                HashKind::Hash256,
+                HashKind::Ripemd160,
+                HashKind::Hash160,
+            ] {
+                by.insert(k.token().into(), hex(k.digest(&d.x).as_slice()).into());
+            }
+            o.insert("digests_by_kind".into(), by.into());
+        }
         o.insert("preimage_hex".into(), hex(&d.x[..]).into());
         o.insert("preimage_ms1".into(), ms1.clone().into());
         o.insert("source".into(), d.source.into());
@@ -402,8 +458,34 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
             "THIS CARD CARRIES THE PREIMAGE -- the secret. stdout carries only the public digest."
         )
         .ok();
-        writeln!(stderr, "digest:          {}", hex(&h)).ok();
-        writeln!(stderr, "for md compose:  --path ... sha256={}", hex(&h)).ok();
+        writeln!(stderr, "digest:          {}", hex(h)).ok();
+        // SPEC §11: the ONLY line keeping the digest function and `md compose`'s
+        // option name in agreement. It shipped once saying `sha256=` under every
+        // kind, which tells the operator to build a wallet whose hashlock nobody
+        // can satisfy.
+        writeln!(
+            stderr,
+            "for md compose:  --path ... {}={}",
+            kind.token(),
+            hex(h)
+        )
+        .ok();
+        if args.kind.is_some_and(|k| k != HashKind::Sha256) {
+            // The line above proposes a command fragment with full confidence.
+            // `md compose` refuses a non-sha256 operand until phase 1 ships, and
+            // its refusal says "unknown option ripemd160" -- which reads as a
+            // typo, not as "not wired up yet". Written as a CONDITIONAL so that
+            // phase 1 shipping does not make this sentence false.
+            writeln!(
+                stderr,
+                "                 requires `{0}=` support in `md compose`. If it answers \
+                 \"unknown option `{0}`\", that support has not shipped in your `md` yet -- \
+                 the preimage and digest above are still correct, and `md` is what has to \
+                 catch up.",
+                kind.token()
+            )
+            .ok();
+        }
         writeln!(stderr, "preimage (ms1):  {grouped}").ok();
         writeln!(stderr, "preimage (hex):  {}", hex(&d.x[..])).ok();
         writeln!(stderr, "method:          {}", method_line(&d)).ok();
@@ -417,9 +499,14 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
             .ok();
         }
         if let Some(n) = d.phrase_chars {
-            writeln!(stderr, "phrase:          {n} characters -- write the method line next to your phrase unless the phrase is cut on a HASHLOCK PHRASE plate, which carries it; if the method line is lost, try each method that shipped with the version named on this card (ms-cli {})", env!("CARGO_PKG_VERSION")).ok();
+            writeln!(stderr, "phrase:          {n} characters -- write the method line AND the hash line ({}) next to your phrase unless the phrase is cut on a HASHLOCK PHRASE plate, which carries both; if the method line is lost, try each method that shipped with the version named on this card (ms-cli {}), and if the hash line is lost, re-run with no --kind and match the digest against your descriptor", kind.token(), env!("CARGO_PKG_VERSION")).ok();
         }
-        writeln!(stderr, "The preimage must be exactly 32 bytes (64 hex characters): the script checks OP_SIZE 32 before OP_SHA256 (composer spec §8i, F-132).").ok();
+        // The OPCODE VARIES WITH THE KIND and the 32 does not (spec §3 F1:
+        // `OP_SIZE <32> OP_EQUALVERIFY <hashop> <h> OP_EQUAL`). This line said
+        // OP_SHA256 under every kind for one release -- a false statement about
+        // the object in the operator's hand, in the line they would self-check
+        // against.
+        writeln!(stderr, "The preimage must be exactly 32 bytes (64 hex characters) for every kind: the script checks OP_SIZE 32 before {} (composer spec §8i, F-132).", kind.opcode()).ok();
         writeln!(stderr, "One phrase per policy. Spending any path of a wsh wallet publishes this digest. Never use this phrase as a passphrase or a password anywhere else -- a spend publishes the preimage, and anyone can then test guesses at the phrase itself.").ok();
         match d.method {
             Some(Method::Sha256) => {
@@ -439,6 +526,123 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
             writeln!(stderr, "No phrase exists, so nothing can be guessed, and nothing can be remembered. The file you just wrote is the only copy until you cut the plate.").ok();
         }
         writeln!(stderr, "source:          {}", d.source).ok();
+    }
+    // ─── NOTICES THAT SURVIVE --no-engraving-card ──────────────────────────
+    //
+    // THE RULE, and it has TWO clauses. Everything above this line is THE CARD
+    // -- what an operator transcribes or engraves -- and `--no-engraving-card`
+    // may suppress it. Everything below is a NOTICE about a hazard in what was
+    // just emitted, and suppressing the card is not consent to lose it. A new
+    // line goes BELOW unless it is genuinely part of the card.
+    //
+    // SECOND CLAUSE, AND IT IS NOT OPTIONAL: every notice below still carries
+    // `!(args.json && args.no_engraving_card)`. That PAIR is a machine-output
+    // purity contract -- `hashlock_outputs.rs::json_both_variants` pins stderr
+    // to exactly the PrivateKeyMaterial advisory there -- and a notice does not
+    // get to break it. The machine-readable form of the same fact travels in
+    // the `--json` object instead (`kind`, `kind_specified`, `digests_by_kind`).
+    //
+    // Reading clause one as licence to drop clause two is R0 round 8's I-1: the
+    // hash256 notice shipped UNGUARDED for one round and put 485 bytes on a
+    // stream pinned to one line.
+    //
+    // This boundary exists because the same mistake happened THREE TIMES in one
+    // cycle -- R0 r4 C-1 (the §13.4 listing nested in the guard), r5 I-1 (the
+    // guard one flag wider than its contract), r7 I-1 (the hash256 warning
+    // nested in the guard). Three occurrences of one mistake is a wrong shape,
+    // not three slips: before this line there was nothing in the code saying
+    // which of the two kinds of thing a new `writeln!` was.
+    //
+    // NOT YET MOVED, and tracked as F-536: the three pre-existing `WARNING:`
+    // lines above (brainwallet, short phrase, --hex publishes the preimage) are
+    // hazard notices by this rule and are still card-scoped. Moving them is a
+    // behaviour change no review found, so it is filed rather than folded here.
+
+    // A NOTICE, not a card line: it is about the RECORD ON STDOUT, which ships
+    // whether or not `--no-engraving-card` suppressed the card. Its twin above
+    // is about the card's own `for md compose:` line and correctly goes with it.
+    // Keeping both halves on the card would have lost this one on exactly the
+    // piping path it describes (R0 round 8, M-3).
+    if args.kind.is_some_and(|k| k != HashKind::Sha256) && !(args.json && args.no_engraving_card) {
+        writeln!(
+            stderr,
+            "the record on stdout needs `{0}` support in `me sysw pack`. If it asks for \
+             \"exactly 64 hex characters\", that support has not shipped in your `me` yet -- \
+             the record is correct and `me` is what has to catch up. Do not reshape the \
+             record to satisfy it.",
+            kind.token()
+        )
+        .ok();
+    }
+    // The object's `kind` field is the machine-readable form of this hazard, so
+    // nothing is lost under the pinned pair -- only moved, as with §13.4 below.
+    if kind == HashKind::Hash256 && !(args.json && args.no_engraving_card) {
+        // Spec §13.2's operator-facing Critical, at the moment of emission:
+        // hash256 and sha256 are BOTH 64 hex, so the tag is the only thing
+        // distinguishing them. `me sysw pack` refuses the tagged record with
+        // "hash: must be exactly 64 hex characters" -- and obeying that
+        // literally means deleting `hash256:`, which leaves a record that
+        // pack ACCEPTS and `me sysw show` then labels "sha256 hashlock".
+        // A funded wallet whose hashlock the plate does not satisfy.
+        writeln!(
+                stderr,
+                "WARNING: this record's `hash256:` tag is the ONLY thing distinguishing it from a \
+                 sha256 record -- both digests are 64 hex. If a tool refuses it asking for \"exactly \
+                 64 hex characters\", DO NOT DELETE THE TAG to satisfy it: the result is accepted as \
+                 a SHA256 hashlock and the wallet it builds cannot be spent with this preimage. The \
+                 tool is what needs hash256 support."
+            )
+            .ok();
+    }
+
+    if args.kind.is_none() && !(args.json && args.no_engraving_card) {
+        // SPEC §13.4: a plate cut before --kind existed carries no kind, so
+        // listing all four turns an impossible check into a lookup. What is
+        // forbidden is assuming sha256 in silence -- which is what this did.
+        //
+        // OUTSIDE the --no-engraving-card guard ON PURPOSE. §13.4's clause is
+        // unconditional, and the operator who suppresses the card is the one
+        // who most needs this: the card carries the PREIMAGE, so suppressing
+        // it is the safety-conscious choice, and nesting this inside it hands
+        // that operator one unlabelled sha256 digest instead. It shipped that
+        // way once (R0 round 4, C-1). Do not fold it back in.
+        //
+        // The guard is `!(json && no_engraving_card)` -- BOTH flags -- because
+        // that pair, and only that pair, is what `hashlock_outputs.rs` pins to
+        // exactly the PrivateKeyMaterial advisory (§4.4, §11). There the notice
+        // changes channel instead, into `kind_specified` and `digests_by_kind`
+        // on the object.
+        //
+        // It was `!args.json` alone for one round (R0 round 5, I-1), which is
+        // BROADER than the contract. Under plain `--json > out.json` -- the
+        // normal way to use it -- the card still prints to the terminal, its
+        // `for md compose:` line still says `sha256=`, and the §13.4 notice had
+        // gone into the redirected file. The human was shown one unlabelled
+        // sha256 operand with nothing saying a kind was never chosen.
+        writeln!(
+            stderr,
+            // "preimage", not "phrase": --random, --hex and the ms1-plate route have
+            // no phrase at all, and on --random this line lands two lines after
+            // "No phrase exists". The digest is of the PREIMAGE on every route,
+            // so one word is true everywhere. (Journey walk M-1 -- the same
+            // object-conflation class as R0 round 5's Critical.)
+            "no --kind given; stdout carries the sha256 record. This preimage's digest under each kind:"
+        )
+        .ok();
+        for k in [
+            HashKind::Sha256,
+            HashKind::Hash256,
+            HashKind::Ripemd160,
+            HashKind::Hash160,
+        ] {
+            writeln!(
+                stderr,
+                "  {:<10} {}",
+                k.token(),
+                hex(k.digest(&d.x).as_slice())
+            )
+            .ok();
+        }
     }
     if args.json {
         emit_output_class_advisory(OutputClass::PrivateKeyMaterial, &mut stderr);
