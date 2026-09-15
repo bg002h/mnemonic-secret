@@ -115,3 +115,105 @@ it.
 `#[non_exhaustive]`; no existing signature changed. `ms-cli`'s `ms-codec`
 requirement moves from `=0.8.0` to `=0.9.0` in the same commit (the pin is
 exact, so the bump is not optional).
+
+## v0.9 → v0.10 (the hash KIND becomes explicit — all four miniscript hash fragments)
+
+v0.10 is the first **source-breaking** hashlock release. Nothing on the wire
+changes for an existing sha256 payload — the `hash:<hex>` record is byte for
+byte what v0.9 emitted — but two public signatures move, one `--json` key is
+renamed, and the QR text a plate carries gains a line **for every kind,
+including sha256**.
+
+Why: miniscript has four hash fragments (`sha256`, `hash256`, `ripemd160`,
+`hash160`), and all four take a **32-byte preimage** — only the digest width
+differs (32 bytes or 20). So the preimage half of a plate was already correct
+for all four; what was missing was any record of *which* hash the preimage was
+committed to. A digest alone does not say, and guessing wrong composes a wallet
+nobody can spend.
+
+**1. `qr_text` gains a `kind` parameter.**
+
+```
+-qr_text(hardened: bool, phrase: &str) -> Zeroizing<String>
++qr_text(hardened: bool, kind: HashKind, phrase: &str) -> Zeroizing<String>
+```
+
+Pass `HashKind::Sha256` to get v0.9's *semantics*, but note the **text is not
+identical**: a `hash: <kind>` line is inserted between `method:` and `phrase:`
+unconditionally, so a sha256 plate cut under v0.10 differs from one cut under
+v0.9. That is deliberate — a plate read years later must name the hash it
+commits to rather than leaving it to the md1 card the operator was told to store
+SEPARATELY (SPEC_hashlock_kinds §13.1). The line is its own, never appended to
+`method:`, because H6 §6.5 pins that line at 73 characters and the plate refuses
+an eleventh row at every font rung.
+
+**Reading an existing plate: no `hash:` line means the kind is UNKNOWN — it does
+NOT mean sha256.** The `hash:` line records which hash the SCRIPT commits to. Its
+absence on a pre-v0.10 plate records only that the tool never asked, and
+non-sha256 hashlock wallets are buildable today: `md-codec` carries all four
+miniscript hash fragments, and SPEC_hashlock_kinds treats a `ripemd160` card as
+an existing case in two places — §13.5 (`me bundle` already emits byte-identical
+six-plate output for a sha256 card and a `ripemd160` card) and §7.4 (a decoded
+`ripemd160` card already shows "hashlock" on the device, with no digest). So an
+old plate can perfectly well belong to a `hash256`, `ripemd160` or `hash160`
+wallet.
+
+Do not guess. Run `ms hashlock --in <plate>` with **no** `--kind`: it prints the
+phrase's digest under all four and you match the one your descriptor's operand
+already names. That is what §13.4's four-digest fallback exists for — it turns an
+impossible check into a lookup — and §13.4 forbids assuming sha256 in silence
+precisely because this guess is the one an upgrader is tempted to make.
+
+**Do not confuse this with the RECORD rule below.** A bare `hash:<hex>` *record*
+does mean sha256 — that is §6's producer grammar, and it is about the string a
+producer emits, not about a plate an operator holds.
+
+Worst case moves 194 → **210 bytes** (hardened + `ripemd160`, the longest token)
+and stays at **53 QR modules**, inside the envelope already reserved, so no
+plate layout changes.
+
+**2. `digest` is renamed `digest_sha256`, and `HashKind::digest` is the
+dispatch.**
+
+```
+-let h = hashlock::digest(&preimage);
++let h = hashlock::HashKind::Sha256.digest(&preimage);   // or digest_sha256
+```
+
+There is **no deprecated alias**: every internal call site would become a
+deprecation warning under `-D warnings`, which is a required CI context —
+measured at 14 in `ms-codec` and 4 in `ms-cli` with `--all-targets`. Prefer
+`HashKind::digest` in new code — it is the single named dispatch, so callers do
+not write their own match over the four functions. It returns `DigestBytes`
+(`B32`/`B20`); `as_slice()` gives the bytes.
+
+**3. `ms hashlock --json`: `sha256_operand` → `hash_operand`.**
+
+The value names the chosen kind (`ripemd160=<hex>`). The old key is simply wrong
+for three of the four kinds. It is a machine-readable contract, so a consumer
+reading the old key gets `None` rather than a stale value. (No code in this
+constellation reads either key today — verified by grep across every Go and Rust
+source in it — so the rename is breaking for future consumers, not a known one.)
+
+The object also gains **`kind`** (always) and, when `--kind` was omitted,
+**`kind_specified: false`** plus **`digests_by_kind`** holding all four. A
+consumer that previously read `sha256_operand` and assumed sha256 was correct by
+construction; one reading `hash_operand` must now check `kind`, because the
+default is a default and not a statement about the script.
+
+**4. The record's producer rule (SPEC_hashlock_kinds §6).** Bare `hash:<hex>`
+means sha256; every other kind is `hash:<kind>:<hex>`. **Existing payloads are
+byte-identical** — the bare form was kept for sha256 precisely so that no plate
+already cut becomes unreadable. A consumer must not emit a bare record for a
+non-sha256 digest: `me sysw pack` reads bare as sha256 and would compose an
+unspendable wallet.
+
+**5. Corpus re-pin.** `tests/vectors/hashlock-v0.8.json` moves to
+`0a911f78f3cdc867dcc44483b7f4c0c1ac87b6d9b30b79f52094e8979bc3d8ce` (from
+`4f1819cdd0862b101afd48d0478e8f0b218f933dd3da449915fa3c5eaaba21d4`). The fork's
+`hashlock/testdata/hashlock-v0.8.provenance.json` must re-pin to it (phase 4).
+
+**API + byte-identity.** `ms-cli`'s `ms-codec` requirement moves from `=0.9.0`
+to `=0.10.0` in the same commit (the pin is exact, so the bump is not optional).
+No wire byte, `Payload`/`Tag`/`InspectKind` variant, or derivation changes; the
+`hash:` QR line and the two renames above are the whole break.
