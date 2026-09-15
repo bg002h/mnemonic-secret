@@ -329,11 +329,33 @@ fn a_non_sha256_kind_warns_that_md_may_not_accept_the_operand() {
             "{kind}: the record still ships under --no-engraving-card and the \
              notice about its second door does not:\n{se2}"
         );
+        // THE THIRD DOOR, and the one that stays shut longest. The two above
+        // were conditionals so that md and me shipping could not falsify them
+        // -- and it worked. What it did not prevent is the list becoming
+        // EXHAUSTIBLE: both are satisfiable now, so an operator who runs it to
+        // the end comes up clean while the unready consumer was never on it
+        // (P3 journey walk, J-2).
+        assert!(
+            se2.contains("SeedHammer II needs firmware with hashlock-kind support"),
+            "{kind}: the device is the consumer most likely to be unready and \
+             the card names only the two that are ready:\n{se2}"
+        );
+        assert!(
+            se2.contains("does not misread the digest, it ignores it"),
+            "{kind}: the operator needs to know the failure is INERT, not a \
+             silent mis-read -- that is what makes 'do not strip the tag' \
+             actionable rather than alarming:\n{se2}"
+        );
     }
     let (_, se) = run(&["hashlock", "--hashlock-phrase-stdin", "--kind", "sha256"]);
     assert!(
         !se.contains("requires `md compose` support"),
         "sha256 works today; warning about it is noise:\n{se}"
+    );
+    assert!(
+        !se.contains("SeedHammer II needs firmware"),
+        "sha256 is the form EVERY shipped device reads; a firmware caveat here \
+         is the noise that teaches operators to skip the real one:\n{se}"
     );
 }
 

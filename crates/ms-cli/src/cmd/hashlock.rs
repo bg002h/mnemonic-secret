@@ -573,6 +573,29 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
             kind.token()
         )
         .ok();
+        // THE THIRD CONSUMER, and it is the one that stays unready longest.
+        //
+        // The two lines above were written as conditionals so that md and me
+        // shipping could not FALSIFY them -- and it worked, they are still
+        // true. What it did not prevent is the list becoming INCOMPLETE: both
+        // are now satisfiable, so an operator runs the list to exhaustion,
+        // comes up clean, and the consumer that is NOT ready was never on it.
+        // A caveat list that can be exhausted turns silence into assent
+        // (P3 journey walk, J-2).
+        //
+        // Phrased about the FIRMWARE rather than a release, because a device
+        // never flashed stays unable to read the tag forever -- "not yet"
+        // would expire into a lie while the condition still holds.
+        writeln!(
+            stderr,
+            "...and the SeedHammer II needs firmware with hashlock-kind \
+             support to read a `{0}` record at all. Firmware without it counts the record \
+             in the door's \"not understood\" total and builds NO hashlock path from it -- \
+             it does not misread the digest, it ignores it. Do not strip the kind tag to \
+             make it parse.",
+            kind.token()
+        )
+        .ok();
     }
     // The object's `kind` field is the machine-readable form of this hazard, so
     // nothing is lost under the pinned pair -- only moved, as with §13.4 below.
