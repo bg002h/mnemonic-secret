@@ -519,12 +519,6 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
         writeln!(stderr, "method:          {}", method_line(&d)).ok();
         if let Some(r) = phrase_record.as_deref() {
             writeln!(stderr, "record (phrase): {r}").ok();
-            writeln!(
-                stderr,
-                "                 THIS RECORD CARRIES THE PHRASE. Feed it to `me sysw pack --pack-preimage` \
-                 to cut a HASHLOCK PHRASE plate; treat the file you put it in like the phrase itself."
-            )
-            .ok();
         }
         if let Some(n) = d.phrase_chars {
             writeln!(stderr, "phrase:          {n} characters -- write the method line AND the hash line ({}) next to your phrase unless the phrase is cut on a HASHLOCK PHRASE plate, which carries both; if the method line is lost, try each method that shipped with the version named on this card (ms-cli {}), and if the hash line is lost, re-run with no --kind and match the digest against your descriptor", kind.token(), env!("CARGO_PKG_VERSION")).ok();
@@ -535,27 +529,56 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
         // the object in the operator's hand, in the line they would self-check
         // against.
         writeln!(stderr, "The preimage must be exactly 32 bytes (64 hex characters) for every kind: the script checks OP_SIZE 32 before {} (composer spec §8i, F-132).", kind.opcode()).ok();
-        writeln!(stderr, "One phrase per policy. Spending any path of a wsh wallet publishes this digest. Never use this phrase as a passphrase or a password anywhere else -- a spend publishes the preimage, and anyone can then test guesses at the phrase itself.").ok();
-        match d.method {
-            Some(Method::Sha256) => {
-                writeln!(stderr, "WARNING: This is the brainwallet construction: anyone holding the digest tests 10^10 phrases per second. A phrase a person chose is not safe here; use six diceware words or --random.").ok();
-            }
-            Some(Method::Hardened) => {
-                if d.phrase_chars.unwrap_or(0) < 20 {
-                    writeln!(stderr, "WARNING: a 20-character phrase falls in about 72 days on one GPU; choose it from a generator.").ok();
-                }
-            }
-            None => {}
-        }
-        if d.source.starts_with("preimage supplied (--hex)") {
-            writeln!(stderr, "WARNING: the first spend of this hash path publishes these 32 bytes in the clear, forever. If this value is also anything else's secret -- a seed's entropy, a key -- every use of that secret is public with it.").ok();
-        }
-        if is_random {
-            writeln!(stderr, "No phrase exists, so nothing can be guessed, and nothing can be remembered. The file you just wrote is the only copy until you cut the plate.").ok();
-        }
         writeln!(stderr, "source:          {}", d.source).ok();
     }
     // ─── NOTICES THAT SURVIVE --no-engraving-card ──────────────────────────
+    //
+    // SIX LINES MOVED DOWN HERE BY F-536, and the boundary's own rule is what
+    // moved them: "suppressing the card is not consent to lose it." Every one
+    // of the six describes a hazard in what was just emitted, not a value to
+    // transcribe, and `--no-engraving-card` was dropping all of them. Four are
+    // about FUNDS (a published digest, the brainwallet construction, a
+    // guessable phrase, a preimage that is also some other secret) and one is
+    // DATA LOSS -- and that last is the sharpest, because SPEC_ms_hashlock.md
+    // teaches `ms hashlock --random --json --no-engraving-card | jq -r`, an
+    // invocation that silently dropped the sentence telling the operator they
+    // hold the only copy of an unrecoverable secret.
+    //
+    // Each keeps its OWN condition and gains the second clause. Under
+    // `--json --no-engraving-card` they are silent by design: that pair is the
+    // machine-output purity contract, and the same facts travel in the JSON
+    // object (`phrase_record`, `method`, `source`, `kind`).
+    if let Some(r) = phrase_record.as_deref() {
+        let _ = r;
+        if !(args.json && args.no_engraving_card) {
+            writeln!(
+                stderr,
+                "THIS RECORD CARRIES THE PHRASE. Feed it to `me sysw pack --pack-preimage` \
+                 to cut a HASHLOCK PHRASE plate; treat the file you put it in like the phrase itself."
+            )
+            .ok();
+        }
+    }
+    if !(args.json && args.no_engraving_card) {
+        writeln!(stderr, "One phrase per policy. Spending any path of a wsh wallet publishes this digest. Never use this phrase as a passphrase or a password anywhere else -- a spend publishes the preimage, and anyone can then test guesses at the phrase itself.").ok();
+    }
+    match d.method {
+        Some(Method::Sha256) if !(args.json && args.no_engraving_card) => {
+            writeln!(stderr, "WARNING: This is the brainwallet construction: anyone holding the digest tests 10^10 phrases per second. A phrase a person chose is not safe here; use six diceware words or --random.").ok();
+        }
+        Some(Method::Hardened) if !(args.json && args.no_engraving_card) => {
+            if d.phrase_chars.unwrap_or(0) < 20 {
+                writeln!(stderr, "WARNING: a 20-character phrase falls in about 72 days on one GPU; choose it from a generator.").ok();
+            }
+        }
+        _ => {}
+    }
+    if d.source.starts_with("preimage supplied (--hex)") && !(args.json && args.no_engraving_card) {
+        writeln!(stderr, "WARNING: the first spend of this hash path publishes these 32 bytes in the clear, forever. If this value is also anything else's secret -- a seed's entropy, a key -- every use of that secret is public with it.").ok();
+    }
+    if is_random && !(args.json && args.no_engraving_card) {
+        writeln!(stderr, "No phrase exists, so nothing can be guessed, and nothing can be remembered. The file you just wrote is the only copy until you cut the plate.").ok();
+    }
     //
     // THE RULE, and it has TWO clauses. Everything above this line is THE CARD
     // -- what an operator transcribes or engraves -- and `--no-engraving-card`

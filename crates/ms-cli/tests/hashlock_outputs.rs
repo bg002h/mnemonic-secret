@@ -349,3 +349,112 @@ fn record_line_shape_is_what_me_sysw_pack_reads() {
         .bytes()
         .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
 }
+
+/// F-536: every hazard NOTICE survives `--no-engraving-card`.
+///
+/// THE BOUNDARY'S OWN RULE, quoted from `cmd/hashlock.rs`: "Everything above
+/// this line is THE CARD -- what an operator transcribes or engraves -- and
+/// `--no-engraving-card` may suppress it. Everything below is a NOTICE about a
+/// hazard in what was just emitted, and suppressing the card is not consent to
+/// lose it."
+///
+/// Six lines were on the wrong side of it. Four are about FUNDS (a published
+/// digest, the brainwallet construction, a guessable phrase, a preimage that is
+/// also some other secret) and one is DATA LOSS -- and that last one was
+/// suppressed by an invocation `SPEC_ms_hashlock.md` itself teaches.
+///
+/// MUTATION: move any of these back above the boundary -> its row fails.
+#[test]
+fn hazard_notices_survive_no_engraving_card() {
+    let dir = tempfile::tempdir().unwrap();
+
+    // --random: the DATA-LOSS notice. The sharpest of the six, because
+    // SPEC_ms_hashlock.md:340 documents `--random --json --no-engraving-card
+    // | jq -r`, which dropped the sentence saying the operator holds the only
+    // copy of a secret nothing can regenerate.
+    let out = dir.path().join("p.ms1");
+    let r = ms()
+        .args([
+            "hashlock",
+            "--random",
+            "--out",
+            out.to_str().unwrap(),
+            "--no-engraving-card",
+        ])
+        .assert()
+        .success();
+    let err = String::from_utf8_lossy(&r.get_output().stderr).to_string();
+    assert!(
+        err.contains("the only copy until you cut the plate"),
+        "the --random data-loss notice did not survive --no-engraving-card:\n{err}"
+    );
+    assert!(
+        err.contains("One phrase per policy") || err.contains("publishes this digest"),
+        "the published-digest notice did not survive --no-engraving-card:\n{err}"
+    );
+
+    // The brainwallet warning, on the method that earns it.
+    let r = ms()
+        .args([
+            "hashlock",
+            "--hashlock-phrase",
+            "correct horse battery staple",
+            "--method",
+            "sha256",
+            "--allow-argv-secret",
+            "--no-engraving-card",
+        ])
+        .assert()
+        .success();
+    let err = String::from_utf8_lossy(&r.get_output().stderr).to_string();
+    assert!(
+        err.contains("brainwallet construction"),
+        "the brainwallet warning did not survive --no-engraving-card:\n{err}"
+    );
+
+    // AND THE CARD REALLY IS SUPPRESSED, or this test would pass against a
+    // build that ignores the flag entirely -- which is the way a "it still
+    // prints" assertion goes wrong.
+    assert!(
+        !err.contains("preimage (hex):"),
+        "--no-engraving-card did not suppress the card, so the assertions above \
+         prove nothing about the boundary:\n{err}"
+    );
+}
+
+/// The second clause: under `--json --no-engraving-card` stderr stays pinned to
+/// exactly the private-key advisory, notices included.
+///
+/// That pair is the machine-output purity contract. F-536's fix moved six lines
+/// below the boundary, and every one of them had to take
+/// `!(args.json && args.no_engraving_card)` with it -- dropping that clause is
+/// how a notice once put 485 bytes on this stream.
+#[test]
+fn the_moved_notices_keep_the_machine_output_contract() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("p.ms1");
+    let r = ms()
+        .args([
+            "hashlock",
+            "--random",
+            "--out",
+            out.to_str().unwrap(),
+            "--json",
+            "--no-engraving-card",
+        ])
+        .assert()
+        .success();
+    let err = String::from_utf8_lossy(&r.get_output().stderr).to_string();
+    let lines: Vec<&str> = err.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "stderr must carry exactly the private-key advisory under --json \
+         --no-engraving-card; a moved notice that dropped its second clause \
+         shows up here:\n{err}"
+    );
+    assert!(
+        lines[0].contains("private key material"),
+        "the one line is not the advisory:\n{err}"
+    );
+}
