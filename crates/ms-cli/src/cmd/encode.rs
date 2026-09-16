@@ -278,10 +278,30 @@ pub fn run(mut args: EncodeArgs) -> Result<u8> {
             args.out.is_some(),
         )?;
     }
-    emit_output_class_advisory(
-        OutputClass::PrivateKeyMaterial,
-        &mut std::io::stderr().lock(),
-    );
+    // F-589: the advisory says "stdout carries private key material", and with
+    // `--out FILE` in text mode STDOUT IS EMPTY -- measured: 0 bytes. A warning
+    // that cries wolf on the safe path erodes the identical warning on the
+    // unsafe one, which is the whole reason the line exists.
+    //
+    // THE CONDITION IS NOT `out.is_none()`. Measured all three modes:
+    //
+    //   --out FILE, text    stdout 0 bytes            -> no material
+    //   no --out,   text    stdout 76 bytes (the ms1) -> material
+    //   --out FILE, --json  stdout 225 bytes, and the object carries
+    //                       `entropy_hex` AND `ms1`   -> material
+    //
+    // Keying on `--out` alone would have suppressed a TRUE warning on the
+    // `--json` path, which is the defect this fix would otherwise have
+    // introduced while closing a smaller one.
+    //
+    // The TEXT is untouched: it is byte-identical to mnemonic-toolkit's and a
+    // parity test holds it that way. Only the decision to emit moved.
+    if args.json || args.out.is_none() {
+        emit_output_class_advisory(
+            OutputClass::PrivateKeyMaterial,
+            &mut std::io::stderr().lock(),
+        );
+    }
     Ok(0)
 }
 
