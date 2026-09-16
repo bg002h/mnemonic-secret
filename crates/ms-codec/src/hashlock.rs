@@ -96,6 +96,27 @@ impl DigestBytes {
 }
 
 impl HashKind {
+    /// Every kind, in spec §5 order.
+    ///
+    /// A LIST, NOT A RANGE, so adding a fifth is a deliberate edit here rather
+    /// than something that silently changes what iterates over it.
+    pub const ALL: [HashKind; 4] = [
+        HashKind::Sha256,
+        HashKind::Hash256,
+        HashKind::Ripemd160,
+        HashKind::Hash160,
+    ];
+
+    /// The digest width in BYTES: 32 for `sha256`/`hash256`, 20 for the
+    /// `ripemd160`/`hash160` pair. A consequence of the kind, never a separate
+    /// thing to keep in sync (§5).
+    pub fn digest_len(self) -> usize {
+        match self {
+            HashKind::Sha256 | HashKind::Hash256 => 32,
+            HashKind::Ripemd160 | HashKind::Hash160 => 20,
+        }
+    }
+
     /// THE ONE NAMED DISPATCH in this crate. Spec §10 requires the KAT to
     /// exercise the dispatch and not only the four functions, because four
     /// correct functions plus one mis-wired arm is the same lost-funds outcome
@@ -305,8 +326,10 @@ pub enum PhraseRefusal {
         /// The length that was measured.
         chars: usize,
     },
-    /// Exactly 64 hex characters — a preimage in hex, not a phrase.
-    Hex64,
+    // The hex-digest shape used to be a refusal here (`Hex64`). It is an
+    // ADVISORY now — see `looks_like_digest` — on the operator's ruling of
+    // 2026-09-16: "we should warn user whenever the hashlock phrase looks like
+    // a digest and force user to confirm but we should not always refuse."
 }
 
 /// `looks_like_ms1` over the NORMALISED token: trimmed, ASCII-lowercased,
@@ -354,10 +377,46 @@ pub fn validate_phrase(bytes: &[u8]) -> core::result::Result<(), PhraseRefusal> 
     if s.len() > HASHLOCK_PHRASE_MAX_CHARS {
         return Err(PhraseRefusal::TooLong { chars: s.len() });
     }
-    if s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err(PhraseRefusal::Hex64);
-    }
     Ok(())
+}
+
+/// Does this phrase LOOK LIKE a digest in hex? Returns the width if so.
+///
+/// AN ADVISORY, NOT A REFUSAL — operator ruling, 2026-09-16, verbatim: *"we
+/// should warn user whenever the hashlock phrase looks like a digest and force
+/// user to confirm but we should not always refuse."*
+///
+/// WHY IT IS WORTH WARNING ABOUT. An operator holding a digest in hex may type
+/// it here, and the KDF would then commit the wallet to the ASCII OF THE DIGEST
+/// rather than to the digest itself — a preimage they do not know they hold,
+/// and a wallet whose hashlock they cannot open. That is the hazard; it is
+/// worth a confirmation and, as of the ruling, NOT worth a wall.
+///
+/// WHY IT MUST NOT BE A REFUSAL. A phrase that happens to be all hex at one of
+/// these widths is a phrase the operator may legitimately have chosen, and
+/// refusing it outright leaves them with no way to use it at all. A warning
+/// they must answer costs one confirmation; a refusal costs them the phrase.
+///
+/// THE WIDTHS COME FROM THE KINDS, never from a literal. This was `== 64`,
+/// which was every digest in the world while sha256 was the only composable
+/// kind; SPEC_hashlock_kinds made 40 hex a digest too and the check was blind
+/// to it (F-539). Deriving the set from `HashKind::ALL` means a fifth kind
+/// cannot reopen the gap merely by existing.
+///
+/// Called on the BYTES as typed: no trim, no case fold. Uppercase hex is
+/// deliberately included — `A8..` is as much a digest as `a8..`, and §6's
+/// "case is rejected, never folded" governs the WIRE grammar, not this
+/// advisory.
+pub fn looks_like_digest(phrase: &[u8]) -> Option<usize> {
+    let hex = !phrase.is_empty() && phrase.iter().all(|b| b.is_ascii_hexdigit());
+    if hex
+        && HashKind::ALL
+            .iter()
+            .any(|k| phrase.len() == 2 * k.digest_len())
+    {
+        return Some(phrase.len());
+    }
+    None
 }
 
 /// The QR text a hashlock PHRASE plate carries (SPEC_hashlock_H6 §8.6), byte
@@ -415,4 +474,86 @@ pub fn qr_text(hardened: bool, kind: HashKind, phrase: &str) -> Zeroizing<String
     out.push_str(LABEL);
     out.push_str(phrase);
     out
+}
+
+#[cfg(test)]
+mod looks_like_digest_tests {
+    use super::*;
+
+    /// F-539: the advisory sees EVERY kind's width, not just sha256's.
+    ///
+    /// MUTATION: restore `phrase.len() == 64` -> the two 20-byte rows return
+    /// None and this fails. That literal was correct while sha256 was the only
+    /// composable kind and became wrong the moment `ripemd160` could be built.
+    #[test]
+    fn every_kinds_digest_width_is_recognised() {
+        for k in HashKind::ALL {
+            let width = 2 * k.digest_len();
+            let hex = "a".repeat(width);
+            assert_eq!(
+                looks_like_digest(hex.as_bytes()),
+                Some(width),
+                "{}: {width} hex characters is that kind's digest width",
+                k.token()
+            );
+        }
+        // And the widths really are two distinct values, or the loop above
+        // would pass while testing one case four times.
+        let widths: std::collections::BTreeSet<usize> =
+            HashKind::ALL.iter().map(|k| 2 * k.digest_len()).collect();
+        assert_eq!(widths, [40, 64].into_iter().collect());
+    }
+
+    /// The boundaries either side of each width, so the advisory is a WIDTH
+    /// test and not "contains hex".
+    #[test]
+    fn one_character_either_side_is_not_a_digest() {
+        for width in [40usize, 64] {
+            for n in [width - 1, width + 1] {
+                let hex = "a".repeat(n);
+                assert_eq!(looks_like_digest(hex.as_bytes()), None, "{n} characters");
+            }
+        }
+    }
+
+    /// A non-hex character at the right width is a phrase, not a digest.
+    #[test]
+    fn right_width_but_not_hex_is_not_a_digest() {
+        let mut s = "a".repeat(64);
+        s.replace_range(31..32, "z");
+        assert_eq!(looks_like_digest(s.as_bytes()), None);
+        assert_eq!(s.len(), 64, "the mutation must not change the width");
+    }
+
+    /// THE CASE THE OPERATOR'S RULING EXISTS FOR (2026-09-16). This phrase is
+    /// all hex at a digest width, and it is a phrase a person plausibly chose.
+    /// The advisory FLAGS it -- and `validate_phrase` still ACCEPTS it, because
+    /// flagging is a warning to confirm and not a wall.
+    #[test]
+    fn a_deliberate_all_hex_phrase_is_flagged_but_valid() {
+        let phrase = "deadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe";
+        assert_eq!(phrase.len(), 64);
+        assert_eq!(looks_like_digest(phrase.as_bytes()), Some(64));
+        assert_eq!(
+            validate_phrase(phrase.as_bytes()),
+            Ok(()),
+            "F-539: a digest-shaped phrase warns, it is not refused"
+        );
+    }
+
+    /// Uppercase is a digest too. §6's "case is rejected, never folded" governs
+    /// the WIRE grammar; this is an advisory about what an operator is holding,
+    /// and a digest pasted from a tool that prints uppercase is still a digest.
+    #[test]
+    fn uppercase_hex_is_a_digest_too() {
+        assert_eq!(looks_like_digest(&b"A".repeat(40)), Some(40));
+    }
+
+    /// The empty phrase is refused by validate_phrase, and must not be reported
+    /// as a digest on the way there -- `all()` is vacuously true on an empty
+    /// slice, which is exactly how this class of check goes wrong.
+    #[test]
+    fn the_empty_phrase_is_not_a_digest() {
+        assert_eq!(looks_like_digest(b""), None);
+    }
 }

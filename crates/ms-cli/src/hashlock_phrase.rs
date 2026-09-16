@@ -31,7 +31,6 @@ pub enum PhraseRefusal {
     NotPrintableAscii { byte: u8, at: usize },
     Ms1Shaped,
     TooLong { chars: usize },
-    Hex64,
 }
 
 impl PhraseRefusal {
@@ -45,7 +44,6 @@ impl PhraseRefusal {
             PhraseRefusal::TooLong { chars } => format!(
                 "the hashlock phrase is {chars} characters; at most {HASHLOCK_PHRASE_MAX_CHARS} are allowed"
             ),
-            PhraseRefusal::Hex64 => "that is 64 hex characters -- a preimage, 32 bytes (64 hex characters), not a phrase; pass it with --hex".to_string(),
         }
     }
 }
@@ -131,7 +129,6 @@ pub fn validate_phrase(bytes: &[u8]) -> std::result::Result<(), PhraseRefusal> {
         }
         ms_codec::hashlock::PhraseRefusal::Ms1Shaped => PhraseRefusal::Ms1Shaped,
         ms_codec::hashlock::PhraseRefusal::TooLong { chars } => PhraseRefusal::TooLong { chars },
-        ms_codec::hashlock::PhraseRefusal::Hex64 => PhraseRefusal::Hex64,
     })
 }
 
@@ -236,10 +233,17 @@ mod tests {
     #[test]
     fn hex64_either_case_refused_short_hex_accepted() {
         let lower = "c3e97525442520da4cffd5f57aae3f6273990017f2e0fa30c056e32172e22016";
-        assert_eq!(validate_phrase(lower.as_bytes()), Err(PhraseRefusal::Hex64));
+        // NO LONGER A REFUSAL (F-539, operator ruling 2026-09-16): a phrase
+        // that looks like a digest warns and is confirmable, so validation
+        // accepts it and `looks_like_digest` is what reports the shape.
+        assert_eq!(validate_phrase(lower.as_bytes()), Ok(()));
+        assert_eq!(
+            ms_codec::hashlock::looks_like_digest(lower.as_bytes()),
+            Some(64)
+        );
         assert_eq!(
             validate_phrase(lower.to_ascii_uppercase().as_bytes()),
-            Err(PhraseRefusal::Hex64)
+            Ok(())
         );
         assert_eq!(validate_phrase(b"beef"), Ok(()));
         assert_eq!(

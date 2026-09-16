@@ -251,7 +251,7 @@ fn flags_of<'a>(v: &'a serde_json::Value, verb: &str) -> Vec<&'a str> {
 }
 
 #[test]
-fn the_schema_names_every_flag_p2_added_and_the_total_is_67() {
+fn the_schema_names_every_flag_p2_added_and_the_total_is_70() {
     let v = schema_json();
     for verb in MATERIAL_VERBS {
         let flags = flags_of(&v, verb);
@@ -280,14 +280,22 @@ fn the_schema_names_every_flag_p2_added_and_the_total_is_67() {
         .map(|s| s["flags"].as_array().map(|a| a.len()).unwrap_or(0))
         .sum();
     assert_eq!(
-        total, 69,
+        total, 70,
         "36 before P2, plus --in x8, --allow-argv-secret x8 and --out x3 (55), \
-         plus `ms hashlock`'s fourteen (--hashlock-phrase, \
+         plus `ms hashlock`'s FIFTEEN (--hashlock-phrase, \
          --hashlock-phrase-stdin, --hex, --in, --random, --method, --out, \
          --json, --no-engraving-card, --emit-record, --group-size, --separator, \
-         --allow-argv-secret, --kind; `<MS1>` is a positional, not a flag). A \
-         different total means a flag reached the binary and not the schema, or \
-         the reverse -- either way the GUI's mirror would be describing a \
-         different program."
+         --allow-argv-secret, --kind, --phrase-looks-like-digest-ok; `<MS1>` is \
+         a positional, not a flag). A different total means a flag reached the \
+         binary and not the schema, or the reverse -- either way the GUI's \
+         mirror would be describing a different program.\n\
+         \n\
+         --phrase-looks-like-digest-ok is F-539: a phrase of exactly 40 or 64 \
+         hex characters warns and stops, and this flag is the confirmation. It \
+         is NOT a refusal -- an operator who really chose an all-hex phrase \
+         passes it and proceeds (operator ruling 2026-09-16).\n\
+         \n\
+         NOTE the function name said `_is_67` while the assertion said 69: the \
+         name is not the gate and had drifted two flags behind it."
     );
 }
