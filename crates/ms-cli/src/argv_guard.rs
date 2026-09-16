@@ -429,6 +429,72 @@ fn find_argv_material(argv: &[String]) -> Option<(usize, &'static str, usize)> {
 
 /// What a flag-keyed channel carries. Named from the FLAG, because layer 1
 /// never looks at the value.
+/// The private channel that actually works for THIS verb and THIS material
+/// (F-581).
+///
+/// The guard used to print one block for every verb -- `ms {verb} --in FILE`
+/// and `ms {verb} -` -- plus a paragraph about `derive` whatever the verb was.
+/// For `derive` BOTH suggested channels are wrong, measured:
+///
+/// ```text
+/// ms derive --in seed.txt  -> error: string length 164 not in v0.1 set […]
+/// ms derive - < seed.txt   -> error: string length 164 not in v0.1 set […]
+/// ```
+///
+/// because `--in` and stdin on `derive` read an ms1, not a phrase. The guard
+/// identified the verb and the material precisely and then prescribed a remedy
+/// that fails for them -- and an operator who runs it, sees an error, and
+/// retries on the command line has been taught to defeat the guard.
+///
+/// **Every line below was RUN before it was written here**, which is the whole
+/// point of the finding: a prescribed remedy nobody executed is how this
+/// happened.
+fn private_channels(verb: &str, class: &str, value_is_ms1: bool) -> String {
+    // Lines are joined explicitly rather than with `\`-continuations: the
+    // continuation form put the caller's source indentation into the message.
+    const PAD: &str = "\n      ";
+    let hexish = class.contains("hex");
+    // An ms1 on argv is read back through `--in`/stdin by EVERY verb, whatever
+    // the verb's phrase or hex channel happens to be. This arm is first because
+    // THE MATERIAL DECIDES, not the flag it arrived behind: a preimage PLATE
+    // passed to `--hashlock-phrase` is classed "a hashlock phrase" by
+    // `flag_class`, and the route that reads it is still `--in` -- verified,
+    // `ms hashlock --in <plate>` prints the digest. `hashlock_phrase_rule`
+    // asserts exactly that, and caught this when the first version of this
+    // function keyed off `class` alone.
+    if value_is_ms1 || class.contains("ms1") {
+        return [
+            format!("    ms {verb} --in FILE      # read the ms1 from a file"),
+            format!("    ms {verb} -              # or pipe it on stdin"),
+        ]
+        .join("\n      ");
+    }
+    let lines: Vec<String> = match verb {
+        // `--in`/stdin on `derive` read an ms1. The phrase has to become a card
+        // first; that is two commands and there is no one-liner.
+        "derive" => vec![
+            "    ms encode --in seed.txt --out card.ms1   # phrase -> card, once".to_string(),
+            "    ms derive --in card.ms1                   # then derive from the card".to_string(),
+            "A passphrase goes on its own channel:".to_string(),
+            "    ms derive --in card.ms1 --passphrase-stdin < pass.txt".to_string(),
+        ],
+        // `hashlock` takes a preimage or a phrase, each on its own flag.
+        "hashlock" if hexish => {
+            vec!["    ms hashlock --hex - < preimage.hex   # 64 hex on stdin".to_string()]
+        }
+        "hashlock" => vec!["    ms hashlock --hashlock-phrase-stdin < phrase.txt".to_string()],
+        // encode/split take a phrase through `--in`, hex through `--hex -`.
+        _ if hexish => vec![format!(
+            "    ms {verb} --hex - < entropy.hex   # 64 hex on stdin"
+        )],
+        _ => vec![
+            format!("    ms {verb} --in FILE      # read it from a file"),
+            format!("    ms {verb} -              # or pipe it on stdin"),
+        ],
+    };
+    lines.join(PAD)
+}
+
 fn flag_class(flag: &str) -> &'static str {
     match flag {
         "--phrase" => "a BIP-39 mnemonic",
@@ -455,6 +521,16 @@ fn refusal(argv: &[String], index: usize, class: &str, len: usize) -> String {
     let (surface, allowlisted) = argv_surface(argv);
     let verb = surface.strip_prefix("ms ").unwrap_or("encode").to_string();
     let purge = mnemonic_io_lib::remedy::history_purge_block(&surface);
+    // The refused token, with any `--flag=` prefix stripped: `flag_class` names
+    // the FLAG's kind, which is not always the value's.
+    let value_is_ms1 = argv
+        .get(index)
+        .map(|s| {
+            let v = s.split_once('=').map(|(_, v)| v).unwrap_or(s);
+            looks_like_ms1(v.trim())
+        })
+        .unwrap_or(false);
+    let channels = private_channels(&verb, class, value_is_ms1);
     let breadth = if allowlisted {
         String::new()
     } else {
@@ -477,12 +553,7 @@ fn refusal(argv: &[String], index: usize, class: &str, len: usize) -> String {
          UID and root can still read it, `ps` shows it, and your shell has ALREADY \
          written the line to its history.\n      \
          Use a private channel instead:\n      \
-         \x20   ms {verb} --in FILE      # read it from a file\n      \
-         \x20   ms {verb} -              # or pipe it on stdin\n      \
-         A seed phrase AND a passphrase together take two commands, because \
-         `--in` on `derive` reads an ms1:\n      \
-         \x20   ms encode --in seed.txt --out card.ms1\n      \
-         \x20   ms derive --in card.ms1 --passphrase-stdin < pass.txt\n\n      \
+         {channels}\n\n      \
          {purge}\n      \
          {breadth}\
          If argv is safe where you are -- a single-user air-gapped box, an \
