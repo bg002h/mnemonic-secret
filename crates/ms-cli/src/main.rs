@@ -87,7 +87,7 @@ enum Command {
 
     /// Derive a hashlock preimage from a phrase (or take one), print the `hash:` record, and back the preimage up as an ms1 plate string.
     #[command(
-        after_long_help = "EXAMPLES:\n  ms hashlock --hashlock-phrase-stdin < phrase.txt\n  ms hashlock --hashlock-phrase-stdin --method sha256 < phrase.txt\n  ms hashlock --random --out preimage.txt\n  ms hashlock --in preimage.txt\n  ms hashlock --hashlock-phrase-stdin < phrase.txt | me sysw pack --out payload.bin"
+        after_long_help = "EXAMPLES:\n  ms hashlock --kind sha256 --hashlock-phrase-stdin < phrase.txt\n  ms hashlock --kind ripemd160 --hashlock-phrase-stdin < phrase.txt\n  ms hashlock --kind sha256 --hashlock-phrase-stdin --method sha256 < phrase.txt\n  ms hashlock --kind sha256 --random --out preimage.txt\n\nTHE --kind IS IN EVERY LINE ON PURPOSE (F-553). Omitting it is legal and\nlists all four digests on stderr -- but STDOUT carries the sha256 record,\nand stdout is what a pipe consumes. An operator whose wallet is ripemd160\nfollowing a taught one-liner without --kind packs a sha256 payload."
     )]
     Hashlock(cmd::hashlock::HashlockArgs),
 

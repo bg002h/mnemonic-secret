@@ -223,3 +223,48 @@ fn emit_record_says_the_phrase_record_does_not_carry_the_kind() {
         }
     }
 }
+
+/// F-550: the digest-shaped advisory must not send the operator to `--hex`.
+///
+/// `--hex` takes a PREIMAGE. A digest passed there is hashed a second time, so
+/// the operator ends up committed to sha256(their digest) and holding an ms1
+/// "secret" plate whose content is their public digest — discovered at spend
+/// time. `ms hashlock` has no digest-taking surface at all, so that remedy was
+/// unreachable by construction: the instruction could only ever be followed
+/// into a wrong wallet.
+///
+/// NO ADVISORY CAN CATCH IT ON `--hex` ITSELF — a 32-byte preimage and a sha256
+/// digest are both 64 hex characters, indistinguishable by shape. The message
+/// IS the fix, so the message is what this pins.
+///
+/// MUTATION: restore "pass it with --hex instead" -> the first assertion fails.
+#[test]
+fn the_digest_advisory_does_not_send_a_digest_to_hex() {
+    let r = ms()
+        .args(["hashlock", "--hashlock-phrase-stdin", "--kind", "sha256"])
+        .write_stdin("3cf5d421caf2a9c8eb9de1d400866ea7d475e6ba978861bb0167a37cb70a4c12")
+        .assert()
+        .failure();
+    let err = String::from_utf8_lossy(&r.get_output().stderr).to_string();
+
+    assert!(
+        !err.contains("pass it with --hex"),
+        "the advisory still sends a DIGEST to --hex, which hashes it again:\n{err}"
+    );
+    // It must say where a digest actually goes, or it is a refusal with no remedy.
+    assert!(
+        err.contains("md compose") && err.contains("me sysw pack"),
+        "the advisory does not name the two places a finished digest belongs:\n{err}"
+    );
+    // And it must say WHY --hex is wrong, or the next operator re-derives the
+    // same wrong idea from the flag list.
+    assert!(
+        err.contains("PREIMAGE") && err.contains("second time"),
+        "the advisory does not say that --hex would hash the digest again:\n{err}"
+    );
+    // The escape hatch survives: this is still a warning, not a wall (F-539).
+    assert!(
+        err.contains("--phrase-looks-like-digest-ok"),
+        "the confirmation route is gone:\n{err}"
+    );
+}

@@ -237,12 +237,36 @@ fn derive(args: &HashlockArgs, source: SourceKind) -> Result<Derived> {
             if let Some(chars) = ms_codec::hashlock::looks_like_digest(&bytes)
                 .filter(|_| !args.phrase_looks_like_digest_ok)
             {
+                // THE REMEDY CLAUSE USED TO SAY "pass it with --hex instead",
+                // AND THAT WAS A WRONG INSTRUCTION (F-550). `--hex` takes a
+                // PREIMAGE, so a digest handed to it gets hashed AGAIN: the
+                // operator ends up committed to sha256(their digest), holding
+                // an ms1 "secret" plate whose content is their public digest,
+                // and finds out at spend time. `ms hashlock` has no
+                // digest-taking surface at all, so the old remedy was
+                // unreachable by construction.
+                //
+                // A digest is already finished. It does not belong to this
+                // verb -- it goes straight to the composer and the payload, so
+                // the sentence names those instead.
+                //
+                // NO ADVISORY CAN CATCH THIS ON `--hex` ITSELF: a 32-byte
+                // preimage and a sha256 digest are both 64 hex characters and
+                // are indistinguishable by shape. The message is the whole of
+                // the fix, which is why it has to be right.
                 return Err(CliError::BadInput(format!(
                     "that phrase is {chars} hex characters, the width of a digest. \
                      Hashing it commits the wallet to the ASCII of those characters, \
-                     NOT to the digest they spell -- so if you meant to use a digest \
-                     you already hold, pass it with --hex instead. If you really meant \
-                     this as a phrase, re-run with --phrase-looks-like-digest-ok."
+                     NOT to the digest they spell.\n\
+                     \n\
+                     If you already hold a DIGEST, it is finished -- do not pass it to \
+                     this command at all (--hex takes a 32-byte PREIMAGE and would hash \
+                     your digest a second time). Use it directly:\n\
+                     \x20 md compose --path '...,<kind>=<digest>'\n\
+                     \x20 me sysw pack 'hash:[<kind>:]<digest>'\n\
+                     \n\
+                     If you really meant this as a phrase, re-run with \
+                     --phrase-looks-like-digest-ok."
                 )));
             }
             let method = args.method.unwrap_or(Method::Hardened);
@@ -493,7 +517,12 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
         // can satisfy.
         writeln!(
             stderr,
-            "for md compose:  --path ... {}={}",
+            // `<your other paths>`, not a bare `...` (F-554). Pasted whole,
+            // the ellipsis reached md as an argument and produced
+            // "unexpected argument 'ripemd160=09e7bb..' found" -- an error that
+            // names the digest and not the placeholder, so nothing on screen
+            // identifies which token was the operator's to replace.
+            "for md compose:  --path <your other paths> --path keyless,{}={}",
             kind.token(),
             hex(h)
         )
