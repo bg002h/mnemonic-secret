@@ -144,7 +144,21 @@ pub(crate) fn resolve_secret_payload(
             let mnemonic = Mnemonic::parse_in(lang, phrase.as_str())
                 .map_err(|e| phrase_parse_error(e, in_path, verb))?;
             (
-                Zeroizing::new(mnemonic.to_entropy()),
+                // F-579: NOT `mnemonic.to_entropy()`. That calls
+                // `to_entropy_array`, which RE-DETECTS the language with
+                // `Mnemonic::language_of_iter(self.words()).unwrap()` and
+                // discards the `lang` we just parsed with, on the crate's own
+                // comment that "this method can only be called on values that
+                // were already previously validated". Validation was against a
+                // KNOWN language; re-detection is a different question and can
+                // be ambiguous.
+                //
+                // The English/French BIP-39 intersection is 100 words, and a
+                // mnemonic drawn entirely from it panics -- exit 101, in
+                // `ms encode` AND `ms split`, on every input channel, including
+                // `--language english`. The reference wallet's own tier-3 seed
+                // is one such phrase, so this crashed on a fixture in-tree.
+                Zeroizing::new(entropy_in_language(&mnemonic, lang)),
                 Some(language.as_str()),
             )
         } else if let Some(hex_arg) = hex {
@@ -173,6 +187,42 @@ pub(crate) fn resolve_secret_payload(
         Payload::Entr((*entropy).clone())
     };
     Ok((payload, language_for_card))
+}
+
+/// The entropy behind `mnemonic`, read back in a KNOWN language (F-579).
+///
+/// `bip39::Mnemonic::to_entropy` re-detects the language and unwraps, which
+/// panics for any mnemonic whose every word lies in two wordlists at once. This
+/// mirrors the crate's bit-packing exactly, with one difference: the language is
+/// the one the phrase was parsed in, passed in rather than guessed.
+///
+/// `find_word` cannot fail here -- the words came from a `Mnemonic` that
+/// `parse_in` accepted in this very language -- but it is handled rather than
+/// unwrapped, because "cannot fail" is what the upstream comment said too.
+fn entropy_in_language(mnemonic: &Mnemonic, lang: Language) -> Vec<u8> {
+    let mut entropy = [0u8; 33];
+    let (mut cursor, mut offset, mut remainder) = (0usize, 0u32, 0u32);
+    let mut words = 0usize;
+    for word in mnemonic.words() {
+        words += 1;
+        let Some(idx) = lang.find_word(word) else {
+            // Unreachable via `parse_in`; returning empty makes it a clean
+            // failure downstream rather than a panic in a secret-handling path.
+            return Vec::new();
+        };
+        remainder |= ((idx as u32) << (32 - 11)) >> offset;
+        offset += 11;
+        while offset >= 8 {
+            entropy[cursor] = (remainder >> 24) as u8;
+            cursor += 1;
+            remainder <<= 8;
+            offset -= 8;
+        }
+    }
+    if offset != 0 {
+        entropy[cursor] = (remainder >> 24) as u8;
+    }
+    entropy[..(words / 3) * 4].to_vec()
 }
 
 /// Run `ms encode` with the parsed args. Writes to stdout/stderr per SPEC §2.1.
