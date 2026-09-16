@@ -160,3 +160,76 @@ fn digest_is_sha256_of_x() {
         "66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925"
     );
 }
+
+/// F-539's cross-language contract: the corpus's `digest_shaped` rows are the
+/// phrases both languages must ADVISE on, and `digest_shaped_negative` the ones
+/// they must not.
+///
+/// THEY USED TO LIVE IN `refusals` AS RULE `64-hex`. The operator's ruling of
+/// 2026-09-16 made a digest-shaped phrase a warning to confirm rather than a
+/// wall, so they are no longer refusals -- and leaving them there would have
+/// made the corpus assert the opposite of the behaviour. The Go port reads the
+/// same two arrays (seedhammer hashlock/hashlock_test.go), which is what keeps
+/// the advisory itself in lockstep and not merely the digests.
+///
+/// The negatives are one character either side of each width and still all hex,
+/// so this is a WIDTH contract and not "contains hex".
+#[test]
+fn the_corpus_pins_the_digest_shaped_advisory_in_both_directions() {
+    let raw = include_str!("vectors/hashlock-v0.8.json");
+    let v: serde_json::Value = serde_json::from_str(raw).expect("corpus parses");
+
+    let rows = v["digest_shaped"].as_array().expect("digest_shaped array");
+    assert!(
+        rows.len() >= 4,
+        "want both widths in both cases, got {}",
+        rows.len()
+    );
+    let mut widths = std::collections::BTreeSet::new();
+    for r in rows {
+        let s = r["input"].as_str().unwrap();
+        let chars = r["chars"].as_u64().unwrap() as usize;
+        assert_eq!(s.len(), chars, "row {s}: chars disagrees with the input");
+        assert_eq!(
+            ms_codec::hashlock::looks_like_digest(s.as_bytes()),
+            Some(chars),
+            "corpus says {s} is digest-shaped and looks_like_digest disagrees"
+        );
+        // And it is NOT a refusal: F-539's whole point.
+        assert_eq!(
+            ms_codec::hashlock::validate_phrase(s.as_bytes()),
+            Ok(()),
+            "a digest-shaped phrase warns; it is not refused"
+        );
+        widths.insert(chars);
+    }
+    assert_eq!(
+        widths,
+        [40, 64]
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>(),
+        "both digest widths must appear, or this pins one kind pair"
+    );
+
+    for r in v["digest_shaped_negative"]
+        .as_array()
+        .expect("negatives array")
+    {
+        let s = r["input"].as_str().unwrap();
+        assert_eq!(
+            ms_codec::hashlock::looks_like_digest(s.as_bytes()),
+            None,
+            "{s} is not a digest width and must not be advised on"
+        );
+    }
+
+    // The rule is GONE from refusals, or the corpus would say both things.
+    for r in v["refusals"].as_array().expect("refusals array") {
+        assert_ne!(
+            r["rule"].as_str(),
+            Some("64-hex"),
+            "the 64-hex refusal rule was retired by F-539; this row contradicts \
+             digest_shaped above"
+        );
+    }
+}
