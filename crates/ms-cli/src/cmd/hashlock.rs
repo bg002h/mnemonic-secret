@@ -576,6 +576,42 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
     if d.source.starts_with("preimage supplied (--hex)") && !(args.json && args.no_engraving_card) {
         writeln!(stderr, "WARNING: the first spend of this hash path publishes these 32 bytes in the clear, forever. If this value is also anything else's secret -- a seed's entropy, a key -- every use of that secret is public with it.").ok();
     }
+    // F-535: THE `phrase:` RECORD CARRIES THE METHOD AND NOT THE KIND.
+    //
+    // `--emit-record` writes `phrase:<hex of "<method>,<phrase>">`. There is no
+    // kind field in that grammar, so a record emitted under `--kind ripemd160`
+    // is byte-identical to one emitted with no kind at all -- and the device,
+    // deriving from it, produces a SHA256 lock (SPEC_hashlock_kinds §7.1 route
+    // 4: a phrase record carries no kind, so the hashlock is sha256).
+    //
+    // The operator asked for one kind and the record means another. That is
+    // worth saying HERE, because here is where they still have both facts in
+    // front of them.
+    //
+    // NOT FIXED BY WIDENING THE GRAMMAR, deliberately. The record's wire form
+    // belongs to mnemonic-engrave (`sysw::composer_records::phrase_record`) and
+    // a field added here would be this repo leading a format it does not own --
+    // the Rust-primary rule puts that in the primary first, with vectors. The
+    // full fix is still F-535; this closes the silent half.
+    //
+    // The device is not blind to it either: its confirm screen names the kind
+    // it derived, and its relation line says "no hash: record in the payload
+    // has this digest" when the sha256 lock does not match a ripemd160 card.
+    // This notice means the operator does not have to get that far to find out.
+    if args.emit_record
+        && args.kind.is_some_and(|k| k != HashKind::Sha256)
+        && phrase_record.is_some()
+        && !(args.json && args.no_engraving_card)
+    {
+        writeln!(
+            stderr,
+            "NOTE: the phrase: record above carries the METHOD, not the hash kind. Packed and \
+             read back on the device it derives a SHA256 lock, not {}. The kind travels in the \
+             hash: record and on the plate's own `hash:` line -- keep those with it.",
+            kind.token()
+        )
+        .ok();
+    }
     if is_random && !(args.json && args.no_engraving_card) {
         writeln!(stderr, "No phrase exists, so nothing can be guessed, and nothing can be remembered. The file you just wrote is the only copy until you cut the plate.").ok();
     }

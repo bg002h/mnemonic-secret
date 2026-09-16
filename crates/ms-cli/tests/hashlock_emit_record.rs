@@ -165,3 +165,61 @@ fn json_carries_the_record_only_under_the_flag() {
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert!(v.get("phrase_record").is_none(), "{v}");
 }
+
+/// F-535: `--emit-record` under a non-sha256 `--kind` says the record does not
+/// carry that kind.
+///
+/// `phrase:<hex of "<method>,<phrase>">` has no kind field, so a record emitted
+/// under `--kind ripemd160` is byte-identical to one emitted with no kind --
+/// and the device derives a SHA256 lock from it (SPEC_hashlock_kinds §7.1
+/// route 4). The operator asked for one kind and the record means another.
+///
+/// THE SILENT HALF IS WHAT THIS CLOSES. Widening the grammar would be this repo
+/// leading a wire format owned by mnemonic-engrave, which the Rust-primary rule
+/// puts in the primary first, with vectors; F-535 stays open for that.
+///
+/// MUTATION: drop the `args.emit_record` clause -> the third row fails (it
+/// would warn about a record that was never emitted). MUTATION: drop the
+/// kind check -> the second row fails.
+#[test]
+fn emit_record_says_the_phrase_record_does_not_carry_the_kind() {
+    const NOTE: &str = "carries the METHOD";
+    let cases = [
+        (
+            vec!["--kind", "ripemd160", "--emit-record"],
+            true,
+            "a non-sha256 kind WITH a record",
+        ),
+        (
+            vec!["--kind", "sha256", "--emit-record"],
+            false,
+            "sha256 is what the record already means",
+        ),
+        (
+            vec!["--kind", "ripemd160"],
+            false,
+            "no record was emitted to warn about",
+        ),
+    ];
+    for (extra, want, why) in cases {
+        let mut args = vec!["hashlock", "--hashlock-phrase-stdin", "--no-engraving-card"];
+        args.extend(extra.iter().copied());
+        let r = ms()
+            .args(&args)
+            .write_stdin("correct horse battery staple")
+            .assert()
+            .success();
+        let err = String::from_utf8_lossy(&r.get_output().stderr).to_string();
+        assert_eq!(
+            err.contains(NOTE),
+            want,
+            "{why}: expected the F-535 note present={want}\n{err}"
+        );
+        if want {
+            assert!(
+                err.contains("ripemd160"),
+                "the note must name the kind the operator asked for:\n{err}"
+            );
+        }
+    }
+}
