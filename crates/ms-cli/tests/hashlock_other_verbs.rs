@@ -40,13 +40,20 @@ fn decode_prints_kind_hex_and_digest_and_never_words() {
         String::from_utf8_lossy(&out.stderr)
     );
     let so = String::from_utf8_lossy(&out.stdout);
-    // STRUCTURAL, not a word blocklist (R0 r0 tests I-3): exactly three
-    // labelled lines, so any extra line -- words, a phrase, anything -- fails.
+    // STRUCTURAL, not a word blocklist (R0 r0 tests I-3): an EXACT line count,
+    // so any extra line -- words, a phrase, anything -- fails.
+    //
+    // EIGHT SINCE F-534, not three. A preimage ms1 carries no hash kind, so
+    // decode lists the digest under each of the four and says why; the bare
+    // `digest:` line it replaced implied an answer it could not have. The count
+    // stays exact BECAUSE this test's job is to keep seed words out of a
+    // preimage rendering, and "contains" would stop doing that job.
     let lines: Vec<&str> = so.lines().collect();
     assert_eq!(
         lines.len(),
-        3,
-        "decode's text output for a preimage is exactly three lines:\n{so}"
+        8,
+        "decode's text output for a preimage is exactly eight lines \
+         (kind, preimage, `digests:`, four kind rows, the no-kind note):\n{so}"
     );
     assert!(
         lines[0].starts_with("kind:") && lines[0].contains("preimage"),
@@ -56,9 +63,26 @@ fn decode_prints_kind_hex_and_digest_and_never_words() {
         lines[1].starts_with("preimage:") && lines[1].contains(HEX32),
         "{so}"
     );
+    assert!(lines[2].starts_with("digests:"), "{so}");
+    // The sha256 row is the one this test knew as `digest:`; it is still here,
+    // now named.
     assert!(
-        lines[2].starts_with("digest:") && lines[2].contains(H),
+        lines[3].trim_start().starts_with("sha256") && lines[3].contains(H),
         "{so}"
+    );
+    for (i, token) in ["sha256", "hash256", "ripemd160", "hash160"]
+        .iter()
+        .enumerate()
+    {
+        assert!(
+            lines[3 + i].trim_start().starts_with(token),
+            "line {} is not the {token} row:\n{so}",
+            3 + i
+        );
+    }
+    assert!(
+        lines[7].contains("carries no hash kind"),
+        "the four rows are listed without saying why:\n{so}"
     );
 }
 
@@ -72,11 +96,24 @@ fn decode_json_carries_kind_and_digest() {
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["kind"], "preimage");
     assert_eq!(v["preimage_hex"], HEX32);
-    assert_eq!(v["digest"], H);
+    assert_eq!(v["digest"], H, "the pre-existing key must not move (F-534)");
+    assert_eq!(
+        v["digest_kind"], "sha256",
+        "and it must say which kind it is"
+    );
+    assert_eq!(
+        v["digests_by_kind"].as_object().unwrap().len(),
+        4,
+        "one digest per kind: {v}"
+    );
+    // FIVE SINCE F-534: the three above plus digest_kind and digests_by_kind.
+    // `digest` is RETAINED rather than replaced, because a consumer parsing
+    // this object predates the other three kinds and removing the key would
+    // break it for a reason it cannot see.
     assert_eq!(
         v.as_object().unwrap().len(),
-        3,
-        "exactly kind, preimage_hex, digest: {v}"
+        5,
+        "exactly kind, preimage_hex, digest, digest_kind, digests_by_kind: {v}"
     );
 }
 

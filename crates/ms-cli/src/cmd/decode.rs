@@ -203,16 +203,47 @@ fn emit_text(
 /// entropy, and a 24-word rendering would be a seed nobody holds
 /// (SPEC_ms_hashlock §5).
 pub(crate) fn emit_preimage(x: &[u8; 32], json: bool) -> crate::error::Result<u8> {
+    use ms_codec::hashlock::HashKind;
     use std::io::Write;
-    let h = ms_codec::hashlock::digest_sha256(x);
+    // EVERY KIND'S DIGEST, NOT sha256's ALONE (F-534).
+    //
+    // This printed one `digest:` line, computed with digest_sha256, under a
+    // label that names no function. With four hash kinds in the world that is
+    // the silence SPEC_hashlock_kinds §13.4 forbids next door: an operator
+    // verifying a PLATE through `ms decode` got an answer for sha256 with
+    // nothing saying a choice had been made for them.
+    //
+    // The shape is `ms hashlock`'s own, deliberately -- it already prints all
+    // four when no `--kind` is given, "a plate cut before this existed carries
+    // no kind, and a lookup beats an impossible check". A preimage ms1 carries
+    // no kind either, by construction, so the lookup is the only honest answer
+    // here and there is no `--kind` to add: the four lines ARE the answer.
+    let by_kind: Vec<(&'static str, String)> = HashKind::ALL
+        .iter()
+        .map(|k| (k.token(), hex::encode(k.digest(x).as_slice())))
+        .collect();
     let hx = hex::encode(x);
-    let hh = hex::encode(h);
     let mut out = std::io::stdout().lock();
     if json {
+        let digests: serde_json::Map<String, serde_json::Value> = by_kind
+            .iter()
+            .map(|(t, d)| ((*t).to_string(), serde_json::Value::from(d.as_str())))
+            .collect();
+        // `digest` IS RETAINED and still sha256, because a consumer parsing
+        // this object predates the other three kinds and removing the key
+        // would break it for a reason it cannot see. `digests_by_kind` is the
+        // key that answers the real question, named as `ms hashlock` names it.
+        let hh = by_kind[0].1.clone();
         writeln!(
             out,
             "{}",
-            serde_json::json!({"kind": "preimage", "preimage_hex": hx, "digest": hh})
+            serde_json::json!({
+                "kind": "preimage",
+                "preimage_hex": hx,
+                "digest": hh,
+                "digest_kind": "sha256",
+                "digests_by_kind": digests,
+            })
         )
         .ok();
     } else {
@@ -222,7 +253,18 @@ pub(crate) fn emit_preimage(x: &[u8; 32], json: bool) -> crate::error::Result<u8
         )
         .ok();
         writeln!(out, "preimage:  {hx}").ok();
-        writeln!(out, "digest:    {hh}").ok();
+        // A preimage ms1 carries NO kind, so this cannot say which digest the
+        // operator's wallet commits to -- it says all four and lets them look
+        // theirs up. The bare `digest:` label it replaced implied an answer.
+        writeln!(out, "digests:").ok();
+        for (token, d) in &by_kind {
+            writeln!(out, "  {token:<10} {d}").ok();
+        }
+        writeln!(
+            out,
+            "           (a preimage carries no hash kind; match the one your wallet uses)"
+        )
+        .ok();
     }
     drop(out);
     let mut err = std::io::stderr().lock();
