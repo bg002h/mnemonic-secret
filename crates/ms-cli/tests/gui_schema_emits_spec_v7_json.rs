@@ -286,8 +286,11 @@ fn the_schema_names_every_flag_p2_added_and_the_total_is_70() {
          --hashlock-phrase-stdin, --hex, --in, --random, --method, --out, \
          --json, --no-engraving-card, --emit-record, --group-size, --separator, \
          --allow-argv-secret, --kind, --phrase-looks-like-digest-ok; `<MS1>` is \
-         a positional, not a flag). A different total means a flag reached the \
-         binary and not the schema, or the reverse -- either way the GUI's \
+         a positional, not a flag). F-597 narrowed this from every flag to \
+         every VISIBLE flag -- `hide = true` args are skipped, and \
+         `the_hidden_trap_flag_is_on_the_binary_and_not_in_the_schema` is what \
+         keeps that exclusion honest. A different total means a flag reached \
+         the binary and not the schema, or the reverse -- either way the GUI's \
          mirror would be describing a different program.\n\
          \n\
          --phrase-looks-like-digest-ok is F-539: a phrase of exactly 40 or 64 \
@@ -298,4 +301,42 @@ fn the_schema_names_every_flag_p2_added_and_the_total_is_70() {
          NOTE the function name said `_is_67` while the assertion said 69: the \
          name is not the gate and had drifted two flags behind it."
     );
+}
+
+/// F-597: the hidden-arg exclusion, asserted from BOTH sides.
+///
+/// `derive --phrase-stdin` exists only to be refused (a name operators reach
+/// for, which clap answered by suggesting `--passphrase-stdin` -- a different
+/// secret). It is `hide = true`, and `reflect_subcommand` skips hidden args, so
+/// the GUI never offers a control whose every outcome is an error.
+///
+/// One-sided assertions do not gate this. "Not in the schema" is equally true
+/// of a flag that was deleted, and "on the binary" says nothing about the
+/// mirror. Both halves together are what make the count above mean "every
+/// VISIBLE flag" rather than "every flag we happened to reflect".
+#[test]
+fn the_hidden_trap_flag_is_on_the_binary_and_not_in_the_schema() {
+    let v = schema_json();
+    assert!(
+        !flags_of(&v, "derive").contains(&"--phrase-stdin"),
+        "the hidden trap flag reached the GUI schema: {:?}",
+        flags_of(&v, "derive")
+    );
+    // ...and it IS on the binary, refusing. Without this half the test passes
+    // just as well after someone deletes the flag entirely.
+    let out = Command::cargo_bin("ms")
+        .unwrap()
+        .args(["derive", "--phrase-stdin"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("there is no --phrase-stdin"),
+        "the flag is gone from the binary too, so nothing catches the \
+         --passphrase-stdin suggestion any more:\n{err}"
+    );
+    // The visible sibling must still be visible -- the exclusion is about
+    // hidden args, not about anything whose name looks similar.
+    assert!(flags_of(&v, "derive").contains(&"--passphrase-stdin"));
 }

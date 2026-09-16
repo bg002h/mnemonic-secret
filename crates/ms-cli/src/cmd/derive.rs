@@ -75,6 +75,20 @@ pub struct DeriveArgs {
     #[arg(long, conflicts_with = "passphrase")]
     pub passphrase_stdin: bool,
 
+    /// F-597: a trap, not a feature. `--phrase-stdin` does not exist and
+    /// never will -- there is no stdin channel for a raw BIP-39 phrase on
+    /// `derive`, because stdin here carries the ms1.
+    ///
+    /// Without this arm clap answered `--phrase-stdin` with *"tip: a similar
+    /// argument exists: '--passphrase-stdin'"*, which is a DIFFERENT SECRET:
+    /// following it feeds a seed phrase into the BIP-39 passphrase. The
+    /// suggestion is well-meant string-distance matching and cannot know that.
+    ///
+    /// Declaring it hidden is what takes the name out of clap's suggestion
+    /// pool AND gives us somewhere to put the real recipe.
+    #[arg(long = "phrase-stdin", hide = true)]
+    pub phrase_stdin: bool,
+
     /// BIP-39 wordlist (load-bearing: forms the mnemonic → seed → fingerprint).
     /// Default english, annotated "DEFAULT" when omitted.
     #[arg(long)]
@@ -349,6 +363,27 @@ impl Drop for ScrubbedXpriv {
 /// Run `ms derive`.
 pub fn run(mut args: DeriveArgs) -> Result<u8> {
     let mut stderr = std::io::stderr();
+
+    // F-597. This flag exists ONLY to be refused; see its declaration. Refuse
+    // before anything else so the answer is the recipe, not a downstream
+    // complaint about a missing ms1.
+    if args.phrase_stdin {
+        return Err(CliError::BadInput(
+            "there is no --phrase-stdin: on `derive`, stdin carries the ms1, not a BIP-39 \
+             phrase.\n      \
+             \n      \
+             DO NOT reach for --passphrase-stdin. That is the BIP-39 PASSPHRASE, a \
+             different secret; piping a seed phrase into it derives the wrong wallet \
+             silently.\n      \
+             \n      \
+             To go from a phrase file to an account xpub, through private channels \
+             only:\n      \
+             \n      \
+             \x20\x20ms encode --in phrase.txt --out card.ms1\n      \
+             \x20\x20ms derive --in card.ms1 --template <TEMPLATE>"
+                .into(),
+        ));
+    }
 
     // mem::take clap-owned secret slots → Zeroizing (scrub on drop).
     let hex_arg: Option<Zeroizing<String>> = std::mem::take(&mut args.hex).map(Zeroizing::new);

@@ -159,3 +159,71 @@ fn the_remedy_encode_prescribes_still_works() {
     .assert()
     .success();
 }
+
+/// F-597 — the `--phrase-stdin` trap, and its remedy RUN.
+///
+/// `--phrase-stdin` is a name an operator reaches for and `derive` does not
+/// have. Clap answered it with *"tip: a similar argument exists:
+/// '--passphrase-stdin'"* — string-distance matching pointing at a DIFFERENT
+/// SECRET. Following that tip feeds a seed phrase into the BIP-39 passphrase
+/// slot and derives a different wallet, with no error anywhere.
+///
+/// Declaring `--phrase-stdin` hidden takes it out of clap's suggestion pool and
+/// gives the refusal somewhere to put the real recipe. This test is in THIS
+/// file, not beside the other derive tests, because it makes the same demand
+/// the file exists for: the prescribed lines are EXECUTED, never matched. A
+/// refusal that teaches a broken command is the class F-301 and F-581 already
+/// shipped twice.
+#[test]
+fn the_phrase_stdin_trap_refuses_and_its_remedy_runs() {
+    let dir = tempfile::tempdir().unwrap();
+    let phrase = dir.path().join("phrase.txt");
+    let card = dir.path().join("card.ms1");
+    fs::write(&phrase, PHRASE).unwrap();
+
+    let out = ms()
+        .args(["derive", "--phrase-stdin", "--template", "bg002h-tr"])
+        .output()
+        .expect("ms runs");
+    assert!(!out.status.success(), "--phrase-stdin was ACCEPTED");
+    let err = String::from_utf8_lossy(&out.stderr).to_string();
+
+    // The clap suggestion must be gone, and the warning about it present.
+    assert!(
+        !err.contains("a similar argument exists"),
+        "clap still suggests a neighbour for --phrase-stdin:\n{err}"
+    );
+    assert!(
+        err.contains("DO NOT reach for --passphrase-stdin"),
+        "the refusal does not warn about the wrong-secret trap:\n{err}"
+    );
+
+    // And the two lines it prescribes must actually work, in order.
+    let lines: Vec<String> = err
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with("ms "))
+        .map(str::to_string)
+        .collect();
+    assert_eq!(lines.len(), 2, "expected a two-step recipe, got {lines:?}");
+    assert!(lines[0].starts_with("ms encode --in"), "{:?}", lines[0]);
+    assert!(lines[1].starts_with("ms derive --in"), "{:?}", lines[1]);
+
+    ms().args(["encode", "--in"])
+        .arg(&phrase)
+        .arg("--out")
+        .arg(&card)
+        .assert()
+        .success();
+    let derived = ms()
+        .args(["derive", "--in"])
+        .arg(&card)
+        .args(["--template", "bg002h-tr"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8(derived.get_output().stdout.clone()).unwrap();
+    assert!(
+        stdout.contains("account_xpub:") && stdout.contains("xpub"),
+        "the prescribed recipe ran but produced no account xpub:\n{stdout}"
+    );
+}

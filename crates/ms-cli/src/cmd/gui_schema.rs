@@ -98,6 +98,15 @@ fn reflect_subcommand(sub: &clap::Command) -> SchemaSubcommand {
         if arg.get_id() == "help" {
             continue;
         }
+        // F-597: HIDDEN args are not part of the program's surface, and the
+        // schema is the GUI's mirror of that surface. The only hidden arg
+        // today is `derive --phrase-stdin`, which exists solely to be refused
+        // -- reflecting it would have the GUI offer a control whose every
+        // outcome is an error. A hidden arg that ever becomes real must be
+        // un-hidden, which is the same act that re-enrols it here.
+        if arg.is_hide_set() {
+            continue;
+        }
         if arg.is_positional() {
             positionals.push(SchemaPositional {
                 name: arg.get_id().to_string(),
