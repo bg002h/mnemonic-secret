@@ -841,12 +841,28 @@ can never be mistaken for BIP-48.
   name-manifest gates both pass, and the manifest gained `ERRNO_UNSUPPORTED` in
   both repos (the gate caught the omission, exactly as designed).
 
-- **STILL OPEN, and this is the honest limit:** no test on a POSIX host reaches
-  the `cfg(not(unix))` arm or the message in `report_at_exit`. CI proves they
-  COMPILE for `x86_64-pc-windows-msvc`; nothing proves the text renders on a real
-  Windows run. `unsupported_sentinel_is_distinct_and_named` covers only that the
-  sentinel is disjoint from every real errno and names itself. A real
-  `VirtualLock`/`VirtualUnlock` port remains the actual fix.
+- **THE WARNING IS OBSERVED ON A REAL WINDOWS RUN**, not merely compiled. The
+  release job runs the binary it just built, and its log carries the message on
+  BOTH invocations of the round trip:
+
+  ```text
+  ms 0.19.0
+  warning: stdout carries private key material (can spend) - redirect or encrypt
+  warning: secret memory is NOT locked on this platform.
+           unpinned: this build has no page-locking implementation, so
+           the page file. On Linux and macOS these regions are pinned
+  round trip ok: ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f
+  ```
+
+  (`mnemonic-secret` release run 35172007158, `build ms (windows-x86_64)`.) So
+  "it warns every run" is measured on the platform in question rather than
+  asserted from a POSIX host. Worth keeping: the smoke step exists to prove the
+  cross-built artifact EXECUTES, and it turned out to be the only thing that
+  exercises this message at all.
+- **Still untested:** the failure count and byte totals inside that message, and
+  every errno path other than the sentinel.
+- **Still the real fix:** a `VirtualLock`/`VirtualUnlock` port, so the regions
+  are actually pinned rather than accurately described as unpinned.
 - **Status:** open (the port); the shipping decision is settled.
 - **Tier:** release-engineering / platform-support. Not a defect: the absence of
   a Windows binary is the correct outcome of a security property.
