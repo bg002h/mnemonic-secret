@@ -58,9 +58,25 @@ env:
   MINISIGN_PUBKEY: 'RWQPmgBXsuw5yi8W0SfDr8KF+IqY/Z5U2p724emSODS1UPfJBP3agbKW'
 
 jobs:
+  # THE SUITE, ON EACH OS THAT CAN RUN IT.
+  #
+  # Running the real tests on a real Mac is the strongest functional evidence
+  # available short of owning the hardware -- stronger than any local VM, since
+  # this IS macOS. Which repos can do it is not uniform and the list is set per
+  # repo: a suite that hardcodes /usr/bin/zsh or /usr/bin/fish is Linux-bound
+  # and stays there rather than being weakened to travel.
+  #
+  # Windows is never in this list: these suites assert POSIX file modes via
+  # std::os::unix, which does not compile there. The per-platform acceptance
+  # check in the build job is what covers Windows, and it runs the commands the
+  # documentation actually hands to people.
   test:
-    name: test
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -128,12 +144,26 @@ jobs:
           BIN="target/${{ matrix.target }}/release/ms"
           [ "${{ runner.os }}" = "Windows" ] && BIN="$BIN.exe"
           "$BIN" --version
+          # A REAL acceptance pass, through PRIVATE CHANNELS -- ms refuses hex
+          # entropy and ms1 strings on argv, so the obvious one-liners do not work.
           printf '00000000000000000000000000000000' > e.hex
           MS1="$("$BIN" encode --hex - --group-size 0 < e.hex | grep '^ms1')"
           printf '%s\n' "$MS1" > card.ms1
           DEC="$("$BIN" decode --in card.ms1)"
           case "$DEC" in *abandon*) ;; *) echo "::error::round trip failed"; exit 1 ;; esac
-          echo "round trip ok: $MS1"
+
+          # Shamir: 3-of-5 rebuilds, 2 does not. The threshold, on this platform.
+          printf 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about\n' > seed.txt
+          "$BIN" split --in seed.txt -k 3 -n 5 --group-size 0 > shares.txt
+          n=$(grep -c '^ms1' shares.txt); [ "$n" = "5" ] || { echo "::error::split gave $n shares"; exit 1; }
+          grep -o '^ms1[a-z0-9]*' shares.txt | sed -n '1p;3p;5p' > three.txt
+          OUT="$("$BIN" combine --in three.txt)"
+          case "$OUT" in *abandon*) ;; *) echo "::error::3 shares did not rebuild"; exit 1 ;; esac
+          grep -o '^ms1[a-z0-9]*' shares.txt | sed -n '1p;3p' > two.txt
+          if "$BIN" combine --in two.txt >/dev/null 2>&1; then
+            echo "::error::2 shares rebuilt the secret -- the threshold does not hold here"; exit 1
+          fi
+          echo "acceptance ok on this platform: round trip + 3-of-5 + 2 refused"
 
       - name: Stage binary
         shell: bash
