@@ -816,11 +816,37 @@ can never be mistaken for BIP-48.
   normalisation (Cycle B SPEC §6 G6). So the change lands in BOTH repos in one
   session or CI goes red — and it is secret-memory-hygiene code, which is
   risk-set work needing the full gate. A spec cycle, not a build flag.
-- **Meanwhile:** `ms` ships **Linux (static musl, aarch64 + x86_64)** from the
-  existing workflow and **macOS (x86_64 + aarch64)** from the new one. Windows
-  users build from source on WSL, or use one of the other four CLIs — `md`, `mk`
-  and `mt` carry no POSIX memory-locking and build for Windows cleanly, which is
-  itself the evidence that this is specific to `ms`.
-- **Status:** open.
+- **RESOLVED FOR SHIPPING, 2026-09-17, operator decision: Windows ships, and it
+  says what it is not doing.** The non-POSIX `sys_mlock_attempt` returns a
+  distinct `ERRNO_UNSUPPORTED` rather than a fake `Ok(())`. That routes the gap
+  through the SAME attempt/failure counting and the SAME `report_at_exit` a real
+  `EPERM` goes through, so the warning is emitted by machinery that is already
+  tested instead of a second path bolted alongside it. Every run on a non-POSIX
+  build prints:
+
+  ```
+  warning: secret memory is NOT locked on this platform.
+           N of M secret regions (B bytes) were left unpinned: this build has
+           no page-locking implementation, so secret data remains in the heap
+           and the OS may write it to the page file. On Linux and macOS these
+           regions are pinned with mlock(2) and cannot be swapped.
+  hint:    nothing you can configure changes this. Prefer a Linux or macOS
+           build when handling real seed material.
+  ```
+
+  The POSIX `RLIMIT_MEMLOCK` hint is deliberately NOT printed there — it would
+  send someone chasing a limit that does not exist on that platform.
+
+  Mirrored into `mnemonic-toolkit` in the same session; the G6 byte-equality and
+  name-manifest gates both pass, and the manifest gained `ERRNO_UNSUPPORTED` in
+  both repos (the gate caught the omission, exactly as designed).
+
+- **STILL OPEN, and this is the honest limit:** no test on a POSIX host reaches
+  the `cfg(not(unix))` arm or the message in `report_at_exit`. CI proves they
+  COMPILE for `x86_64-pc-windows-msvc`; nothing proves the text renders on a real
+  Windows run. `unsupported_sentinel_is_distinct_and_named` covers only that the
+  sentinel is disjoint from every real errno and names itself. A real
+  `VirtualLock`/`VirtualUnlock` port remains the actual fix.
+- **Status:** open (the port); the shipping decision is settled.
 - **Tier:** release-engineering / platform-support. Not a defect: the absence of
   a Windows binary is the correct outcome of a security property.
