@@ -5,10 +5,23 @@
 # already proven for this dependency tree, and `descriptor-mnemonic` now runs the
 # same one green on all five targets.
 #
-# THIS REPO ALREADY SHIPS LINUX. `man-release.yml`/the musl workflow publish
-# static aarch64 + x86_64 musl builds, which are a BETTER Linux artifact than a
-# glibc-linked one. So this workflow adds only what was missing: macOS and
-# Windows. Every platform mnemonic-engrave supports is then covered.
+# THIS REPO ALREADY SHIPS LINUX. The musl workflow publishes static aarch64 +
+# x86_64 builds, a BETTER Linux artifact than a glibc-linked one, so this
+# workflow adds macOS only.
+#
+# NO WINDOWS TARGET, AND THAT IS DELIBERATE. `ms` pins secret-bearing heap
+# pages with POSIX mlock(2) so they cannot be swapped to disk
+# (crates/ms-cli/src/mlock.rs, SPEC_secret_memory_hygiene_v0_9_B.md). The
+# module has no cfg(unix) gating and does not compile for MSVC: `cannot find
+# function mlock in crate libc`, measured on this matrix.
+#
+# The fix is NOT to cfg it out. That would ship a Windows binary whose seed
+# material is swappable while every other platform pins it -- a silent
+# downgrade in exactly the code where it matters most. Windows has
+# VirtualLock/VirtualUnlock and a real port is possible, but mlock.rs is an
+# INLINE COPY of mnemonic-toolkit's with a G6 CI invariant asserting the two
+# are byte-equal, so the change lands in both repos or CI goes red. That is a
+# spec cycle, not a build flag. Tracked in design/FOLLOWUPS.md.
 #
 # COMPOSES with the other tag-triggered workflows in this repo rather than
 # competing with them: it uses the same `gh release view || gh release create`
@@ -77,10 +90,6 @@ jobs:
           - name: macos-aarch64
             os: macos-latest
             target: aarch64-apple-darwin
-            use_cross: false
-          - name: windows-x86_64
-            os: windows-latest
-            target: x86_64-pc-windows-msvc
             use_cross: false
     steps:
       - uses: actions/checkout@v4
@@ -233,7 +242,6 @@ jobs:
 
           pack x86_64-apple-darwin          macos   amd64 ""
           pack aarch64-apple-darwin         macos   arm64 ""
-          pack x86_64-pc-windows-msvc       windows amd64 ".exe"
 
           ls -l release
 

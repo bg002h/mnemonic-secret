@@ -786,3 +786,41 @@ can never be mistaken for BIP-48.
   that ms-cli is not published (releases ship as GitHub assets).
 - **Severity:** Minor (records). The publish itself is irreversible; the step
   belongs in the checklist so it is never again a decision taken at the end.
+
+### `ms-has-no-windows-binary-because-mlock-is-posix-only`
+
+- **Surfaced:** 2026-09-17, adding a cross-platform release workflow so every
+  constellation CLI ships binaries for the platforms `mnemonic-engrave` supports.
+  macOS x86_64 and aarch64 build and pass; **Windows MSVC does not compile**:
+
+  ```
+  error[E0425]: cannot find function `sysconf` in crate `libc`
+  error[E0425]: cannot find value `_SC_PAGESIZE` in crate `libc`
+  error[E0425]: cannot find function `mlock` in crate `libc`
+  error[E0425]: cannot find function `munlock` in crate `libc`
+  ```
+
+- **Cause, and it is a FEATURE not an accident:** `crates/ms-cli/src/mlock.rs`
+  pins secret-bearing heap pages with POSIX `mlock(2)` so they cannot be swapped
+  to disk (`SPEC_secret_memory_hygiene_v0_9_B.md` §4 P2). The module carries no
+  `cfg(unix)` gating at all — measured, `grep -c 'cfg(unix)' == 0`.
+- **The tempting fix is the wrong one.** `cfg`-ing the module out for Windows
+  would produce a binary whose seed material is swappable while every other
+  platform pins it — a silent downgrade in the one place it matters most, shipped
+  to exactly the people who care. If Windows is ever supported, it must be a real
+  port, not an absence.
+- **What a real fix costs.** Windows has `VirtualLock`/`VirtualUnlock` and
+  `GetSystemInfo` for the page size, so the capability exists. But `mlock.rs` is
+  an **INLINE COPY** of `mnemonic-toolkit/crates/mnemonic-toolkit/src/mlock.rs`,
+  and `tests/mlock_g6_invariant.rs` asserts the two are byte-equal after comment
+  normalisation (Cycle B SPEC §6 G6). So the change lands in BOTH repos in one
+  session or CI goes red — and it is secret-memory-hygiene code, which is
+  risk-set work needing the full gate. A spec cycle, not a build flag.
+- **Meanwhile:** `ms` ships **Linux (static musl, aarch64 + x86_64)** from the
+  existing workflow and **macOS (x86_64 + aarch64)** from the new one. Windows
+  users build from source on WSL, or use one of the other four CLIs — `md`, `mk`
+  and `mt` carry no POSIX memory-locking and build for Windows cleanly, which is
+  itself the evidence that this is specific to `ms`.
+- **Status:** open.
+- **Tier:** release-engineering / platform-support. Not a defect: the absence of
+  a Windows binary is the correct outcome of a security property.
