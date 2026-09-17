@@ -132,7 +132,8 @@ jobs:
           printf '00000000000000000000000000000000' > e.hex
           MS1="$("$BIN" encode --hex - --group-size 0 < e.hex | grep '^ms1')"
           printf '%s\n' "$MS1" > card.ms1
-          "$BIN" decode --in card.ms1 | grep -q abandon || { echo "::error::round trip failed"; exit 1; }
+          DEC="$("$BIN" decode --in card.ms1)"
+          case "$DEC" in *abandon*) ;; *) echo "::error::round trip failed"; exit 1 ;; esac
           echo "round trip ok: $MS1"
 
       - name: Stage binary
