@@ -522,7 +522,14 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
             // "unexpected argument 'ripemd160=09e7bb..' found" -- an error that
             // names the digest and not the placeholder, so nothing on screen
             // identifies which token was the operator's to replace.
-            "for md compose:  --path <your other paths> --path keyless,{}={}",
+            //
+            // `--wrapper wsh ... --experimental --md-only` (F-670), measured
+            // against md-cli 0.20.2: a key-less path is refused under `tr`
+            // ("this build will not put a key-less path in taproot") and under
+            // `sh`/`sh-wsh`; under `wsh` it needs `--experimental`, and then
+            // `--md-only`, because every coordinator md knows refuses a path
+            // with no key. Without all three the fragment cannot run.
+            "for md compose:  --wrapper wsh --path <your other paths> --path keyless,{}={} --experimental --md-only",
             kind.token(),
             hex(h)
         )

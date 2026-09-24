@@ -4,6 +4,27 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [Unreleased]
+
+### Fixed
+- **Help EXAMPLES no longer put the secret on argv** (F-677). `ms encode`,
+  `decode`, `inspect`, `verify`, `repair`, `split` and `combine` each taught a
+  one-liner that the argv guard has refused since 0.17.0. They now use `--in
+  FILE` or `-` (stdin), and `tests/f677_help_matches_behaviour.rs` RUNS every
+  EXAMPLES line of every verb against fixture files, so a taught line that the
+  guard refuses, or that fails, turns the suite red.
+- `ms encode --group-size` help described pre-§6a behaviour ("the emitted ms1
+  string"). It now says what it does: it groups the stderr engraving card, and
+  stdout, `--out` and `--json` always carry the unbroken ms1.
+- `ms split --out FILE` no longer prints "stdout carries private key material"
+  when stdout is empty. The `ms encode` F-589 condition applies: the advisory
+  fires with no `--out`, or with `--json` (whose report carries every share).
+- `ms hashlock`'s `for md compose:` fragment now reads `--wrapper wsh --path
+  <your other paths> --path keyless,<kind>=<hex> --experimental --md-only`
+  (F-670). md-cli 0.20.x admits a key-less path only under `wsh`, and only with
+  both flags; the old fragment could not run. Verified against md 0.20.2 for
+  all four kinds.
+
 ## ms-codec [0.10.0] — 2026-09-15
 
 **SemVer-MINOR with a source break.** Two public items change signature or

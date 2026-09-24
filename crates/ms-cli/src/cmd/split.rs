@@ -153,11 +153,18 @@ pub fn run(mut args: SplitArgs) -> Result<u8> {
         emit_labels(&shares);
     }
 
-    // The N-share SET is secret-equivalent (any K reconstruct the secret).
-    emit_output_class_advisory(
-        OutputClass::PrivateKeyMaterial,
-        &mut std::io::stderr().lock(),
-    );
+    // The N-share SET is secret-equivalent (any K reconstruct the secret), so
+    // the advisory fires whenever stdout carries it -- and only then (F-677,
+    // the `ms encode` F-589 ruling applied here). `--out FILE` in text mode
+    // leaves stdout EMPTY, so "stdout carries private key material" would be
+    // false; `--out FILE --json` still prints every share in the JSON report,
+    // so keying on `--out` alone would silence a TRUE warning.
+    if args.json || args.out.is_none() {
+        emit_output_class_advisory(
+            OutputClass::PrivateKeyMaterial,
+            &mut std::io::stderr().lock(),
+        );
+    }
     Ok(0)
 }
 

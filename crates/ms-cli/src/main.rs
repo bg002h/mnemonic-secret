@@ -75,13 +75,13 @@ enum Command {
 
     /// Encode a BIP-39 mnemonic (or hex entropy) as an ms1 string for engraving.
     #[command(
-        after_long_help = "EXAMPLES:\n  ms encode --phrase \"abandon abandon … about\"\n  ms encode --phrase - < phrase.txt\n  ms encode --hex 00000000000000000000000000000000 --no-engraving-card\n  ms encode --phrase \"...\" --json | jq .ms1"
+        after_long_help = "EXAMPLES:\n  ms encode --in phrase.txt                     # ms1 on stdout, engraving card on stderr\n  ms encode --phrase - < phrase.txt             # the phrase on stdin\n  ms encode --hex - --no-engraving-card < entropy.hex\n  ms encode --in phrase.txt --out card.ms1      # the ms1 to an owner-only file\n  ms encode --in phrase.txt --json | jq .ms1\n\nThe secret never goes on the command line: ms refuses it there unless\n--allow-argv-secret is given (argv is visible to `ps` and lands in shell\nhistory). Use --in FILE, or `-` for stdin."
     )]
     Encode(cmd::encode::EncodeArgs),
 
     /// Decode an ms1 string back to its BIP-39 mnemonic and entropy bytes.
     #[command(
-        after_long_help = "EXAMPLES:\n  ms decode ms10entrs…\n  ms decode - < engraved.txt\n  ms decode <ms1> --language french\n  ms decode <ms1> --json | jq .phrase"
+        after_long_help = "EXAMPLES:\n  ms decode --in card.ms1\n  ms decode - < card.ms1\n  ms decode --in card.ms1 --language french\n  ms decode --in card.ms1 --json | jq .phrase"
     )]
     Decode(cmd::decode::DecodeArgs),
 
@@ -93,13 +93,13 @@ enum Command {
 
     /// Inspect an ms1 string's structural fields and decoder verdict.
     #[command(
-        after_long_help = "EXAMPLES:\n  ms inspect <ms1>          # verdict + fields\n  ms inspect <ms1> --json   # structured output for tooling\n  printf \"ms10e ntrsq…\" | ms inspect -   # back-typed chunked form"
+        after_long_help = "EXAMPLES:\n  ms inspect --in card.ms1          # verdict + fields\n  ms inspect --in card.ms1 --json   # structured output for tooling\n  ms inspect - < typed-back.txt     # a card typed back in its grouped form"
     )]
     Inspect(cmd::inspect::InspectArgs),
 
     /// Verify an ms1 string is valid (and optionally round-trips against a phrase).
     #[command(
-        after_long_help = "EXAMPLES:\n  ms verify <ms1>                          # exit 0 = valid v0.1\n  ms verify <ms1> --phrase \"abandon … about\"   # round-trip; exit 4 on mismatch\n  ms verify <ms1> --phrase \"...\" --json    # structured outcome"
+        after_long_help = "EXAMPLES:\n  ms verify --in card.ms1                                # exit 0 = valid v0.1\n  ms verify --in card.ms1 --phrase - < phrase.txt        # round-trip; exit 4 on mismatch\n  ms verify --in card.ms1 --phrase - --json < phrase.txt # structured outcome"
     )]
     Verify(cmd::verify::VerifyArgs),
 
@@ -146,7 +146,7 @@ enum Command {
     /// exit 0 if input was already valid; exit 2 if BCH-uncorrectable
     /// (`TooManyErrors`).
     #[command(
-        after_long_help = "EXAMPLES:\n  ms repair --ms1 ms10entrsqq...        # text-form report on stdout\n  ms repair --ms1 - < broken.txt        # read ms1 from stdin\n  ms repair --ms1 ms10entrsqq... --json # JSON envelope on stdout"
+        after_long_help = "EXAMPLES:\n  ms repair --in broken.txt                    # text-form report on stdout\n  ms repair --ms1 - < broken.txt               # read the ms1 from stdin\n  ms repair --in broken.txt --json             # JSON envelope on stdout\n  ms repair --in broken.txt --out repaired.ms1 # the repaired ms1 alone, to an owner-only file"
     )]
     Repair(cmd::repair::RepairArgs),
 
@@ -157,7 +157,7 @@ enum Command {
     /// advisory is emitted). A non-English `--phrase` splits as a `mnem`
     /// share-set so the wordlist language survives the split. Bounds: 2 ≤ K ≤ N ≤ 31.
     #[command(
-        after_long_help = "EXAMPLES:\n  ms split --phrase \"abandon abandon … about\" -k 2 -n 3\n  ms split --hex 00000000000000000000000000000000 -k 3 -n 5\n  ms split --language japanese --phrase \"…\" -k 2 -n 3 --json | jq .shares"
+        after_long_help = "EXAMPLES:\n  ms split --in phrase.txt -k 2 -n 3\n  ms split --hex - -k 3 -n 5 < entropy.hex\n  ms split --in phrase.txt -k 2 -n 3 --out shares.txt   # one share per line, owner-only\n  ms split --language japanese --in phrase-ja.txt -k 2 -n 3 --json | jq .shares"
     )]
     Split(cmd::split::SplitArgs),
 
@@ -168,7 +168,7 @@ enum Command {
     /// The secret-at-`s` share is NEVER a valid input. Recovered output is
     /// private key material (a stderr advisory is emitted).
     #[command(
-        after_long_help = "EXAMPLES:\n  ms combine <share1> <share2>                  # recover the BIP-39 phrase\n  ms combine <share1> <share2> --to ms1         # recover a single ms1 string\n  ms combine <share1> <share2> --to entropy     # recover raw entropy hex\n  ms combine <share1> <share2> --json | jq .phrase"
+        after_long_help = "EXAMPLES:\n  ms combine --in shares.txt                # recover the BIP-39 phrase (one share per line)\n  ms combine - < shares.txt                 # the same shares on stdin\n  ms combine --in shares.txt --to ms1       # recover a single ms1 string\n  ms combine --in shares.txt --to entropy   # recover raw entropy hex\n  ms combine --in shares.txt --json | jq .phrase"
     )]
     Combine(cmd::combine::CombineArgs),
 }
