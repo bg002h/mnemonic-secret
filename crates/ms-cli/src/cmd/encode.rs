@@ -80,8 +80,11 @@ pub struct EncodeArgs {
     #[arg(long)]
     pub no_engraving_card: bool,
 
-    /// Insert a separator every N characters in the emitted ms1 string
-    /// (0 = unbroken). SPEC §3. Display only; --json stays unbroken.
+    /// Group the engraving card's ms1 every N characters (0 = unbroken).
+    ///
+    /// Shapes the stderr `engraving card:` line and nothing else: stdout,
+    /// `--out` and `--json` always carry the canonical, unbroken ms1, and under
+    /// `--no-engraving-card` this flag has no effect. SPEC §3.
     #[arg(long, default_value_t = 5)]
     pub group_size: u16,
 
