@@ -4,9 +4,23 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
-## ms-cli [Unreleased]
+## ms-cli [0.19.1] — 2026-09-24
 
 ### Fixed
+- **An `--allow-argv-secret`-admitted value is no longer mistaken for a stdin
+  read** (F-679). The override rewrites each admitted value to `-` before
+  parsing, and two "one stdin per invocation" guards tested for that literal
+  `-`, so `ms verify --allow-argv-secret --phrase <p> <ms1>` exited 1 with
+  `cannot read both ms1 and --phrase from stdin` while reading nothing from
+  stdin. The same refusal hit `ms derive --allow-argv-secret <ms1>|--hex
+  <h>|--phrase <p> --passphrase-stdin`. `ms combine` had the mirror image: the
+  first `-` drained every admitted share, so an explicit `-` meant to read
+  further shares from stdin was silently ignored (an under-threshold error, or
+  fewer shares than supplied). Each guard now asks the channel's source, which
+  consults the admitted side channel exactly as the reader does; two inputs
+  that both genuinely come from stdin are still refused.
+  `tests/f679_admitted_is_not_stdin.rs` covers argv+argv, argv+stdin, `--in`,
+  and stdin+stdin for all three verbs.
 - **Help EXAMPLES no longer put the secret on argv** (F-677). `ms encode`,
   `decode`, `inspect`, `verify`, `repair`, `split` and `combine` each taught a
   one-liner that the argv guard has refused since 0.17.0. They now use `--in
