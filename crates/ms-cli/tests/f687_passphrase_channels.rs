@@ -77,7 +77,7 @@ fn every_vector_case_holds() {
     let card = card_file();
     let cases = v["cases"].as_array().unwrap();
     assert!(
-        cases.len() >= 37,
+        cases.len() >= 42,
         "the vector file lost cases: {}",
         cases.len()
     );
@@ -89,6 +89,25 @@ fn every_vector_case_holds() {
         if notes != case["argv_notes"].as_u64().unwrap() {
             failures.push(format!("{name}: {notes} argv notes; stderr:\n{}", r.stderr));
         }
+        // F-687b ruling 2: exactly `empty_warnings` empty-channel warnings.
+        let empties = r
+            .stderr
+            .lines()
+            .filter(|l| {
+                l.starts_with("warning: --passphrase from ")
+                    && l.ends_with(" is empty; proceeding with the EMPTY passphrase")
+            })
+            .count() as u64;
+        if empties != case["empty_warnings"].as_u64().unwrap() {
+            failures.push(format!(
+                "{name}: {empties} empty warnings; stderr:\n{}",
+                r.stderr
+            ));
+        }
+        // F-687b ruling 3: stdin is a pipe in every case, so never a prompt.
+        if r.stderr.contains(v["prompt"].as_str().unwrap().trim_end()) {
+            failures.push(format!("{name}: prompted on a non-terminal:\n{}", r.stderr));
+        }
         if let Some(fp) = case["expect"]["fingerprint"].as_str() {
             if r.code != 0 || fingerprint(&r.stdout).as_deref() != Some(fp) {
                 failures.push(format!(
@@ -96,6 +115,13 @@ fn every_vector_case_holds() {
                     r.code,
                     fingerprint(&r.stdout),
                     r.stderr
+                ));
+            }
+        } else if let Some(code) = case["expect"]["exit_code"].as_i64() {
+            if i64::from(r.code) != code || !r.stdout.is_empty() {
+                failures.push(format!(
+                    "{name}: want exit {code}, got rc {} stdout {:?} stderr {:?}",
+                    r.code, r.stdout, r.stderr
                 ));
             }
         } else {
@@ -329,5 +355,160 @@ fn non_utf8_input_is_refused_by_name_not_panicked() {
     assert!(
         err.contains("not valid UTF-8") && !err.contains("ZOR"),
         "{err}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// F-687b ruling 3: the terminal prompt. A real pseudo-terminal is the only way
+// to exercise it: every other test pipes stdin, which is the no-prompt case.
+// ---------------------------------------------------------------------------
+
+/// Run `bin argv` with stdin on a fresh pty slave; wait for `prompt` on
+/// stderr, then type `typed` on the master. Returns (exit code, stdout,
+/// stderr, everything the terminal displayed = the pty echo).
+#[cfg(target_os = "linux")]
+fn run_on_a_terminal(
+    bin: &std::path::Path,
+    argv: &[&str],
+    env: &[(&str, &str)],
+    prompt: &str,
+    typed: &[u8],
+) -> (i32, String, String, Vec<u8>) {
+    use std::io::{Read, Write};
+    use std::os::fd::FromRawFd;
+    // SAFETY: posix_openpt/grantpt/unlockpt/ptsname on a fd we own.
+    let (mut master, slave) = unsafe {
+        let m = libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY);
+        assert!(m >= 0, "posix_openpt");
+        assert_eq!(libc::grantpt(m), 0);
+        assert_eq!(libc::unlockpt(m), 0);
+        let name = std::ffi::CStr::from_ptr(libc::ptsname(m))
+            .to_str()
+            .unwrap()
+            .to_string();
+        let slave = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&name)
+            .unwrap();
+        (std::fs::File::from_raw_fd(m), slave)
+    };
+    let mut cmd = std::process::Command::new(bin);
+    cmd.args(argv)
+        .stdin(slave)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let mut child = cmd.spawn().unwrap();
+    let mut err = child.stderr.take().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let prompt_owned = prompt.to_string();
+    let reader = std::thread::spawn(move || {
+        let mut got = Vec::new();
+        let mut b = [0u8; 1];
+        let mut sent = false;
+        while err.read(&mut b).unwrap_or(0) == 1 {
+            got.push(b[0]);
+            if !sent && String::from_utf8_lossy(&got).contains(&prompt_owned) {
+                let _ = tx.send(());
+                sent = true;
+            }
+        }
+        if !sent {
+            let _ = tx.send(());
+        }
+        String::from_utf8_lossy(&got).into_owned()
+    });
+    rx.recv_timeout(std::time::Duration::from_secs(20))
+        .expect("the prompt never appeared on stderr");
+    master.write_all(typed).unwrap();
+    let out = child.wait_with_output().unwrap();
+    let stderr = reader.join().unwrap();
+    // Everything the terminal would have DISPLAYED (the line discipline's
+    // echo), read non-blocking now that the child is gone.
+    // SAFETY: fcntl on the master fd we own.
+    unsafe {
+        use std::os::fd::AsRawFd;
+        let fd = master.as_raw_fd();
+        libc::fcntl(
+            fd,
+            libc::F_SETFL,
+            libc::fcntl(fd, libc::F_GETFL) | libc::O_NONBLOCK,
+        );
+    }
+    let mut shown = Vec::new();
+    let mut buf = [0u8; 256];
+    while let Ok(n) = master.read(&mut buf) {
+        if n == 0 {
+            break;
+        }
+        shown.extend_from_slice(&buf[..n]);
+    }
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr,
+        shown,
+    )
+}
+
+/// F-687b ruling 3: on a terminal, prompt on stderr, echo off, read ONE line.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_terminal_gets_a_prompt_and_no_echo() {
+    let bin = assert_cmd::cargo::cargo_bin("ms");
+    let card = card_file();
+    let path = card.path().to_str().unwrap().to_string();
+    for pp in [&["--passphrase", "-"][..], &["--passphrase-stdin"][..]] {
+        let mut argv = vec!["derive", "--in", path.as_str()];
+        argv.extend(pp);
+        let (code, stdout, stderr, shown) =
+            run_on_a_terminal(&bin, &argv, &[], "Enter passphrase: ", b"TREZOR\n");
+        assert_eq!(code, 0, "{pp:?}: {stderr}");
+        assert_eq!(
+            fingerprint(&stdout).as_deref(),
+            Some("b4e3f5ed"),
+            "{stdout}"
+        );
+        assert!(!stderr.contains("input will be visible"), "{stderr}");
+        let shown = String::from_utf8_lossy(&shown);
+        assert!(
+            !shown.contains("TREZOR"),
+            "the terminal echoed the passphrase: {shown:?}"
+        );
+    }
+}
+
+/// F-691: the flag-shape test is exact on `--passphrase`: `"- "` as a
+/// separate argument is a usage error (64) as in mnemonic-toolkit, even under
+/// the override; `--passphrase=- ` is the literal.
+#[test]
+fn a_dash_space_argument_is_a_usage_error_under_the_override() {
+    let card = card_file();
+    let out = Command::cargo_bin("ms")
+        .unwrap()
+        .arg("derive")
+        .arg("--in")
+        .arg(card.path())
+        .args(["--allow-argv-secret", "--passphrase", "- "])
+        .write_stdin("TREZOR")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(64));
+    assert!(out.stdout.is_empty());
+    // A LEADING space does not begin with `-`: the literal, as in the toolkit.
+    let out = Command::cargo_bin("ms")
+        .unwrap()
+        .arg("derive")
+        .arg("--in")
+        .arg(card.path())
+        .args(["--allow-argv-secret", "--passphrase", " -"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        fingerprint(&String::from_utf8_lossy(&out.stdout)).as_deref(),
+        Some("e20c1882")
     );
 }

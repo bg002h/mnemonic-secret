@@ -138,18 +138,6 @@ fn normalize_phrase(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Read a BIP-39 passphrase from stdin, preserving ALL bytes except a single
-/// trailing `\r?\n`. A passphrase may intentionally contain leading/trailing
-/// spaces, tabs, or internal whitespace, so the `strip_whitespace`/`read_input`
-/// path (which would mangle it and dedup doubled strings) MUST NOT be used here.
-/// Mirrors mnemonic-toolkit's `read_stdin_passphrase`.
-pub(crate) fn read_stdin_passphrase() -> Result<Zeroizing<String>> {
-    let mut s: Zeroizing<String> = read_stdin()?;
-    // F-687 fold 1: the ONE byte rule, shared with `@env:VAR`.
-    crate::passphrase_input::strip_one_newline(&mut s);
-    Ok(s)
-}
-
 pub(crate) fn read_stdin() -> Result<Zeroizing<String>> {
     // SPEC v0.9.0 §1 item 2 — wrap the raw stdin buffer so the byte
     // sequence scrubs on drop. The trimmed copy emitted by callers is

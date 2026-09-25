@@ -119,6 +119,118 @@ pub(crate) fn emit_argv_note<W: std::io::Write>(
     }
 }
 
+/// F-687b ruling 2: the one line printed when a PRIVATE channel yields an
+/// EMPTY passphrase. `origin` is `stdin` or `environment variable VAR`.
+/// Byte-identical to mnemonic-toolkit's `passphrase_input::empty_warning`.
+pub(crate) fn empty_warning(origin: &str) -> String {
+    format!("warning: --passphrase from {origin} is empty; proceeding with the EMPTY passphrase")
+}
+
+fn warn_if_empty(origin: &str, value: &str) {
+    if value.is_empty() {
+        eprintln!("{}", empty_warning(origin));
+    }
+}
+
+/// The terminal prompt (ruling 3). Same text as mnemonic-toolkit.
+pub(crate) const PROMPT: &str = "Enter passphrase: ";
+
+/// Is the PROCESS stdin a terminal? Never in unit tests.
+pub(crate) fn stdin_is_terminal() -> bool {
+    use std::io::IsTerminal;
+    !cfg!(test) && std::io::stdin().is_terminal()
+}
+
+/// Echo off on fd 0 for the life of the guard (Unix; restored on drop).
+/// `ECHONL` keeps the Enter visible without showing the secret.
+struct EchoOff {
+    #[cfg(unix)]
+    saved: Option<libc::termios>,
+}
+
+impl EchoOff {
+    #[cfg(not(unix))]
+    fn new() -> (Self, bool) {
+        (Self {}, false)
+    }
+
+    #[cfg(unix)]
+    fn new() -> (Self, bool) {
+        // SAFETY: tcgetattr/tcsetattr on fd 0 with a zeroed, then
+        // kernel-filled, termios; no pointers are retained.
+        unsafe {
+            let mut t: libc::termios = std::mem::zeroed();
+            if libc::tcgetattr(0, &mut t) == 0 {
+                let saved = t;
+                t.c_lflag &= !libc::ECHO;
+                t.c_lflag |= libc::ECHONL;
+                if libc::tcsetattr(0, libc::TCSANOW, &t) == 0 {
+                    return (Self { saved: Some(saved) }, true);
+                }
+            }
+        }
+        (Self { saved: None }, false)
+    }
+}
+
+impl Drop for EchoOff {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        if let Some(t) = self.saved.take() {
+            // SAFETY: restores the attributes read in `new`.
+            unsafe {
+                libc::tcsetattr(0, libc::TCSANOW, &t);
+            }
+        }
+    }
+}
+
+/// Read the passphrase from stdin under the one byte rule. On a terminal:
+/// prompt on stderr, echo off where possible, read ONE line. Otherwise read
+/// to EOF, no prompt. Warns once if the result is empty.
+pub(crate) fn read_stdin_passphrase() -> Result<Zeroizing<String>> {
+    use std::io::{Read, Write};
+    let mut s: Zeroizing<String> = if stdin_is_terminal() {
+        let (_echo, hidden) = EchoOff::new();
+        let mut e = std::io::stderr();
+        let _ = write!(
+            e,
+            "{PROMPT}{}",
+            if hidden {
+                ""
+            } else {
+                "(input will be visible) "
+            }
+        );
+        let _ = e.flush();
+        let mut bytes: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::new());
+        let mut b = [0u8; 1];
+        let mut stdin = std::io::stdin().lock();
+        loop {
+            match stdin.read(&mut b) {
+                Ok(0) => break,
+                Ok(_) => {
+                    bytes.push(b[0]);
+                    if b[0] == b'\n' {
+                        break;
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(CliError::BadInput(format!("failed to read stdin: {e}"))),
+            }
+        }
+        Zeroizing::new(
+            String::from_utf8(bytes.to_vec())
+                .map_err(|_| CliError::BadInput("--passphrase: stdin is not valid UTF-8".into()))?,
+        )
+    } else {
+        crate::parse::read_stdin()?
+    };
+    strip_one_newline(&mut s);
+    warn_if_empty("stdin", &s);
+    Ok(s)
+}
+
 /// POSIX env-var name as the toolkit accepts it: `[A-Z_][A-Z0-9_]*`.
 fn is_valid_env_name(name: &str) -> bool {
     let mut chars = name.chars();
@@ -150,6 +262,7 @@ fn resolve_env(value: &str) -> Result<Zeroizing<String>> {
         })
     })?;
     strip_one_newline(&mut v);
+    warn_if_empty(&format!("environment variable {var}"), &v);
     Ok(v)
 }
 
@@ -180,7 +293,7 @@ pub(crate) fn resolve_or_empty(
     }
     match source(value, stdin_flag, admitted) {
         PassphraseSource::Absent => Ok(Zeroizing::new(String::new())),
-        PassphraseSource::Stdin => crate::parse::read_stdin_passphrase(),
+        PassphraseSource::Stdin => read_stdin_passphrase(),
         PassphraseSource::Env => resolve_env(value.unwrap_or("")),
         PassphraseSource::Argv => Ok(Zeroizing::new(admitted.or(value).unwrap_or("").to_string())),
     }
