@@ -92,6 +92,24 @@ const SECRET_FLAGS: [&str; 5] = [
     "--hashlock-phrase",
 ];
 
+/// Is `raw` (the value EXACTLY as clap will see it) a private channel rather
+/// than material, for secret flag `flag`?
+///
+/// On `--passphrase` this is `passphrase_input::is_channel_value` -- the SAME
+/// predicate the resolver classifies with, so the guard and the resolver
+/// cannot disagree (F-687 fold 1, review M2: the guard used to trim, so
+/// `--passphrase " -"` passed the guard as the stdin channel and then derived
+/// with the literal passphrase " -"). Exactly `-` is stdin, `@env:VAR` the
+/// environment; ` -`, `- `, `-\n` are material, as in mnemonic-toolkit.
+/// On every other secret flag `-` keeps its trimmed stdin meaning.
+fn is_channel(flag: &str, raw: &str) -> bool {
+    if flag == "--passphrase" {
+        crate::passphrase_input::is_channel_value(raw)
+    } else {
+        raw.trim() == "-"
+    }
+}
+
 /// Every string a token could plausibly BE, normalised for classification.
 ///
 /// **Neither trimming nor case-folding is optional.** ` ms1…`, `ms1…` and an
@@ -335,7 +353,7 @@ fn substitute(argv: &[String]) -> std::result::Result<Vec<String>, String> {
                          otherwise pass the secret on a private channel."
                     ));
                 }
-                if v != "-" {
+                if !is_channel(&whole, value) {
                     map.entry(whole.clone()).or_default().push(value.clone());
                     out.push(token);
                     out.push("-".to_string());
@@ -343,8 +361,9 @@ fn substitute(argv: &[String]) -> std::result::Result<Vec<String>, String> {
                     continue;
                 }
             }
-            // No next token at all: leave the valueless flag for clap, which
-            // already answers `a value is required for '<flag>'` at exit 64.
+            // No next token at all, `-`, or an `@env:` channel: leave the
+            // flag for clap (a valueless flag gets `a value is required for
+            // '<flag>'` at exit 64); a channel value follows untouched.
             out.push(token);
             i += 1;
             continue;
@@ -353,10 +372,14 @@ fn substitute(argv: &[String]) -> std::result::Result<Vec<String>, String> {
             if let Some((lhs, _)) = whole.split_once('=') {
                 if SECRET_FLAGS.contains(&lhs) {
                     let raw = token.trim().split_once('=').map(|(_, r)| r).unwrap_or("");
-                    if raw.trim() != "-" {
+                    // The value exactly as clap sees it (no trim): what the
+                    // resolver will classify, and what a literal passphrase is.
+                    let exact = token.split_once('=').map(|(_, r)| r).unwrap_or("");
+                    if !is_channel(lhs, exact) {
+                        let admitted = if lhs == "--passphrase" { exact } else { raw };
                         map.entry(lhs.to_string())
                             .or_default()
-                            .push(raw.to_string());
+                            .push(admitted.to_string());
                         out.push(format!("{lhs} -"));
                         // Two tokens, not one: `--phrase=-` also parses, but
                         // emitting the split form keeps the substituted argv in
@@ -399,18 +422,19 @@ fn find_argv_material(argv: &[String]) -> Option<(usize, &'static str, usize)> {
         let whole = token.trim().to_ascii_lowercase();
         if SECRET_FLAGS.contains(&whole.as_str()) {
             if let Some(value) = argv.get(i + 1) {
-                if value.trim() != "-" {
+                if !is_channel(&whole, value) {
                     return Some((i + 1, flag_class(&whole), value.trim().chars().count()));
                 }
             }
             continue;
         }
-        if let Some((lhs, rhs)) = whole.split_once('=') {
+        if let Some((lhs, _)) = whole.split_once('=') {
             if SECRET_FLAGS.contains(&lhs) {
                 // The value is everything after the FIRST `=`; a value that
                 // itself contains `=` is still one value.
                 let raw = token.trim().split_once('=').map(|(_, r)| r).unwrap_or("");
-                if rhs.trim() != "-" {
+                let exact = token.split_once('=').map(|(_, r)| r).unwrap_or("");
+                if !is_channel(lhs, exact) {
                     return Some((i, flag_class(lhs), raw.trim().chars().count()));
                 }
                 continue;

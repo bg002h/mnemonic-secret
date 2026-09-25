@@ -145,12 +145,8 @@ fn normalize_phrase(s: &str) -> String {
 /// Mirrors mnemonic-toolkit's `read_stdin_passphrase`.
 pub(crate) fn read_stdin_passphrase() -> Result<Zeroizing<String>> {
     let mut s: Zeroizing<String> = read_stdin()?;
-    if s.ends_with('\n') {
-        s.pop();
-        if s.ends_with('\r') {
-            s.pop();
-        }
-    }
+    // F-687 fold 1: the ONE byte rule, shared with `@env:VAR`.
+    crate::passphrase_input::strip_one_newline(&mut s);
     Ok(s)
 }
 
