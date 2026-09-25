@@ -420,10 +420,16 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
     // becomes the first private way to derive with a passphrase (§2.5).
     let ms1_src = Source::new(args.ms1.as_deref(), args.in_path.as_deref())
         .on(crate::argv_guard::CH_POSITIONAL);
-    let entropy_reads_stdin = if hex_arg.is_some() {
-        hex_arg.as_deref().map(|s| s.as_str()) == Some("-")
-    } else if phrase_arg.is_some() {
-        phrase_arg.as_deref().map(|s| s.as_str()) == Some("-")
+    // F-679: each channel's Source answers, not the literal `-` -- the override
+    // rewrites an admitted `--hex <h>` / `--phrase <p>` / `<ms1>` to `-` too.
+    let entropy_reads_stdin = if let Some(h) = hex_arg.as_deref() {
+        Source::new(Some(h.as_str()), None)
+            .on("--hex")
+            .reads_stdin()
+    } else if let Some(p) = phrase_arg.as_deref() {
+        Source::new(Some(p.as_str()), None)
+            .on("--phrase")
+            .reads_stdin()
     } else {
         ms1_src.reads_stdin()
     };

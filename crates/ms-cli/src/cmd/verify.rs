@@ -70,7 +70,14 @@ pub fn run(mut args: VerifyArgs) -> Result<u8> {
     // resolve to stdin, exit immediately (clap can't catch this).
     let ms1_src = Source::new(args.ms1.as_deref(), args.in_path.as_deref())
         .on(crate::argv_guard::CH_POSITIONAL);
-    if ms1_src.reads_stdin() && phrase_arg.as_deref().map(|s| s.as_str()) == Some("-") {
+    // F-679: ask the phrase's Source, not the literal `-`, which the override
+    // also produces for an admitted `--phrase <p>`.
+    let phrase_reads_stdin = phrase_arg.as_deref().is_some_and(|p| {
+        Source::new(Some(p.as_str()), None)
+            .on("--phrase")
+            .reads_stdin()
+    });
+    if ms1_src.reads_stdin() && phrase_reads_stdin {
         return Err(CliError::BadInput(
             "cannot read both ms1 and --phrase from stdin".into(),
         ));

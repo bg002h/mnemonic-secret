@@ -58,8 +58,15 @@ impl<'a> Source<'a> {
     /// `None` meant stdin; with `--in` supplied it does not, so the refusal
     /// stops firing and the round-trip check becomes performable privately for
     /// the first time.
+    ///
+    /// **An admitted value is not a stdin read (F-679).** `--allow-argv-secret`
+    /// rewrites each admitted value to `-` before clap parses, so `self.arg`
+    /// alone cannot tell the user's `-` from the placeholder. The side channel
+    /// can: `read_raw` consults it before stdin, and so must this.
     pub fn reads_stdin(&self) -> bool {
-        self.in_path.is_none() && is_stdin_arg(self.arg)
+        self.in_path.is_none()
+            && is_stdin_arg(self.arg)
+            && crate::argv_guard::admitted(self.channel).is_none()
     }
 
     /// The raw bytes this source names, as a scrub-on-drop `String`, or the

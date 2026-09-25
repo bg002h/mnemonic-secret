@@ -100,22 +100,28 @@ fn read_shares(
         }
         return Ok(Zeroizing::new(out));
     }
+    // The override substitutes each admitted share with `-`, one for one, so
+    // the first `admitted.len()` `-` markers are placeholders and any further
+    // `-` is the user's genuine stdin request (F-679: the first `-` used to
+    // drain every admitted share and the user's own `-` was then dropped).
+    let mut admitted = crate::argv_guard::admitted(crate::argv_guard::CH_POSITIONAL)
+        .unwrap_or(&[])
+        .iter();
     let mut consumed_stdin = false;
     for a in args {
-        if a == "-" && !consumed_stdin {
-            consumed_stdin = true;
-            // The override's side channel first: `--allow-argv-secret <s1> <s2>`
-            // substitutes each share to `-`, and the shares arrive here in argv
-            // order rather than from stdin.
-            if let Some(shares) = crate::argv_guard::admitted(crate::argv_guard::CH_POSITIONAL) {
-                for share in shares {
-                    let s = crate::format::strip_display_separators(share);
-                    if !s.is_empty() {
-                        out.push(s);
-                    }
+        if a == "-" {
+            if let Some(share) = admitted.next() {
+                let s = crate::format::strip_display_separators(share);
+                if !s.is_empty() {
+                    out.push(s);
                 }
                 continue;
             }
+            if consumed_stdin {
+                // Already consumed stdin; ignore additional `-` markers.
+                continue;
+            }
+            consumed_stdin = true;
             let buf = crate::parse::read_stdin()?;
             for line in buf.lines() {
                 let s = crate::format::strip_display_separators(line);
@@ -123,8 +129,6 @@ fn read_shares(
                     out.push(s);
                 }
             }
-        } else if a == "-" {
-            // Already consumed stdin; ignore additional `-` markers.
         } else {
             out.push(crate::format::strip_display_separators(a));
         }
