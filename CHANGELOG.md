@@ -4,6 +4,19 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.20.1] — 2026-09-25
+
+### Fixed
+- **macOS: a file that IS stdin was not recognised as stdin** (F-687e). The
+  one-stdin guard identified fd 0 by stat-ing `/dev/stdin`; on macOS that
+  path resolves through the fdesc filesystem and does not report the dev/ino
+  of the file fd 0 is open on. So `ms derive --in card.ms1 --passphrase -`
+  with stdin redirected FROM `card.ms1` exited 0 and derived with the card's
+  text as the passphrase (fingerprint `bf05dda1`), a wrong wallet, where
+  Linux refuses it as two stdin readers. fd 0 is now identified by `fstat`
+  on fd 0 itself. Found by the macos-latest CI job, red on master since
+  ms-cli 0.20.0's F-687 merge (`d1ab447`).
+
 ## ms-cli [0.20.0] — 2026-09-25
 
 ### Changed

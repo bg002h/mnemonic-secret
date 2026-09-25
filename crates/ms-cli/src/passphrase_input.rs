@@ -50,7 +50,8 @@ pub(crate) fn is_channel_value(raw: &str) -> bool {
 
 /// Is this input PATH really stdin? `/dev/stdin`, `/dev/fd/0` and
 /// `/proc/self/fd/0` by name, and on Unix anything that is the same file as
-/// fd 0 (device + inode). Such a path reads the SAME stream as a stdin
+/// fd 0 (device + inode, fd 0 identified by `fstat` on fd 0 itself —
+/// F-687e). Such a path reads the SAME stream as a stdin
 /// passphrase (review M1: `ms derive --in /dev/stdin --passphrase -` drained
 /// stdin into the ms1 read and derived with the EMPTY passphrase at exit 0).
 /// Byte-identical rule to mnemonic-toolkit's `passphrase_input::path_is_stdin`.
@@ -64,7 +65,20 @@ pub(crate) fn path_is_stdin(path: &std::path::Path) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        if let (Ok(a), Ok(b)) = (std::fs::metadata(path), std::fs::metadata("/dev/stdin")) {
+        // F-687e: identify fd 0 by fstat-ing fd 0 ITSELF (a dup of it), never
+        // by stat-ing "/dev/stdin". On macOS `/dev/stdin` is a symlink into
+        // the fdesc filesystem, and stat of that node does not report the
+        // dev/ino of the file fd 0 is open on, so a `< seed.txt` redirect was
+        // not recognised and `--secret-file seed.txt --passphrase -` derived a
+        // wallet from the file's bytes as the passphrase (CI run 36188069667,
+        // macos-latest). Linux's /proc-backed /dev/stdin hid it.
+        use std::os::fd::AsFd;
+        let fd0 = std::io::stdin()
+            .as_fd()
+            .try_clone_to_owned()
+            .ok()
+            .map(std::fs::File::from);
+        if let (Ok(a), Some(Ok(b))) = (std::fs::metadata(path), fd0.map(|f| f.metadata())) {
             return a.dev() == b.dev() && a.ino() == b.ino();
         }
     }
