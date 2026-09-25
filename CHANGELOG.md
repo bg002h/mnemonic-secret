@@ -20,7 +20,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   consults the admitted side channel exactly as the reader does; two inputs
   that both genuinely come from stdin are still refused.
   `tests/f679_admitted_is_not_stdin.rs` covers argv+argv, argv+stdin, `--in`,
-  and stdin+stdin for all three verbs.
+  and stdin+stdin for verify and derive (combine has no stdin+stdin case).
 - **Help EXAMPLES no longer put the secret on argv** (F-677). `ms encode`,
   `decode`, `inspect`, `verify`, `repair`, `split` and `combine` each taught a
   one-liner that the argv guard has refused since 0.17.0. They now use `--in

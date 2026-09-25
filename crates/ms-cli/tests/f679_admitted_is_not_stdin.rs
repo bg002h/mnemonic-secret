@@ -149,7 +149,16 @@ fn derive_oracle() -> String {
         ],
         PASSPHRASE,
     );
-    fingerprint(&ok(&o, "oracle"))
+    let with = fingerprint(&ok(&o, "oracle"));
+    // The oracle itself goes through --passphrase-stdin, so matching it proves
+    // nothing unless the passphrase demonstrably changes the result.
+    let bare = run(&["derive", "--in", &card.display().to_string()], "");
+    assert_ne!(
+        with,
+        fingerprint(&ok(&bare, "no passphrase")),
+        "--passphrase-stdin did not change the fingerprint"
+    );
+    with
 }
 
 /// Every admitted entropy source, with the passphrase genuinely on stdin, and
