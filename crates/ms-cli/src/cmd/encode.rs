@@ -88,8 +88,10 @@ pub struct EncodeArgs {
     #[arg(long, default_value_t = 5)]
     pub group_size: u16,
 
-    /// Separator: space|hyphen|comma (keyword) or the literal " "|-|, . SPEC §5.
-    #[arg(long, default_value = "space", value_parser = crate::format::parse_separator)]
+    /// Separator between groups: `space` (or the literal " "). SPEC §5.
+    /// `hyphen` and `comma` are no longer emitted (§6c); a card already
+    /// grouped with them still decodes.
+    #[arg(long, default_value = "space", value_parser = crate::format::SeparatorParser)]
     pub separator: char,
 
     /// Emit a single JSON object on stdout instead of multi-line text.

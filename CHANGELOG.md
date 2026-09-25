@@ -4,6 +4,24 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## [Unreleased]
+
+### Fixed
+- **`--separator` help no longer offers `hyphen` and `comma`** (F-683). §6c
+  retired them from emission (they exit 64), but `ms encode`, `split` and
+  `hashlock --help` still read `space|hyphen|comma (keyword) or the literal
+  " "|-|,`. The offered values now come from one list, `format::SEPARATORS`,
+  which `parse_separator` accepts and the new `SeparatorParser` advertises to
+  clap, so `--help` shows `[possible values: space]` and cannot drift from
+  what parses. Intake is unchanged: a hyphen- or comma-grouped card still
+  decodes.
+
+### Changed
+- **`ms gui-schema`: `--separator` on `encode`, `hashlock` and `split` is now
+  `"kind": "dropdown", "choices": ["space"]`** (was `"kind": "text",
+  "choices": null`), because clap now reports its possible values. No other
+  schema field changes.
+
 ## ms-cli [0.19.1] — 2026-09-24
 
 ### Fixed
