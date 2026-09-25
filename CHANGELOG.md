@@ -7,6 +7,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Changed
+- **The `Enter passphrase:` prompt drains what was pasted or typed after
+  the line, and shows it** (F-687c, operator ruling 2026-09-25: "Yes to the
+  paste question but print what was dropped on stderr"). After the line is
+  read, with echo still off and the signal handlers armed, any pending input
+  is read (non-canonical, 0.1 s after input stops), printed on stderr as
+  `note: discarded N line(s) typed after the passphrase (not run, not
+  used):` followed by the text, and the queue is flushed, so the shell never
+  runs it. Nothing pending: no output. Pipes and files: unchanged. Same
+  behaviour and text as mnemonic-toolkit.
 - **An empty `--passphrase` from a private channel is announced** (F-687b,
   operator ruling 2026-09-25): when `-`, `--passphrase-stdin` or `@env:VAR`
   yields an empty passphrase, one stderr line — `warning: --passphrase from
