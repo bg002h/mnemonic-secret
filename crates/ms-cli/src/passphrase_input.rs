@@ -40,6 +40,37 @@ pub(crate) enum PassphraseSource {
 /// The whole-value environment sentinel. `prefix@env:VAR` is a literal.
 pub(crate) const ENV_PREFIX: &str = "@env:";
 
+/// Is this `--passphrase` VALUE (exactly as clap sees it) a private channel —
+/// `-` (stdin) or `@env:VAR` — rather than the passphrase itself? The argv
+/// guard and [`source`] both call THIS, so they cannot disagree about a
+/// padded `" -"` (F-687 fold 1, review M2). Exact match: `" -"` is a literal.
+pub(crate) fn is_channel_value(raw: &str) -> bool {
+    raw == "-" || raw.starts_with(ENV_PREFIX)
+}
+
+/// Is this input PATH really stdin? `/dev/stdin`, `/dev/fd/0` and
+/// `/proc/self/fd/0` by name, and on Unix anything that is the same file as
+/// fd 0 (device + inode). Such a path reads the SAME stream as a stdin
+/// passphrase (review M1: `ms derive --in /dev/stdin --passphrase -` drained
+/// stdin into the ms1 read and derived with the EMPTY passphrase at exit 0).
+/// Byte-identical rule to mnemonic-toolkit's `passphrase_input::path_is_stdin`.
+pub(crate) fn path_is_stdin(path: &std::path::Path) -> bool {
+    if matches!(
+        path.to_str(),
+        Some("/dev/stdin" | "/dev/fd/0" | "/proc/self/fd/0")
+    ) {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let (Ok(a), Ok(b)) = (std::fs::metadata(path), std::fs::metadata("/dev/stdin")) {
+            return a.dev() == b.dev() && a.ino() == b.ino();
+        }
+    }
+    false
+}
+
 /// Classify. Pure.
 ///
 /// `admitted` is what `--allow-argv-secret` took off argv for `--passphrase`:
@@ -59,9 +90,9 @@ pub(crate) fn source(
     }
     match value {
         None => PassphraseSource::Absent,
+        Some(v) if !is_channel_value(v) => PassphraseSource::Argv,
         Some("-") => PassphraseSource::Stdin,
-        Some(v) if v.starts_with(ENV_PREFIX) => PassphraseSource::Env,
-        Some(_) => PassphraseSource::Argv,
+        Some(_) => PassphraseSource::Env,
     }
 }
 
@@ -107,10 +138,16 @@ fn resolve_env(value: &str) -> Result<Zeroizing<String>> {
             "--passphrase: invalid env-var name `{var}`"
         )));
     }
-    let mut v = std::env::var(var).map(Zeroizing::new).map_err(|_| {
-        CliError::BadInput(format!(
-            "--passphrase: env-var {var} referenced by sentinel is not set"
-        ))
+    let mut v = std::env::var(var).map(Zeroizing::new).map_err(|e| {
+        CliError::BadInput(match e {
+            // F-687 fold 1 (review N1): set-but-not-UTF-8 is not "not set".
+            std::env::VarError::NotUnicode(_) => format!(
+                "--passphrase: env-var {var} referenced by sentinel is set but not valid UTF-8"
+            ),
+            std::env::VarError::NotPresent => {
+                format!("--passphrase: env-var {var} referenced by sentinel is not set")
+            }
+        })
     })?;
     strip_one_newline(&mut v);
     Ok(v)
@@ -119,7 +156,7 @@ fn resolve_env(value: &str) -> Result<Zeroizing<String>> {
 /// Remove exactly ONE trailing `\n` (and a `\r` before it), nothing else —
 /// the byte rule `read_stdin_passphrase` has always applied, now shared by
 /// `@env:VAR` so the three private forms agree on the bytes.
-fn strip_one_newline(s: &mut String) {
+pub(crate) fn strip_one_newline(s: &mut String) {
     if s.ends_with('\n') {
         s.pop();
         if s.ends_with('\r') {

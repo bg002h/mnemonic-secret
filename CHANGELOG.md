@@ -26,7 +26,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   A caller who meant the literal passphrase `-` (or one beginning `@env:`)
   must now pipe it on stdin. Nothing is refused for using either form.
   - The rule is shared with mnemonic-toolkit and pinned by
-    `crates/ms-cli/vectors/passphrase_channels.json` (27 cases, a byte-identical
+    `crates/ms-cli/vectors/passphrase_channels.json` (37 cases, a byte-identical
     copy of the toolkit's): `--passphrase -` = `--passphrase-stdin`, byte for
     byte (exactly one trailing `\n` / `\r\n` removed, every other byte
     kept); `@env:VAR` under the same one-newline rule, an unset or invalidly
@@ -41,6 +41,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   - One stdin per invocation: `--passphrase -` beside an ms1/`--hex -`/
     `--phrase -` on stdin is refused like `--passphrase-stdin` is. The
     override's `-` placeholder is not counted as a stdin reader.
+    `--in` naming stdin (`/dev/stdin`, `/dev/fd/0`, or any path that is the
+    same file as fd 0) counts as a stdin reader too; before, `ms derive --in
+    /dev/stdin --passphrase -` (or `--passphrase-stdin`) derived with the
+    EMPTY passphrase at exit 0.
+  - Only the EXACT value `-` is stdin. The argv guard used to trim, so
+    `--passphrase " -"` slipped past it as the channel and then derived with
+    the literal `" -"`; guard and resolver now share one predicate, so a
+    padded dash is argv material (refused without `--allow-argv-secret`), as
+    in mnemonic-toolkit.
+  - A non-UTF-8 `@env:` value is reported as "set but not valid UTF-8" (was
+    "not set"), and a non-UTF-8 argument is a usage error (exit 64, value not
+    shown) instead of a panic (exit 101).
 - **`ms gui-schema`: `--separator` on `encode`, `hashlock` and `split` is now
   `"kind": "dropdown", "choices": ["space"]`** (was `"kind": "text",
   "choices": null`), because clap now reports its possible values. No other

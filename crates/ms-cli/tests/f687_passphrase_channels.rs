@@ -77,7 +77,7 @@ fn every_vector_case_holds() {
     let card = card_file();
     let cases = v["cases"].as_array().unwrap();
     assert!(
-        cases.len() >= 20,
+        cases.len() >= 37,
         "the vector file lost cases: {}",
         cases.len()
     );
@@ -226,4 +226,108 @@ fn the_guard_admits_the_env_channel_without_the_override() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(1));
+}
+
+// ---------------------------------------------------------------------------
+// Fold 1 (review f687-review.md).
+// ---------------------------------------------------------------------------
+
+/// M1: `--in` naming stdin — by name, or the same file as fd 0 — is a stdin
+/// reader. Before fold 1, `ms derive --in /dev/stdin --passphrase -` derived
+/// with the EMPTY passphrase (73c5da0a) at exit 0.
+#[test]
+fn an_in_path_that_is_stdin_is_a_second_stdin_reader() {
+    for path in ["/dev/stdin", "/dev/fd/0"] {
+        for pp in [&["--passphrase", "-"][..], &["--passphrase-stdin"][..]] {
+            let out = Command::cargo_bin("ms")
+                .unwrap()
+                .args(["derive", "--in", path])
+                .args(pp)
+                .write_stdin(format!("{CARD}\n"))
+                .output()
+                .unwrap();
+            assert_eq!(out.status.code(), Some(1), "{path} {pp:?}");
+            assert!(out.stdout.is_empty());
+            assert!(String::from_utf8_lossy(&out.stderr).contains("one stdin per invocation"));
+        }
+    }
+    // By inode: fd 0 IS the card file (a real `< card.ms1` redirect, not a
+    // pipe), and the same file is named as --in.
+    let card = card_file();
+    let out = std::process::Command::new(assert_cmd::cargo::cargo_bin("ms"))
+        .arg("derive")
+        .arg("--in")
+        .arg(card.path())
+        .args(["--passphrase", "-"])
+        .stdin(std::fs::File::open(card.path()).unwrap())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+}
+
+/// M2: the guard and the resolver agree on `-`: a padded dash is argv
+/// material (refused), never the stdin channel, in every spelling.
+#[test]
+fn a_padded_dash_is_material_in_every_spelling() {
+    let card = card_file();
+    for args in [
+        &["--passphrase", " -"][..],
+        &["--passphrase", "\t-"][..],
+        &["--passphrase", "- "][..],
+        &["--passphrase=- "][..],
+        &["--passphrase=-\n"][..],
+    ] {
+        let out = Command::cargo_bin("ms")
+            .unwrap()
+            .arg("derive")
+            .arg("--in")
+            .arg(card.path())
+            .args(args)
+            .write_stdin("TREZOR")
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(1), "{args:?}");
+        assert!(out.stdout.is_empty(), "{args:?}");
+        assert!(String::from_utf8_lossy(&out.stderr).contains("BIP-39 passphrase"));
+    }
+}
+
+/// N1: non-UTF-8 `@env:` value → "not valid UTF-8"; non-UTF-8 argv → 64,
+/// not a panic, and not echoed.
+#[cfg(unix)]
+#[test]
+fn non_utf8_input_is_refused_by_name_not_panicked() {
+    use std::os::unix::ffi::OsStrExt;
+    let bad = std::ffi::OsStr::from_bytes(b"TRE\xffZOR");
+    let card = card_file();
+    let out = Command::cargo_bin("ms")
+        .unwrap()
+        .arg("derive")
+        .arg("--in")
+        .arg(card.path())
+        .args(["--passphrase", "@env:F687_PP"])
+        .env("F687_PP", bad)
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert!(
+        err.contains("F687_PP") && err.contains("not valid UTF-8"),
+        "{err}"
+    );
+    let out = Command::cargo_bin("ms")
+        .unwrap()
+        .arg("derive")
+        .arg("--in")
+        .arg(card.path())
+        .args(["--allow-argv-secret", "--passphrase"])
+        .arg(bad)
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(64), "{err}");
+    assert!(
+        err.contains("not valid UTF-8") && !err.contains("ZOR"),
+        "{err}"
+    );
 }

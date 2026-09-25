@@ -443,7 +443,13 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
             .on("--phrase")
             .reads_stdin()
     } else {
+        // F-687 fold 1 (review M1): `--in /dev/stdin` (or any path that is
+        // fd 0) reads the same stream as a stdin passphrase.
         ms1_src.reads_stdin()
+            || args
+                .in_path
+                .as_deref()
+                .is_some_and(crate::passphrase_input::path_is_stdin)
     };
     if crate::passphrase_input::reads_stdin(pp_value, args.passphrase_stdin, pp_admitted)
         && entropy_reads_stdin

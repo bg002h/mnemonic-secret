@@ -188,7 +188,23 @@ fn main() -> ExitCode {
     // Exit 1 is `ms`'s user-input code (SPEC §6). No code is renumbered here:
     // §6f rules `mk`'s invalid-artifact 2 the only code this cycle changes, and
     // that is P3's.
-    let argv: Vec<String> = std::env::args().collect();
+    // F-687 fold 1 (review N1): `std::env::args()` PANICS (exit 101) on a
+    // non-UTF-8 argument. Refuse it as a usage error instead, naming only the
+    // position -- the bytes may be a secret, so they are never echoed.
+    let argv: Vec<String> = match std::env::args_os()
+        .enumerate()
+        .map(|(i, a)| a.into_string().map_err(|_| i))
+        .collect::<std::result::Result<Vec<String>, usize>>()
+    {
+        Ok(v) => v,
+        Err(i) => {
+            eprintln!(
+                "error: argument {i} on argv (0 is `ms` itself) is not valid UTF-8; \
+                 refused (the value is not shown)"
+            );
+            return ExitCode::from(64);
+        }
+    };
     // `--allow-argv-secret` is a CHANNEL, not a flag: its own parse happens
     // here too, or it could not be honoured without parsing the very argv the
     // guard exists to protect. When it applies, `decide` hands back a
