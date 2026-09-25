@@ -7,13 +7,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Changed
+- **The discarded-input note shows a MASKED preview, not the text** (F-687d,
+  operator ruling 2026-09-25: "Agree with masked echo as you suggested").
+  Under the unchanged header, one line per discarded line, indented two
+  spaces: up to 8 characters as is; longer, its first 8 characters, `…` and
+  `(W word(s), N chars)` (characters, not bytes); whitespace-only
+  `(blank)`. Control characters, escape sequences (CSI, OSC, `ESC x`) and
+  invisible bidi/format marks in the preview become `?`, so a paste cannot
+  drive the terminal. One formatter (`passphrase_input::drain_note`), pinned
+  by `vectors/drain_preview.json` (15 cases, byte-identical with
+  mnemonic-toolkit). F-687c printed the discarded text in full.
 - **The `Enter passphrase:` prompt drains what was pasted or typed after
   the line, and shows it** (F-687c, operator ruling 2026-09-25: "Yes to the
   paste question but print what was dropped on stderr"). After the line is
   read, with echo still off and the signal handlers armed, any pending input
   is read (non-canonical, 0.1 s after input stops), printed on stderr as
   `note: discarded N line(s) typed after the passphrase (not run, not
-  used):` followed by the text, and the queue is flushed, so the shell never
+  used):` followed by a masked preview of each line (F-687d), and the queue is flushed, so the shell never
   runs it. Nothing pending: no output. Pipes and files: unchanged. Same
   behaviour and text as mnemonic-toolkit.
 - **An empty `--passphrase` from a private channel is announced** (F-687b,
