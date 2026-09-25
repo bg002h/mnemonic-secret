@@ -53,8 +53,13 @@ pub fn strip_display_separators(s: &str) -> String {
 /// untouched: its 22 rows (2 hyphen, 3 comma) call `render_grouped` directly and
 /// never reach this function.
 pub fn parse_separator(s: &str) -> Result<char, String> {
+    if let Some(&(_, c)) = SEPARATORS
+        .iter()
+        .find(|&&(keyword, c)| s == keyword || s.chars().eq([c]))
+    {
+        return Ok(c);
+    }
     match s {
-        "space" | " " => Ok(' '),
         "hyphen" | "-" | "comma" | "," => Err(format!(
             "separator {s:?} is no longer offered: `ms` emits whitespace grouping \
              only. An already-engraved hyphen- or comma-grouped card still DECODES \
@@ -63,6 +68,42 @@ pub fn parse_separator(s: &str) -> Result<char, String> {
         other => Err(format!(
             "invalid separator {other:?}; expected `space` (or the literal \" \")"
         )),
+    }
+}
+
+/// **The separators `ms` emits, as `(keyword, char)` — the one list.**
+/// [`parse_separator`] accepts each keyword and its literal char, and
+/// [`SeparatorParser`] advertises the keywords to clap, so `--help`'s
+/// `[possible values: ...]` and `gui-schema`'s `choices` are read from here
+/// too. Before F-683 the help was a hand-written doc comment that still said
+/// `space|hyphen|comma` after §6c retired two of them.
+pub const SEPARATORS: &[(&str, char)] = &[("space", ' ')];
+
+/// clap value parser for `--separator` on every verb that has one: parses with
+/// [`parse_separator`] (so the retired-separator message is unchanged) and
+/// offers [`SEPARATORS`]' keywords as the possible values.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SeparatorParser;
+
+impl clap::builder::TypedValueParser for SeparatorParser {
+    type Value = char;
+
+    fn parse_ref(
+        &self,
+        cmd: &clap::Command,
+        arg: Option<&clap::Arg>,
+        value: &std::ffi::OsStr,
+    ) -> Result<char, clap::Error> {
+        let inner: fn(&str) -> Result<char, String> = parse_separator;
+        inner.parse_ref(cmd, arg, value)
+    }
+
+    fn possible_values(
+        &self,
+    ) -> Option<Box<dyn Iterator<Item = clap::builder::PossibleValue> + '_>> {
+        Some(Box::new(SEPARATORS.iter().map(|&(keyword, _)| {
+            clap::builder::PossibleValue::new(keyword)
+        })))
     }
 }
 
@@ -230,6 +271,15 @@ mod tests {
             );
         }
         assert!(parse_separator("bogus").is_err());
+    }
+
+    /// F-683: every advertised keyword, and its literal, parses to its char.
+    #[test]
+    fn every_offered_separator_parses() {
+        for &(keyword, c) in SEPARATORS {
+            assert_eq!(parse_separator(keyword).unwrap(), c);
+            assert_eq!(parse_separator(&c.to_string()).unwrap(), c);
+        }
     }
 
     /// **The intake half, pinned right beside the emission half.** These two are
