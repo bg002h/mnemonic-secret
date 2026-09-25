@@ -4,7 +4,7 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
-## [Unreleased]
+## ms-cli [0.20.0] — 2026-09-25
 
 ### Changed
 - **The discarded-input note shows a MASKED preview, not the text** (F-687d,
