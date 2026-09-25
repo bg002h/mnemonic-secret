@@ -23,6 +23,7 @@ mod language;
 mod mlock;
 mod out;
 mod parse;
+mod passphrase_input;
 mod process_hardening;
 
 use std::io::Write;

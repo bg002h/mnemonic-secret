@@ -92,6 +92,15 @@ const SECRET_FLAGS: [&str; 5] = [
     "--hashlock-phrase",
 ];
 
+/// F-687: a `--passphrase` value that names a PRIVATE channel rather than
+/// carrying the passphrase: `@env:VAR` (the environment). Matched on the RAW
+/// value, exactly as `passphrase_input` classifies it, so the guard and the
+/// resolver cannot disagree about what is material. (`-`, stdin, is exempt on
+/// every secret flag already.)
+fn is_env_channel(flag: &str, raw_value: &str) -> bool {
+    flag == "--passphrase" && raw_value.starts_with(crate::passphrase_input::ENV_PREFIX)
+}
+
 /// Every string a token could plausibly BE, normalised for classification.
 ///
 /// **Neither trimming nor case-folding is optional.** ` ms1…`, `ms1…` and an
@@ -335,7 +344,7 @@ fn substitute(argv: &[String]) -> std::result::Result<Vec<String>, String> {
                          otherwise pass the secret on a private channel."
                     ));
                 }
-                if v != "-" {
+                if v != "-" && !is_env_channel(&whole, value) {
                     map.entry(whole.clone()).or_default().push(value.clone());
                     out.push(token);
                     out.push("-".to_string());
@@ -343,8 +352,9 @@ fn substitute(argv: &[String]) -> std::result::Result<Vec<String>, String> {
                     continue;
                 }
             }
-            // No next token at all: leave the valueless flag for clap, which
-            // already answers `a value is required for '<flag>'` at exit 64.
+            // No next token at all, `-`, or an `@env:` channel: leave the
+            // flag for clap (a valueless flag gets `a value is required for
+            // '<flag>'` at exit 64); a channel value follows untouched.
             out.push(token);
             i += 1;
             continue;
@@ -353,7 +363,7 @@ fn substitute(argv: &[String]) -> std::result::Result<Vec<String>, String> {
             if let Some((lhs, _)) = whole.split_once('=') {
                 if SECRET_FLAGS.contains(&lhs) {
                     let raw = token.trim().split_once('=').map(|(_, r)| r).unwrap_or("");
-                    if raw.trim() != "-" {
+                    if raw.trim() != "-" && !is_env_channel(lhs, raw) {
                         map.entry(lhs.to_string())
                             .or_default()
                             .push(raw.to_string());
@@ -399,7 +409,7 @@ fn find_argv_material(argv: &[String]) -> Option<(usize, &'static str, usize)> {
         let whole = token.trim().to_ascii_lowercase();
         if SECRET_FLAGS.contains(&whole.as_str()) {
             if let Some(value) = argv.get(i + 1) {
-                if value.trim() != "-" {
+                if value.trim() != "-" && !is_env_channel(&whole, value) {
                     return Some((i + 1, flag_class(&whole), value.trim().chars().count()));
                 }
             }
@@ -410,7 +420,7 @@ fn find_argv_material(argv: &[String]) -> Option<(usize, &'static str, usize)> {
                 // The value is everything after the FIRST `=`; a value that
                 // itself contains `=` is still one value.
                 let raw = token.trim().split_once('=').map(|(_, r)| r).unwrap_or("");
-                if rhs.trim() != "-" {
+                if rhs.trim() != "-" && !is_env_channel(lhs, raw) {
                     return Some((i, flag_class(lhs), raw.trim().chars().count()));
                 }
                 continue;

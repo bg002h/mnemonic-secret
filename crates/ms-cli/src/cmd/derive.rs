@@ -67,7 +67,8 @@ pub struct DeriveArgs {
     #[arg(long, value_enum, default_value_t = Net::Mainnet)]
     pub network: Net,
 
-    /// BIP-39 passphrase. Or `--passphrase-stdin`.
+    /// BIP-39 passphrase. `-` reads it from stdin (same as
+    /// `--passphrase-stdin`); `@env:VAR` reads it from an environment variable.
     #[arg(long)]
     pub passphrase: Option<String>,
 
@@ -408,9 +409,20 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
             secret_in_argv_warning(&mut stderr, "--phrase", "--phrase -");
         }
     }
-    if passphrase_arg.is_some() {
-        secret_in_argv_warning(&mut stderr, "--passphrase", "--passphrase-stdin");
-    }
+    // F-687: the one `--passphrase` rule. `-` is stdin and `@env:VAR` the
+    // environment; only a literal (including one admitted by
+    // `--allow-argv-secret`, whose argv value is then a `-` placeholder)
+    // gets the note.
+    let pp_value: Option<&str> = passphrase_arg.as_deref().map(|z| z.as_str());
+    let pp_admitted: Option<&str> = crate::argv_guard::admitted("--passphrase")
+        .and_then(|v| v.first())
+        .map(String::as_str);
+    crate::passphrase_input::emit_argv_note(
+        pp_value,
+        args.passphrase_stdin,
+        pp_admitted,
+        &mut stderr,
+    );
 
     // Single-stdin guard: the ACTIVE entropy source + --passphrase-stdin cannot
     // both consume stdin.
@@ -433,7 +445,9 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
     } else {
         ms1_src.reads_stdin()
     };
-    if args.passphrase_stdin && entropy_reads_stdin {
+    if crate::passphrase_input::reads_stdin(pp_value, args.passphrase_stdin, pp_admitted)
+        && entropy_reads_stdin
+    {
         return Err(CliError::BadInput(
             "cannot read both the entropy source and --passphrase from stdin (one stdin per invocation)".into(),
         ));
@@ -483,20 +497,15 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
             (m, eff_lang, eff_defaulted)
         };
 
-    // BIP-39 passphrase (stdin or inline). C1: stdin via the byte-preserving
-    // reader (NOT read_input, which strips/dedups whitespace and would mangle a
+    // BIP-39 passphrase. C1: stdin via the byte-preserving reader (NOT
+    // read_input, which strips/dedups whitespace and would mangle a
     // multi-word passphrase + disagree with the inline path).
     // `--allow-argv-secret --passphrase <p>` substitutes the VALUE to `-`, so
-    // the side channel is consulted before the (now placeholder) inline value.
-    // `-` is not a passphrase anyone means, and without the override it keeps
-    // its old literal meaning -- unchanged behaviour.
-    let passphrase: Zeroizing<String> = if args.passphrase_stdin {
-        crate::parse::read_stdin_passphrase()?
-    } else if let Some([admitted, ..]) = crate::argv_guard::admitted("--passphrase") {
-        Zeroizing::new(admitted.clone())
-    } else {
-        passphrase_arg.unwrap_or_else(|| Zeroizing::new(String::new()))
-    };
+    // the side channel (`pp_admitted`) is consulted before the placeholder.
+    // F-687: without the override, `--passphrase -` is stdin (it used to be
+    // the literal one-character passphrase) and `@env:VAR` the environment.
+    let passphrase: Zeroizing<String> =
+        crate::passphrase_input::resolve_or_empty(pp_value, args.passphrase_stdin, pp_admitted)?;
 
     // Derive (signing context required for fingerprint/derive_priv/from_priv).
     let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(passphrase.as_str()));
