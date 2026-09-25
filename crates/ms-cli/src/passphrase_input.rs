@@ -119,6 +119,212 @@ pub(crate) fn emit_argv_note<W: std::io::Write>(
     }
 }
 
+/// F-687b ruling 2: the one line printed when a PRIVATE channel yields an
+/// EMPTY passphrase. `origin` is `stdin` or `environment variable VAR`.
+/// Byte-identical to mnemonic-toolkit's `passphrase_input::empty_warning`.
+pub(crate) fn empty_warning(origin: &str) -> String {
+    format!("warning: --passphrase from {origin} is empty; proceeding with the EMPTY passphrase")
+}
+
+fn warn_if_empty(origin: &str, value: &str) {
+    if value.is_empty() {
+        eprintln!("{}", empty_warning(origin));
+    }
+}
+
+/// The terminal prompt (ruling 3). Same text as mnemonic-toolkit.
+pub(crate) const PROMPT: &str = "Enter passphrase: ";
+
+/// Is the PROCESS stdin a terminal? Never in unit tests.
+pub(crate) fn stdin_is_terminal() -> bool {
+    use std::io::IsTerminal;
+    !cfg!(test) && std::io::stdin().is_terminal()
+}
+
+/// Echo off on fd 0 for the life of the guard (Unix). `ECHONL` keeps the
+/// Enter visible, so the cursor moves on without showing the secret. The
+/// saved mode is restored on drop (including on an error return) AND, while
+/// the guard is live, by a handler for SIGINT/SIGTERM/SIGHUP/SIGQUIT that
+/// restores the mode, resets the signal to its default and re-raises it, so
+/// Ctrl-C at the prompt exits with the conventional signal status and a
+/// working terminal. A signal the process inherited as IGNORED stays ignored.
+struct EchoOff {
+    #[cfg(unix)]
+    saved: Option<libc::termios>,
+    #[cfg(unix)]
+    old_actions: Option<[libc::sigaction; 4]>,
+}
+
+#[cfg(unix)]
+mod echo_signal {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// The mode to restore from the handler. Written BEFORE `ACTIVE` is set
+    /// and read only while it is set.
+    static mut SAVED: std::mem::MaybeUninit<libc::termios> = std::mem::MaybeUninit::uninit();
+    static ACTIVE: AtomicBool = AtomicBool::new(false);
+    pub(super) const SIGNALS: [libc::c_int; 4] =
+        [libc::SIGINT, libc::SIGTERM, libc::SIGHUP, libc::SIGQUIT];
+
+    /// Async-signal-safe: tcsetattr, signal and raise only.
+    extern "C" fn restore_and_reraise(sig: libc::c_int) {
+        if ACTIVE.swap(false, Ordering::SeqCst) {
+            // SAFETY: SAVED was fully written before ACTIVE was set.
+            unsafe {
+                libc::tcsetattr(0, libc::TCSANOW, (*std::ptr::addr_of!(SAVED)).as_ptr());
+            }
+        }
+        // SAFETY: default disposition, then deliver the same signal again.
+        unsafe {
+            libc::signal(sig, libc::SIG_DFL);
+            libc::raise(sig);
+        }
+    }
+
+    /// Install the handlers; returns the previous actions.
+    ///
+    /// # Safety
+    /// Single-threaded use around one prompt at a time.
+    pub(super) unsafe fn arm(saved: &libc::termios) -> [libc::sigaction; 4] {
+        (*std::ptr::addr_of_mut!(SAVED)).write(*saved);
+        ACTIVE.store(true, Ordering::SeqCst);
+        let mut old: [libc::sigaction; 4] = std::mem::zeroed();
+        for (i, s) in SIGNALS.iter().enumerate() {
+            libc::sigaction(*s, std::ptr::null(), &mut old[i]);
+            if old[i].sa_sigaction == libc::SIG_IGN {
+                continue;
+            }
+            let mut sa: libc::sigaction = std::mem::zeroed();
+            sa.sa_sigaction = restore_and_reraise as extern "C" fn(libc::c_int) as usize;
+            libc::sigemptyset(&mut sa.sa_mask);
+            libc::sigaction(*s, &sa, std::ptr::null_mut());
+        }
+        old
+    }
+
+    /// Put the previous actions back.
+    ///
+    /// # Safety
+    /// `old` is what [`arm`] returned.
+    pub(super) unsafe fn disarm(old: &[libc::sigaction; 4]) {
+        ACTIVE.store(false, Ordering::SeqCst);
+        for (i, s) in SIGNALS.iter().enumerate() {
+            libc::sigaction(*s, &old[i], std::ptr::null_mut());
+        }
+    }
+}
+
+impl EchoOff {
+    /// `(guard, echo_disabled)`.
+    fn new() -> (Self, bool) {
+        #[cfg(unix)]
+        {
+            // SAFETY: tcgetattr/tcsetattr on fd 0 with a zeroed, then
+            // kernel-filled, termios; the handlers are armed before echo goes
+            // off, so no window exists with echo off and no handler.
+            unsafe {
+                let mut t: libc::termios = std::mem::zeroed();
+                if libc::tcgetattr(0, &mut t) == 0 {
+                    let saved = t;
+                    let old = echo_signal::arm(&saved);
+                    t.c_lflag &= !libc::ECHO;
+                    t.c_lflag |= libc::ECHONL;
+                    if libc::tcsetattr(0, libc::TCSANOW, &t) == 0 {
+                        return (
+                            Self {
+                                saved: Some(saved),
+                                old_actions: Some(old),
+                            },
+                            true,
+                        );
+                    }
+                    echo_signal::disarm(&old);
+                }
+            }
+            (
+                Self {
+                    saved: None,
+                    old_actions: None,
+                },
+                false,
+            )
+        }
+        #[cfg(not(unix))]
+        {
+            (Self {}, false)
+        }
+    }
+}
+
+impl Drop for EchoOff {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        {
+            if let Some(t) = self.saved.take() {
+                // SAFETY: restores the attributes read in `new`. Restore
+                // FIRST, then disarm: a signal in between restores again.
+                unsafe {
+                    libc::tcsetattr(0, libc::TCSANOW, &t);
+                }
+            }
+            if let Some(old) = self.old_actions.take() {
+                // SAFETY: `old` came from `arm`.
+                unsafe { echo_signal::disarm(&old) };
+            }
+        }
+    }
+}
+
+/// Read the passphrase from stdin under the one byte rule. On a terminal:
+/// prompt on stderr, echo off where possible, read ONE line. Otherwise read
+/// to EOF, no prompt. Warns once if the result is empty.
+pub(crate) fn read_stdin_passphrase() -> Result<Zeroizing<String>> {
+    use std::io::{Read, Write};
+    let mut s: Zeroizing<String> = if stdin_is_terminal() {
+        let (_echo, hidden) = EchoOff::new();
+        let mut e = std::io::stderr();
+        let _ = write!(
+            e,
+            "{PROMPT}{}",
+            if hidden {
+                ""
+            } else {
+                "(input will be visible) "
+            }
+        );
+        let _ = e.flush();
+        let mut bytes: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::new());
+        let mut b = [0u8; 1];
+        let mut stdin = std::io::stdin().lock();
+        loop {
+            match stdin.read(&mut b) {
+                Ok(0) => break,
+                Ok(_) => {
+                    bytes.push(b[0]);
+                    if b[0] == b'\n' {
+                        break;
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(CliError::BadInput(format!("failed to read stdin: {e}"))),
+            }
+        }
+        if bytes.last() != Some(&b'\n') {
+            // Ctrl-D at the prompt: move off the prompt line (review N1).
+            let _ = writeln!(e);
+        }
+        Zeroizing::new(
+            String::from_utf8(bytes.to_vec())
+                .map_err(|_| CliError::BadInput("--passphrase: stdin is not valid UTF-8".into()))?,
+        )
+    } else {
+        crate::parse::read_stdin()?
+    };
+    strip_one_newline(&mut s);
+    warn_if_empty("stdin", &s);
+    Ok(s)
+}
+
 /// POSIX env-var name as the toolkit accepts it: `[A-Z_][A-Z0-9_]*`.
 fn is_valid_env_name(name: &str) -> bool {
     let mut chars = name.chars();
@@ -150,6 +356,7 @@ fn resolve_env(value: &str) -> Result<Zeroizing<String>> {
         })
     })?;
     strip_one_newline(&mut v);
+    warn_if_empty(&format!("environment variable {var}"), &v);
     Ok(v)
 }
 
@@ -180,7 +387,7 @@ pub(crate) fn resolve_or_empty(
     }
     match source(value, stdin_flag, admitted) {
         PassphraseSource::Absent => Ok(Zeroizing::new(String::new())),
-        PassphraseSource::Stdin => crate::parse::read_stdin_passphrase(),
+        PassphraseSource::Stdin => read_stdin_passphrase(),
         PassphraseSource::Env => resolve_env(value.unwrap_or("")),
         PassphraseSource::Argv => Ok(Zeroizing::new(admitted.or(value).unwrap_or("").to_string())),
     }

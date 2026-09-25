@@ -345,9 +345,27 @@ fn substitute(argv: &[String]) -> std::result::Result<Vec<String>, String> {
                 // A bare `-` is exempt -- it is the stdin sentinel, not a flag --
                 // and `--flag=-value` is the escape hatch for a value that
                 // really begins with `-` (handled by the `=` branch below).
-                if v != "-" && v.starts_with('-') {
+                // F-691: on `--passphrase` the flag-shape test reads the value
+                // EXACTLY as clap would (untrimmed), so `"- "` is refused here
+                // (exit 64) as mnemonic-toolkit's clap refuses it, instead of
+                // being admitted as the literal passphrase `"- "`. Exact `-`
+                // only is the stdin channel (`passphrase_input::is_channel_value`).
+                let flag_shaped = if whole == "--passphrase" {
+                    value != "-" && value.starts_with('-')
+                } else {
+                    v != "-" && v.starts_with('-')
+                };
+                if flag_shaped {
+                    // Review N2: show the value as TYPED on `--passphrase`
+                    // (where the test is exact), so `"- "` is not reported
+                    // as `"-"`.
+                    let shown = if whole == "--passphrase" {
+                        value.as_str()
+                    } else {
+                        v
+                    };
                     return Err(format!(
-                        "{whole} was given {v:?}, which is a flag and not a value. \
+                        "{whole} was given {shown:?}, which is a flag and not a value. \
                          Refusing rather than taking a flag's own name as the secret. \
                          If the value really begins with `-`, spell it {whole}=<value>; \
                          otherwise pass the secret on a private channel."
