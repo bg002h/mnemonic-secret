@@ -363,9 +363,26 @@ fn non_utf8_input_is_refused_by_name_not_panicked() {
 // to exercise it: every other test pipes stdin, which is the no-prompt case.
 // ---------------------------------------------------------------------------
 
-/// Run `bin argv` with stdin on a fresh pty slave; wait for `prompt` on
-/// stderr, then type `typed` on the master. Returns (exit code, stdout,
-/// stderr, everything the terminal displayed = the pty echo).
+/// What a pty run produced.
+#[cfg(target_os = "linux")]
+#[allow(dead_code)]
+struct PtyRun {
+    code: Option<i32>,
+    /// The signal that killed the child, if one did.
+    signal: Option<i32>,
+    stdout: String,
+    stderr: String,
+    /// Everything the terminal DISPLAYED (the line discipline's echo).
+    shown: Vec<u8>,
+    /// Was ECHO on in the terminal's mode after the child was gone?
+    echo_after: bool,
+}
+
+/// Run `bin argv` on a fresh pty that is the child's CONTROLLING terminal
+/// (setsid + TIOCSCTTY, so a typed Ctrl-C really sends SIGINT). Waits for
+/// `prompt` on stderr, then types `typed` on the master. On a timeout the
+/// child is KILLED before the test fails, so no process is left blocked on
+/// the pty (review M5).
 #[cfg(target_os = "linux")]
 fn run_on_a_terminal(
     bin: &std::path::Path,
@@ -373,11 +390,12 @@ fn run_on_a_terminal(
     env: &[(&str, &str)],
     prompt: &str,
     typed: &[u8],
-) -> (i32, String, String, Vec<u8>) {
+) -> PtyRun {
     use std::io::{Read, Write};
-    use std::os::fd::FromRawFd;
+    use std::os::fd::{AsRawFd, FromRawFd};
+    use std::os::unix::process::{CommandExt, ExitStatusExt};
     // SAFETY: posix_openpt/grantpt/unlockpt/ptsname on a fd we own.
-    let (mut master, slave) = unsafe {
+    let (mut master, name) = unsafe {
         let m = libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY);
         assert!(m >= 0, "posix_openpt");
         assert_eq!(libc::grantpt(m), 0);
@@ -386,20 +404,35 @@ fn run_on_a_terminal(
             .to_str()
             .unwrap()
             .to_string();
-        let slave = std::fs::OpenOptions::new()
+        (std::fs::File::from_raw_fd(m), name)
+    };
+    let open_slave = || {
+        std::fs::OpenOptions::new()
             .read(true)
             .write(true)
+            .custom_flags(libc::O_NOCTTY)
             .open(&name)
-            .unwrap();
-        (std::fs::File::from_raw_fd(m), slave)
+            .unwrap()
     };
+    use std::os::unix::fs::OpenOptionsExt;
+    // Our own handle on the slave, to read the terminal mode back afterwards.
+    let keep = open_slave();
     let mut cmd = std::process::Command::new(bin);
     cmd.args(argv)
-        .stdin(slave)
+        .stdin(open_slave())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     for (k, v) in env {
         cmd.env(k, v);
+    }
+    // SAFETY: async-signal-safe calls only, between fork and exec.
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::setsid() < 0 || libc::ioctl(0, libc::TIOCSCTTY as _, 0) < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
     }
     let mut child = cmd.spawn().unwrap();
     let mut err = child.stderr.take().unwrap();
@@ -416,28 +449,28 @@ fn run_on_a_terminal(
                 sent = true;
             }
         }
-        if !sent {
-            let _ = tx.send(());
-        }
         String::from_utf8_lossy(&got).into_owned()
     });
-    rx.recv_timeout(std::time::Duration::from_secs(20))
-        .expect("the prompt never appeared on stderr");
+    if rx.recv_timeout(std::time::Duration::from_secs(20)).is_err() {
+        let _ = child.kill();
+        let _ = child.wait();
+        panic!("the prompt {prompt:?} never appeared on stderr (child killed)");
+    }
     master.write_all(typed).unwrap();
     let out = child.wait_with_output().unwrap();
     let stderr = reader.join().unwrap();
-    // Everything the terminal would have DISPLAYED (the line discipline's
-    // echo), read non-blocking now that the child is gone.
-    // SAFETY: fcntl on the master fd we own.
-    unsafe {
-        use std::os::fd::AsRawFd;
+    // SAFETY: fcntl/tcgetattr on fds we own.
+    let echo_after = unsafe {
         let fd = master.as_raw_fd();
         libc::fcntl(
             fd,
             libc::F_SETFL,
             libc::fcntl(fd, libc::F_GETFL) | libc::O_NONBLOCK,
         );
-    }
+        let mut t: libc::termios = std::mem::zeroed();
+        assert_eq!(libc::tcgetattr(keep.as_raw_fd(), &mut t), 0, "tcgetattr");
+        t.c_lflag & libc::ECHO != 0
+    };
     let mut shown = Vec::new();
     let mut buf = [0u8; 256];
     while let Ok(n) = master.read(&mut buf) {
@@ -446,12 +479,14 @@ fn run_on_a_terminal(
         }
         shown.extend_from_slice(&buf[..n]);
     }
-    (
-        out.status.code().unwrap_or(-1),
-        String::from_utf8_lossy(&out.stdout).into_owned(),
+    PtyRun {
+        code: out.status.code(),
+        signal: out.status.signal(),
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
         stderr,
         shown,
-    )
+        echo_after,
+    }
 }
 
 /// F-687b ruling 3: on a terminal, prompt on stderr, echo off, read ONE line.
@@ -464,21 +499,54 @@ fn a_terminal_gets_a_prompt_and_no_echo() {
     for pp in [&["--passphrase", "-"][..], &["--passphrase-stdin"][..]] {
         let mut argv = vec!["derive", "--in", path.as_str()];
         argv.extend(pp);
-        let (code, stdout, stderr, shown) =
-            run_on_a_terminal(&bin, &argv, &[], "Enter passphrase: ", b"TREZOR\n");
-        assert_eq!(code, 0, "{pp:?}: {stderr}");
+        let r = run_on_a_terminal(&bin, &argv, &[], "Enter passphrase: ", b"TREZOR\n");
+        assert_eq!(r.code, Some(0), "{pp:?}: {}", r.stderr);
         assert_eq!(
-            fingerprint(&stdout).as_deref(),
+            fingerprint(&r.stdout).as_deref(),
             Some("b4e3f5ed"),
-            "{stdout}"
+            "{}",
+            r.stdout
         );
-        assert!(!stderr.contains("input will be visible"), "{stderr}");
-        let shown = String::from_utf8_lossy(&shown);
+        assert!(!r.stderr.contains("input will be visible"), "{}", r.stderr);
+        let shown = String::from_utf8_lossy(&r.shown);
         assert!(
             !shown.contains("TREZOR"),
             "the terminal echoed the passphrase: {shown:?}"
         );
+        // Review M4: the terminal mode is RESTORED after a normal exit.
+        assert!(r.echo_after, "{pp:?}: echo left OFF after the run");
     }
+}
+
+/// Ctrl-C at the prompt: dies of SIGINT with echo back on. Ctrl-D at an empty
+/// prompt: the empty warning starts on its own line (review N1).
+#[cfg(target_os = "linux")]
+#[test]
+fn ctrl_c_and_ctrl_d_at_the_prompt_leave_a_working_terminal() {
+    let bin = assert_cmd::cargo::cargo_bin("ms");
+    let card = card_file();
+    let path = card.path().to_str().unwrap().to_string();
+    let argv = ["derive", "--in", path.as_str(), "--passphrase", "-"];
+    let r = run_on_a_terminal(&bin, &argv, &[], "Enter passphrase: ", b"TRE\x03");
+    assert_eq!(
+        r.signal,
+        Some(libc::SIGINT),
+        "code {:?}: {}",
+        r.code,
+        r.stderr
+    );
+    assert!(r.stdout.is_empty());
+    assert!(r.echo_after, "Ctrl-C left echo OFF");
+    let r = run_on_a_terminal(&bin, &argv, &[], "Enter passphrase: ", b"\x04");
+    assert_eq!(r.code, Some(0), "{}", r.stderr);
+    assert_eq!(fingerprint(&r.stdout).as_deref(), Some("73c5da0a"));
+    assert!(
+        r.stderr
+            .contains("Enter passphrase: \nwarning: --passphrase from stdin is empty"),
+        "{:?}",
+        r.stderr
+    );
+    assert!(r.echo_after);
 }
 
 /// F-691: the flag-shape test is exact on `--passphrase`: `"- "` as a
@@ -498,6 +566,12 @@ fn a_dash_space_argument_is_a_usage_error_under_the_override() {
         .unwrap();
     assert_eq!(out.status.code(), Some(64));
     assert!(out.stdout.is_empty());
+    // Review N2: the message shows the value as typed, not trimmed.
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("was given \"- \""),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     // A LEADING space does not begin with `-`: the literal, as in the toolkit.
     let out = Command::cargo_bin("ms")
         .unwrap()

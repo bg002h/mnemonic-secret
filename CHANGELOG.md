@@ -17,7 +17,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   stdin and stdin is a terminal, `Enter passphrase: ` goes to stderr, echo is
   turned off (restored afterwards; if the terminal refuses, the prompt says
   `(input will be visible)`), and ONE line is read, so Enter finishes the
-  input. Pipes and files: no prompt, unchanged bytes.
+  input. Pipes and files: no prompt, unchanged bytes. While echo is off,
+  SIGINT/SIGTERM/SIGHUP/SIGQUIT restore the terminal mode and then take their
+  default action, so Ctrl-C at the prompt exits by the signal with echo back
+  on. Ctrl-D at an empty prompt moves to a fresh line before the warning.
 - The shared vectors (`vectors/passphrase_channels.json`) grow to 42 cases.
 
 ### Fixed
@@ -26,7 +29,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   trimmed the value, so `"- "` slipped past it and was admitted as the literal
   passphrase `"- "`, while the toolkit's parser refuses it. On `--passphrase`
   the test now reads the value exactly as the parser would; `--passphrase=- `
-  remains the way to pass it literally.
+  remains the way to pass it literally. The refusal shows the value as typed.
 - **`--separator` help no longer offers `hyphen` and `comma`** (F-683). §6c
   retired them from emission (they exit 64), but `ms encode`, `split` and
   `hashlock --help` still read `space|hyphen|comma (keyword) or the literal

@@ -356,8 +356,16 @@ fn substitute(argv: &[String]) -> std::result::Result<Vec<String>, String> {
                     v != "-" && v.starts_with('-')
                 };
                 if flag_shaped {
+                    // Review N2: show the value as TYPED on `--passphrase`
+                    // (where the test is exact), so `"- "` is not reported
+                    // as `"-"`.
+                    let shown = if whole == "--passphrase" {
+                        value.as_str()
+                    } else {
+                        v
+                    };
                     return Err(format!(
-                        "{whole} was given {v:?}, which is a flag and not a value. \
+                        "{whole} was given {shown:?}, which is a flag and not a value. \
                          Refusing rather than taking a flag's own name as the secret. \
                          If the value really begins with `-`, spell it {whole}=<value>; \
                          otherwise pass the secret on a private channel."

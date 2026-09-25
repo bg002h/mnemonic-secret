@@ -141,45 +141,135 @@ pub(crate) fn stdin_is_terminal() -> bool {
     !cfg!(test) && std::io::stdin().is_terminal()
 }
 
-/// Echo off on fd 0 for the life of the guard (Unix; restored on drop).
-/// `ECHONL` keeps the Enter visible without showing the secret.
+/// Echo off on fd 0 for the life of the guard (Unix). `ECHONL` keeps the
+/// Enter visible, so the cursor moves on without showing the secret. The
+/// saved mode is restored on drop (including on an error return) AND, while
+/// the guard is live, by a handler for SIGINT/SIGTERM/SIGHUP/SIGQUIT that
+/// restores the mode, resets the signal to its default and re-raises it, so
+/// Ctrl-C at the prompt exits with the conventional signal status and a
+/// working terminal. A signal the process inherited as IGNORED stays ignored.
 struct EchoOff {
     #[cfg(unix)]
     saved: Option<libc::termios>,
+    #[cfg(unix)]
+    old_actions: Option<[libc::sigaction; 4]>,
+}
+
+#[cfg(unix)]
+mod echo_signal {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// The mode to restore from the handler. Written BEFORE `ACTIVE` is set
+    /// and read only while it is set.
+    static mut SAVED: std::mem::MaybeUninit<libc::termios> = std::mem::MaybeUninit::uninit();
+    static ACTIVE: AtomicBool = AtomicBool::new(false);
+    pub(super) const SIGNALS: [libc::c_int; 4] =
+        [libc::SIGINT, libc::SIGTERM, libc::SIGHUP, libc::SIGQUIT];
+
+    /// Async-signal-safe: tcsetattr, signal and raise only.
+    extern "C" fn restore_and_reraise(sig: libc::c_int) {
+        if ACTIVE.swap(false, Ordering::SeqCst) {
+            // SAFETY: SAVED was fully written before ACTIVE was set.
+            unsafe {
+                libc::tcsetattr(0, libc::TCSANOW, (*std::ptr::addr_of!(SAVED)).as_ptr());
+            }
+        }
+        // SAFETY: default disposition, then deliver the same signal again.
+        unsafe {
+            libc::signal(sig, libc::SIG_DFL);
+            libc::raise(sig);
+        }
+    }
+
+    /// Install the handlers; returns the previous actions.
+    ///
+    /// # Safety
+    /// Single-threaded use around one prompt at a time.
+    pub(super) unsafe fn arm(saved: &libc::termios) -> [libc::sigaction; 4] {
+        (*std::ptr::addr_of_mut!(SAVED)).write(*saved);
+        ACTIVE.store(true, Ordering::SeqCst);
+        let mut old: [libc::sigaction; 4] = std::mem::zeroed();
+        for (i, s) in SIGNALS.iter().enumerate() {
+            libc::sigaction(*s, std::ptr::null(), &mut old[i]);
+            if old[i].sa_sigaction == libc::SIG_IGN {
+                continue;
+            }
+            let mut sa: libc::sigaction = std::mem::zeroed();
+            sa.sa_sigaction = restore_and_reraise as extern "C" fn(libc::c_int) as usize;
+            libc::sigemptyset(&mut sa.sa_mask);
+            libc::sigaction(*s, &sa, std::ptr::null_mut());
+        }
+        old
+    }
+
+    /// Put the previous actions back.
+    ///
+    /// # Safety
+    /// `old` is what [`arm`] returned.
+    pub(super) unsafe fn disarm(old: &[libc::sigaction; 4]) {
+        ACTIVE.store(false, Ordering::SeqCst);
+        for (i, s) in SIGNALS.iter().enumerate() {
+            libc::sigaction(*s, &old[i], std::ptr::null_mut());
+        }
+    }
 }
 
 impl EchoOff {
-    #[cfg(not(unix))]
+    /// `(guard, echo_disabled)`.
     fn new() -> (Self, bool) {
-        (Self {}, false)
-    }
-
-    #[cfg(unix)]
-    fn new() -> (Self, bool) {
-        // SAFETY: tcgetattr/tcsetattr on fd 0 with a zeroed, then
-        // kernel-filled, termios; no pointers are retained.
-        unsafe {
-            let mut t: libc::termios = std::mem::zeroed();
-            if libc::tcgetattr(0, &mut t) == 0 {
-                let saved = t;
-                t.c_lflag &= !libc::ECHO;
-                t.c_lflag |= libc::ECHONL;
-                if libc::tcsetattr(0, libc::TCSANOW, &t) == 0 {
-                    return (Self { saved: Some(saved) }, true);
+        #[cfg(unix)]
+        {
+            // SAFETY: tcgetattr/tcsetattr on fd 0 with a zeroed, then
+            // kernel-filled, termios; the handlers are armed before echo goes
+            // off, so no window exists with echo off and no handler.
+            unsafe {
+                let mut t: libc::termios = std::mem::zeroed();
+                if libc::tcgetattr(0, &mut t) == 0 {
+                    let saved = t;
+                    let old = echo_signal::arm(&saved);
+                    t.c_lflag &= !libc::ECHO;
+                    t.c_lflag |= libc::ECHONL;
+                    if libc::tcsetattr(0, libc::TCSANOW, &t) == 0 {
+                        return (
+                            Self {
+                                saved: Some(saved),
+                                old_actions: Some(old),
+                            },
+                            true,
+                        );
+                    }
+                    echo_signal::disarm(&old);
                 }
             }
+            (
+                Self {
+                    saved: None,
+                    old_actions: None,
+                },
+                false,
+            )
         }
-        (Self { saved: None }, false)
+        #[cfg(not(unix))]
+        {
+            (Self {}, false)
+        }
     }
 }
 
 impl Drop for EchoOff {
     fn drop(&mut self) {
         #[cfg(unix)]
-        if let Some(t) = self.saved.take() {
-            // SAFETY: restores the attributes read in `new`.
-            unsafe {
-                libc::tcsetattr(0, libc::TCSANOW, &t);
+        {
+            if let Some(t) = self.saved.take() {
+                // SAFETY: restores the attributes read in `new`. Restore
+                // FIRST, then disarm: a signal in between restores again.
+                unsafe {
+                    libc::tcsetattr(0, libc::TCSANOW, &t);
+                }
+            }
+            if let Some(old) = self.old_actions.take() {
+                // SAFETY: `old` came from `arm`.
+                unsafe { echo_signal::disarm(&old) };
             }
         }
     }
@@ -218,6 +308,10 @@ pub(crate) fn read_stdin_passphrase() -> Result<Zeroizing<String>> {
                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(e) => return Err(CliError::BadInput(format!("failed to read stdin: {e}"))),
             }
+        }
+        if bytes.last() != Some(&b'\n') {
+            // Ctrl-D at the prompt: move off the prompt line (review N1).
+            let _ = writeln!(e);
         }
         Zeroizing::new(
             String::from_utf8(bytes.to_vec())
