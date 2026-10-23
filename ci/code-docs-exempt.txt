@@ -1,0 +1,8 @@
+# ci/code-docs-exempt.txt -- files ci/code-docs-check.sh does not scan. One
+# ERE per line, matched against the repo-relative path; # starts a comment.
+# List a file here only when no step that ci/docs-only.sh guards runs it, and
+# say why in the comment above it.
+
+# Not run by CI (called only by scripts/plan-build-gate-ms.sh, a local plan
+# gate).
+^scripts/plan-handwire-ms-hashlock\.py$

@@ -102,7 +102,7 @@ fn parity_smoke_ms_against_toolkit_v0_22_1() {
                      {PARITY_TOOLKIT_VERSION}, which carried its OWN vendored BCH decoder. \
                      Found {v:?}, which delegates to ms_codec::decode_with_correction, so the \
                      comparison would be this crate against itself. The parity guard is \
-                     DORMANT, not passing — see design/FOLLOWUPS.md \
+                     DORMANT, not passing — see the FOLLOWUPS entry \
                      `parity-smoke-toolkit-version-drift`."
                 );
                 return;

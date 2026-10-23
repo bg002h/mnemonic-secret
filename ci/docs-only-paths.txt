@@ -11,3 +11,5 @@
 + ^[^/]+\.md$
 # read by crates/ms-cli/src/format.rs and tests/whitespace_only_separator.rs; .sha256 by rust.yml clippy
 - ^design/display-grouping-vectors\.tsv
+# Named in ci/repro/vendor-freshness.sh (ci/code-docs-check.sh).
+- ^docs/verify-reproducibility\.md$
