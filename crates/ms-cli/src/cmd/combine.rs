@@ -167,8 +167,13 @@ pub fn run(mut args: CombineArgs) -> Result<u8> {
             (Zeroizing::new(entropy.clone()), lang, "mnem")
         }
         Payload::Preimage(x) => {
-            // A recovered preimage prints as `decode` does and never as words.
-            return crate::cmd::decode::emit_preimage(x, args.json);
+            // A recovered preimage prints as `decode` does and never as words
+            // under `--to phrase` (the default). `--to entropy` and `--to ms1`
+            // are honoured below with its 32 bytes, as for a seed.
+            if args.to == CombineTo::Phrase {
+                return crate::cmd::decode::emit_preimage(x, args.json);
+            }
+            (Zeroizing::new(x.to_vec()), CliLanguage::English, "preimage")
         }
         // ms_codec::Payload is #[non_exhaustive]; guard against future variants.
         _ => unreachable!("combine_shares returned an unknown Payload variant"),
@@ -181,6 +186,12 @@ pub fn run(mut args: CombineArgs) -> Result<u8> {
         // exit 0; non-English only). The hex itself is correct + unchanged.
         CombineTo::Entropy => {
             emit_entropy(&entropy, kind, args.json)?;
+            // Bare hex drops the kind, and a preimage's 64 hex look exactly like
+            // seed entropy (FIX_bughunt_ms #4). Text mode only: `--json` carries
+            // `kind`.
+            if matches!(payload, Payload::Preimage(_)) && !args.json {
+                eprintln!("{PREIMAGE_AS_ENTROPY_WARNING}");
+            }
             crate::advisory::non_english_seed_advisory(
                 &mut std::io::stderr().lock(),
                 language,
@@ -198,6 +209,12 @@ pub fn run(mut args: CombineArgs) -> Result<u8> {
     );
     Ok(0)
 }
+
+/// stderr line for `--to entropy` on a preimage share set, text mode only.
+const PREIMAGE_AS_ENTROPY_WARNING: &str = "warning: these 64 hex characters are a hashlock \
+     PREIMAGE, not seed entropy \u{2014} the first spend of the hash path publishes them in the \
+     clear, so never use them as a seed (ms encode, ms split or ms derive --hex); --to ms1 \
+     prints the preimage plate string";
 
 /// Render the recovered secret as a BIP-39 phrase in its language.
 fn emit_phrase(
@@ -265,7 +282,7 @@ fn emit_entropy(entropy: &[u8], kind: &'static str, json: bool) -> Result<()> {
 
 /// Re-encode the recovered secret as a single (unshared) ms1 string.
 fn emit_ms1(payload: &Payload, entropy: &[u8], kind: &'static str, json: bool) -> Result<()> {
-    let ms1 = ms_codec::encode(Tag::ENTR, payload)?;
+    let ms1 = ms_codec::encode(payload.kind().single_tag(), payload)?;
     if json {
         let json = CombineJson {
             schema_version: "1",
