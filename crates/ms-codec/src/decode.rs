@@ -195,25 +195,22 @@ fn parse_ms1_symbols(s: &str) -> Result<Vec<u8>> {
         let got = observed.chars().take(4).collect::<String>();
         return Err(Error::WrongHrp { got });
     }
-    let rest = &lower[HRP_PREFIX.len()..];
+    // Every data-part character must be in the codex32 alphabet. The first one
+    // that is not is refused as `InvalidChar`, named as the caller typed it
+    // (not lowercased), so `ms repair` names the same character `decode` does.
+    // A non-ASCII character is never a member: it is never truncated to a
+    // byte (which read U+0133 as '3'). `lower` starts with the ASCII "ms1", so
+    // byte 3 of `s` is a char boundary.
+    let rest = &s[HRP_PREFIX.len()..];
     let mut symbols: Vec<u8> = Vec::with_capacity(rest.len());
-    // Non-alphabet characters can't appear in a valid v0.1 string. We
-    // can't fabricate a `crate::codex32::Error` value here (the upstream crate
-    // doesn't expose a constructor for `InvalidChar`), so we use
-    // `UnexpectedStringLength` as a stand-in: the existing `decode` path
-    // would have rejected the string for the same reason on a different
-    // axis. Toolkit-side helper at B.7 absorbs into `UnparseableInput`
-    // per plan §2.B.4 D29 error-mapping table.
     for c in rest.chars() {
-        let lc = c as u8;
-        let sym =
-            CODEX32_ALPHABET
-                .iter()
-                .position(|&b| b == lc)
-                .ok_or(Error::UnexpectedStringLength {
-                    got: s.len(),
-                    allowed: VALID_STR_LENGTHS,
-                })? as u8;
+        let sym = if c.is_ascii() {
+            let lc = c.to_ascii_lowercase() as u8;
+            CODEX32_ALPHABET.iter().position(|&b| b == lc)
+        } else {
+            None
+        }
+        .ok_or(Error::Codex32(crate::codex32::Error::InvalidChar(c)))? as u8;
         symbols.push(sym);
     }
     Ok(symbols)

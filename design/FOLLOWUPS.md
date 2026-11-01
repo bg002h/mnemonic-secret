@@ -866,3 +866,299 @@ can never be mistaken for BIP-48.
 - **Status:** open (the port); the shipping decision is settled.
 - **Tier:** release-engineering / platform-support. Not a defect: the absence of
   a Windows binary is the correct outcome of a security property.
+
+### `bughunt-ms-fix` — ms bug-hunt Importants: `encode_shares` ZERO tag checks (#1), `combine --to` on preimage shares (#4), `inspect` of the secret share (#5), the non-alphabet refusal during correction (#7, closes #3), `inspect` of an unknown mnem language (T2), the BCH primer's erasure overclaim: build obligations (repo: **mnemonic-secret** + manual companion in **mnemonic-toolkit**; owning phase: **the build of branch `bughunt/triage`**)
+
+- **Surfaced:** 2026-10-31 Claude API bug hunt (`design/agent-reports/bughunt-2026-10-31-ms.md`), triage `bughunt-triage-ms.md`, grades `bughunt-grade-ms.md` (`4755eb9`); round 2: triage `bughunt-triage2-ms.md` (`5399625`), grades `bughunt-grade2-ms.md`. FIX: `design/FIX_bughunt_ms.md` (small-fix track).
+- **Grade:** Important ×6 (#1 an unreadable backup from a public API; #4 a silently ignored flag; #5 and T2 a wrong OK verdict; #7 a refusal that names the wrong problem on `ms repair`; the toolkit manual's BCH primer promising erasure correction no tool has), plus #3 (Minor) closed by #7's fix.
+- **Companion:** `mnemonic-toolkit` branch `docs/bughunt-ms-manual` (manual 43-ms.md and 65-bch-codex-primer.md, and `design/FOLLOWUPS.md::toolkit-ms-codec-bump-bughunt-ms-fixes`).
+- **Build impact (1):** `shares.rs` ZERO path returns `encode()`'s result: `owed-to-build`.
+- **Build impact (2):** `decode.rs` `parse_ms1_symbols` refuses a non-alphabet character as `InvalidChar` (as typed; non-ASCII never a member): `owed-to-build`.
+- **Build impact (3):** `combine.rs` honours `--to entropy` / `--to ms1` for a preimage, with the text-mode preimage warning on `--to entropy`: `owed-to-build`.
+- **Build impact (4):** `inspect.rs` FAIL verdicts: reason `share-index-secret` for index `s` (#5) and `mnem-unknown-language` for an unknown mnem language code (T2): `owed-to-build`.
+- **Build impact (5):** the four spec replacements (SPEC_ms_v0_2_kofn.md lines 51 and 86, SPEC_ms_hashlock.md line 502, SPEC_ms_mnem_wordlist_language.md line 49): `owed-to-build`.
+- **Build impact (6):** the RED rows of FIX §6 (tightened, new, ignored), in `bughunt.rs` and `bughunt_t.rs`: `owed-to-build`.
+- **Build impact (7):** the deferred-minor, needs-triage and planned-feature entries of FIX §9.2, §9.3 and §9.5: `owed-to-build`.
+- **Build impact (8):** toolkit manual companion PR (FIX §5: 43-ms.md and the BCH primer) and its FOLLOWUPS entry: `owed-to-build`.
+- **Build impact (9):** toolkit consumption recorded, no toolkit code change (FIX §8 item 9): `owed-to-build`.
+- **Status:** `open`; owed to the build.
+- **Tier:** `cross-repo`
+
+### `ms-mlock-unpin-not-refcounted` — dropping one mlock pin unlocks a page another live pin still covers (repo: **mnemonic-secret**, mirrored in **mnemonic-toolkit**; owning phase: **none — ownerless residue; latent until two pins share a page**)
+
+- **Surfaced:** 2026-10-31 bug hunt #2; triage CONFIRMED; graded Minor (`design/agent-reports/bughunt-grade-ms.md`): secret-handling class (operator ruling 2026-08-27), latent.
+- **Where:** `crates/ms-cli/src/mlock.rs` `PinnedPageRange::drop` (munlock is unconditional).
+- **What:** mlock is not reference-counted, so dropping pin A munlocks a page that live pin B still covers (`Locked:` 4 kB → 0 kB, measured). No caller holds two live pins on one page today.
+- **Fix (for later):** a per-page pin count (the triage's `fix-02.patch` shape: count on pin, munlock a page only when its count reaches 0), mirrored byte-for-byte in the toolkit's `mlock.rs` (G6 invariant, `tests/mlock_g6_invariant.rs`).
+- **RED row:** `crates/ms-cli/tests/bughunt.rs::bughunt_ms_02_mlock_unpin_not_refcounted`, `#[ignore = "deferred-minor: ms-mlock-unpin-not-refcounted"]`.
+- **Why deferred:** Minor; the FIX PR carries only C and I (`design/FIX_bughunt_ms.md`).
+- **Status:** `deferred-minor`
+- **Tier:** `secret-handling` (non-gating), `cross-repo`
+
+### `ms-codex32-parts-short-data-panic` — `Codex32String::from_string` / `inspect` panic on a checksum-valid string with a 29+ character HRP and a data part of 18 or fewer characters (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-10-31 bug hunt #6; triage CONFIRMED (`ms inspect` exits 101: `byte range starts at 6 but ends at 0`); graded Minor (abort, nothing printed; needs a crafted string).
+- **Where:** `crates/ms-codec/src/codex32/mod.rs` `parts_inner` (slices `s[6..s.len() - checksum_len]`).
+- **Fix (for later):** guard `parts_inner`, but not with `fix-06.patch`'s `InvalidLength(54)`: the CLI renders that as "string length 54 not a valid codex32 length (need 48-93 short or 125-127 long)", which contradicts itself. Pick an error whose text names the short data part.
+- **RED row:** `crates/ms-codec/tests/bughunt.rs::bughunt_ms_06_long_hrp_short_data_panics`, `#[ignore = "deferred-minor: ms-codex32-parts-short-data-panic"]`.
+- **Why deferred:** Minor; the FIX PR carries only C and I.
+- **Status:** `deferred-minor`
+- **Tier:** robustness (non-gating)
+
+### `ms-too-many-errors-says-more-than-8` — `ms repair` says "more than 8 errors; uncorrectable" for 5 errors; the decoder corrects at most 4 (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-10-31 bug hunt #8; triage CONFIRMED; graded Minor (a wrong count inside a correct refusal; exit 2).
+- **Where:** `crates/ms-codec/src/error.rs` `Display` for `TooManyErrors` and `crates/ms-cli/src/error.rs` `From<ms_codec::Error>` (`format!("more than {} errors; uncorrectable", bound)`).
+- **Fix (for later):** the codec `Display` and the CLI `FormatViolation` message both become exactly `more than 4 errors (or a missing or extra character); uncorrectable`. The `bound: 8` field and JSON `details: {"bound": 8}` stay (pinned by `bch_decode::five_error_too_many`, SPEC_ms_codec_test_hardening T3-ms-2, `error.rs` `too_many_errors_maps_to_format_violation_exit_2`, and the toolkit's "exceeds singleton bound = 8"). Exit 2 unchanged; the manual's repair exit table already says "> 4 substitution errors".
+- **RED rows:** `crates/ms-codec/tests/bughunt.rs::bughunt_ms_08_too_many_errors_bound_is_8` and `crates/ms-cli/tests/bughunt.rs::bughunt_ms_08_cli_repair_message_claims_more_than_8`, both `#[ignore = "deferred-minor: ms-too-many-errors-says-more-than-8"]`.
+- **Why deferred:** Minor; the FIX PR carries only C and I.
+- **Status:** `deferred-minor`
+- **Tier:** text (non-gating)
+
+### `ms-cli-mnem-unknown-language-catch-all` — a mnem string with language code 10 or more falls through to "unhandled ms_codec::Error variant", exit 1 (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-10-31 bug hunt #9; triage CONFIRMED (`ms decode` → `error: unhandled ms_codec::Error variant: Error("unknown mnem wordlist-language code: 10")`, exit 1); graded Minor (fails closed; needs a foreign or newer encoder).
+- **Where:** `crates/ms-cli/src/error.rs` `From<ms_codec::Error>` (no `MnemUnknownLanguage` arm).
+- **Fix (for later):** add the arm `FormatViolation`, exit 2, JSON kind `"MnemUnknownLanguage"`, `details: {"got": <code>}`, message exactly `unknown mnem wordlist-language code <code> (known codes are 0-9)`. Not `fix-09.patch`'s text (Rust range syntax `(0..=9)`); not `FutureFormat`/exit 3.
+- **RED row:** `crates/ms-cli/tests/bughunt.rs::bughunt_ms_09_mnem_unknown_language_unhandled`, `#[ignore = "deferred-minor: ms-cli-mnem-unknown-language-catch-all"]`.
+- **Why deferred:** Minor; the FIX PR carries only C and I.
+- **Status:** `deferred-minor`
+- **Tier:** text / exit code (non-gating)
+
+### `ms-repair-accepts-mixed-case-with-typo` — `decode_with_correction` repairs a mixed-case string that also has an error, though the same string without the error is refused (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-10-31 bug hunt (unrated item X1); triage CONFIRMED as behaviour; graded Nit (the output is the right codeword, exit 4 UNVERIFIED; BIP-93 line 159 permits treating wrong-case characters as erasures; the defect is inconsistency with `decode`/`combine`, U4).
+- **Where:** `crates/ms-codec/src/decode.rs` `parse_ms1_symbols` (case-folds every character).
+- **Fix (for later):** `decode_with_correction` refuses a mixed-case string with the same `Codex32(InvalidCase(..))` that `decode` returns for it, naming the same character (`ms decode` names `S` for `ms10entrSqz4…` and `s` for `MS10ENTRsQZ4…`); message `mixed case at character '<c>' (codex32 strings must be all-lower or all-upper)`, exit 1. Not `fix-x1.patch` verbatim (it names the first uppercase character).
+- **RED row:** `crates/ms-codec/tests/bughunt.rs::bughunt_ms_x1_mixed_case_correction`, `#[ignore = "deferred-minor: ms-repair-accepts-mixed-case-with-typo"]`.
+- **Why deferred:** Nit; the FIX PR carries only C and I.
+- **Status:** `deferred-minor`
+- **Tier:** consistency (non-gating)
+
+### `ms-length-error-lists-entr-set-only` — `decode`'s length error lists only the entr lengths, so a 52-character string from a 51-character mnem card is told the valid set is [50, 56, 62, 69, 75] (repo: **mnemonic-secret**, text mirrored in **mnemonic-toolkit** `friendly.rs:119`; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-01, the triage's #7 open question; graded Minor in `bughunt-grade-ms.md` (fails closed and names the problem; needs a non-English mnem card plus a dropped or added character). Untested: a RED row is owed.
+- **Where:** `crates/ms-codec/src/decode.rs` `decode` pre-dispatch gate (`allowed: VALID_STR_LENGTHS`); `crates/ms-cli/src/error.rs` `CliError::UnexpectedStringLength` (hard-coded `[50, 56, 62, 69, 75]` in `message()` and `details()`).
+- **Fix (for later):** the codec pre-dispatch gate reports the union `[50, 51, 56, 58, 62, 64, 69, 70, 75, 77]`; the CLI carries `allowed` through (the hunt report's #7 mapping fix) and prints `string length <got> not in the valid set [50, 51, 56, 58, 62, 64, 69, 70, 75, 77]`, JSON `details.allowed` the same list. Exit 1 unchanged.
+- **Why deferred:** Minor; the FIX PR carries only C and I.
+- **Status:** `deferred-minor`
+- **Tier:** text (non-gating)
+
+### `ms-combine-accepts-non-ms-hrp` — `ms combine` recovers a share set whose HRP is not `ms`, while `decode` refuses such a single with `WrongHrp` (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-01, bug-hunt triage round 2, T3 (`design/agent-reports/bughunt-triage2-ms.md`), CONFIRMED; graded Minor (`bughunt-grade2-ms.md`): the output is exactly the secret the strings encode, and no ms, toolkit or BIP-93 artifact carries a non-`ms` HRP (BIP-93 line 70); a typo in a real share's HRP breaks its checksum, and a mixed `ms`/`xx` set is refused.
+- **Where:** `crates/ms-codec/src/shares.rs` `combine_shares` (no HRP check; `envelope::discriminate` has one for singles).
+- **Fix (for later):** `combine_shares` refuses a set whose canonical HRP is not `ms` with `Error::WrongHrp { got }` (the first 4 characters, as `discriminate` reports), so `ms combine` prints `error: wrong HRP: got "xx", expected "ms"`, exit 2, as `ms decode` does for a single (the triage's `fix-t3.patch` shape). In the same change `ms inspect` reports such a share as `FAIL: would NOT combine` with the existing reason `wrong-hrp` (`HRP is not "ms"`), `would_decode` and `would_combine` false, exit 0 (as the #5 ruling).
+- **RED row:** `crates/ms-cli/tests/bughunt_t.rs::bughunt_ms_t3_combine_accepts_non_ms_hrp`, `#[ignore = "deferred-minor: ms-combine-accepts-non-ms-hrp"]`.
+- **Why deferred:** Minor; the FIX PR carries only C and I.
+- **Status:** `deferred-minor`
+- **Tier:** consistency (non-gating)
+
+### `ms-encode-shares-zero-validate-order` — FIX 2.1's "returns `encode(tag, secret)` unchanged, error included" is false when the payload is also invalid: `encode_shares` runs `secret.validate()?` before the ZERO branch (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-01, FIX review r1 M-1 (`design/agent-reports/bughunt-fix-review-r1-ms.md`).
+- **Where:** `design/FIX_bughunt_ms.md` 2.1 Behaviour and the 2.1 spec "New" text; `crates/ms-codec/src/shares.rs` `encode_shares` (runs `secret.validate()?` before the ZERO branch); `encode` checks the tag first.
+- **What:** measured with a scratch test on the patched tree: `seed` + `Entr(15 B)`: `encode` gives `ReservedTagNotEmittedInV01`, `encode_shares(ZERO)` gives `PayloadLengthMismatch`; `hash` + `Entr(15 B)`: `TagKindMismatch` vs `PayloadLengthMismatch`; `seed` + `Mnem{10}`: `ReservedTag…` vs `MnemUnknownLanguage(10)`. Both sides refuse, so nothing is minted. The risk: a builder honouring the behaviour text could move `validate()` and diverge from section 3 item 1. Conditions: a library-only ZERO caller (none exists), a bad tag AND an invalid payload.
+- **Fix (for later):** 2.1 Behaviour, after "error included", add ", for any `secret` that passes `Payload::validate()`; `encode_shares` keeps running `secret.validate()?` first, so an invalid payload is refused with its own error whatever the tag". In the 2.1 spec New text, after "`TagKindMismatch` for a tag that names another kind", add "; a payload that fails `validate()` is refused with that error first, as before".
+- **Why deferred:** Minor; the FIX PR carries only C and I.
+- **Status:** `deferred-minor`
+- **Tier:** text (non-gating)
+
+### `toolkit-primer-length-damage-bullet-contradicts-indel` — the BCH primer's "Correction of length-changing damage is not supported" (lines 177-181, and "only physical inspection can recover" at 186) contradicts the new "Unreadable characters" subsection (repo: **mnemonic-toolkit** manual, companion PR; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-01, FIX review r1 M-2 (`design/agent-reports/bughunt-fix-review-r1-ms.md`).
+- **Where:** `docs/manual/src/60-appendices/65-bch-codex-primer.md` lines 177-181 and 186 at toolkit `c2b09861`, untouched by the FIX; 5.6.6 tells the holder to create a deletion and let `mnemonic repair --max-indel` find it.
+- **Fix (for later):** replace the lines 177-181 bullet with:
+
+  ```text
+  - **The decoder does not correct length-changing damage.** It
+    reports "string length out of range" or "checksum invalid"
+    without identifying the missing or extra character's position.
+    The polynomial syndrome encodes substitution-error positions, not
+    insertion / deletion positions. `mnemonic repair --max-indel N`
+    searches for up to 4 missing or extra characters instead; see
+    *Unreadable characters: what to type* below.
+  ```
+
+- **Why deferred:** Minor; the FIX PR carries only C and I.
+- **Status:** `deferred-minor`
+- **Tier:** docs (non-gating)
+
+### `toolkit-primer-long-code-erasures-15` — 5.6.4 keeps "same as regular code: 4 / 8 / 13" for the long code; BIP-93 says the long checksum corrects up to 15 consecutive erasures (repo: **mnemonic-toolkit** manual, companion PR; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-01, FIX review r1 M-3 (`design/agent-reports/bughunt-fix-review-r1-ms.md`); BIP-93 `bip-0093.upstream.mediawiki` line 398.
+- **Where:** FIX 5.6.4, the long-code table row of `65-bch-codex-primer.md` (line 121 at `c2b09861`). The text is one the FIX touches, and no tool decodes erasures, so the error is harmless today.
+- **Fix (for later):** New cell: `4 / 8 / 15 by the code (BIP-93's long checksum: up to 15 consecutive erasures); the repair tools implement the 4 substitutions only`.
+- **Why deferred:** Minor; the FIX PR carries only C and I.
+- **Status:** `deferred-minor`
+- **Tier:** docs (non-gating)
+
+### `fix-primer-insert-instruction-eats-heading` — FIX 5.6.6's insertion instruction, followed literally, folds the next heading into the previous bullet (repo: **mnemonic-secret** `design/FIX_bughunt_ms.md`; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-01, FIX review r1 M-4 (`design/agent-reports/bughunt-fix-review-r1-ms.md`).
+- **Where:** FIX 5.6.6 heading: "Replace the heading line (with its preceding blank line) by the subsection followed by the heading". That leaves no blank line between `  auditable on the plate.` and `### Unreadable…`; pandoc then renders `…auditable on the plate. ### Unreadable characters: what to type</li>`, so every *Unreadable characters…* cross-reference points at nothing. `make lint` and `make anchor-check` do not catch it. The script (`toolkit-manual-edits.py`, ninth edit: `'\n## Hand…\n'` → `'\n### Unreadable…'`) does it right.
+- **Fix (for later):** reword the instruction to "Insert the subsection, then one blank line, between the blank line that precedes the heading and the heading itself (the script's ninth edit does exactly this)." The build applies the manual by the script.
+- **Why deferred:** Minor; the FIX PR carries only C and I.
+- **Status:** `deferred-minor`
+- **Tier:** docs (non-gating)
+
+### `toolkit-ms-codec-bump-followup-text-incomplete` — FIX 9.4's toolkit FOLLOWUPS text omits T2 and the hashlock plate that `mnemonic repair` cannot read at ms-codec 0.7.0 (repo: **mnemonic-toolkit**; owning phase: **the toolkit's ms-codec bump, `toolkit-ms-codec-bump-bughunt-ms-fixes`**)
+
+- **Surfaced:** 2026-11-01, FIX review r1 M-5 (`design/agent-reports/bughunt-fix-review-r1-ms.md`).
+- **Where:** FIX 9.4 ("What"). Its ms-cli half lists `ms combine --to` and `ms inspect` of the secret share but not T2 (`ms inspect` of an unknown mnem language, described by 5.5). It does not record that `mnemonic repair` cannot read a hash plate at ms-codec 0.7.0, which is why the new primer text sends a hashlock plate to `ms repair`.
+- **Fix (for later):** say "`ms inspect` of the secret share and of an unknown mnem language", and append: "(c) At 0.7.0, `mnemonic repair --ms1` cannot read a hashlock preimage plate (`ms10hash…`): a clean, corrected or `--max-indel` input exits 2 (`reserved-prefix byte was 0x03, expected 0x00`). The BCH primer's *Unreadable characters: what to type* says so; revisit that sentence at the bump."
+- **Why deferred:** Minor; the FIX PR carries only C and I. Burn down with the bump.
+- **Status:** `deferred-minor`
+- **Tier:** `cross-repo`, docs (non-gating)
+
+### `ms-repair-exit-table-char-outside-alphabet` — the `ms repair` exit table's row 2 ("structural ms1 error before correction could run") misleads for a character outside the alphabet, which exits 1 (repo: **mnemonic-toolkit** manual `43-ms.md`, companion PR; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-01, FIX review r1 M-6 (`design/agent-reports/bughunt-fix-review-r1-ms.md`).
+- **Where:** `docs/manual/src/40-cli-reference/43-ms.md` exit table (line 780 onward at `c2b09861`); FIX 5.3 keeps it as is. A character outside the alphabet (including a typed `?`, which the primer now discusses) is exactly that structural error, yet #7's message exits 1. It fails closed.
+- **Fix (for later):** the row `` | `1` | I/O error or other generic failure. | `` becomes `` | `1` | I/O error or other generic failure, including a character outside the codex32 alphabet (`invalid character '<c>' (not in codex32 alphabet)`, e.g. a typed `?`). | ``, and 5.3 says so.
+- **Why deferred:** Minor; the FIX PR carries only C and I.
+- **Status:** `deferred-minor`
+- **Tier:** docs (non-gating)
+
+### `primer-printed-commands-have-no-executed-pin` — the BCH primer's printed commands have no executed pin: no RED row, no `verify-examples` transcript (repo: **mnemonic-toolkit** manual, companion PR; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-01, FIX review r1 M-7 (`design/agent-reports/bughunt-fix-review-r1-ms.md`).
+- **Where:** FIX 2.6 and 5.6.6. 2.6 ran the commands once, on test cards (and again after FIX review r1). Every FIX section 6 row that pins a printed command does run it, so the gap is only the manual's commands.
+- **Fix (for later):** the companion PR adds a `verify-examples` transcript (or a toolkit test) per route, on a damaged test card.
+- **Why deferred:** Minor; the FIX PR carries only C and I.
+- **Status:** `deferred-minor`
+- **Tier:** docs / test (non-gating)
+
+### `ms-invalid-char-message-invisible-char` — the #7 message names the character as typed, so an invisible character prints invisibly (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-01, FIX review r1 N-1 (`design/agent-reports/bughunt-fix-review-r1-ms.md`).
+- **Where:** `friendly_codex32` text for `InvalidChar(c)` (`crates/ms-cli/src/error.rs`). A pasted U+200B gives `error: invalid character '​' (not in codex32 alphabet)`, exit 1 (measured); `ms decode` says `string length 53 …` for the same input.
+- **Fix (for later):** an escaped form (`'\u{200b}'`) for non-printing characters would name it.
+- **Why deferred:** Nit; the FIX PR carries only C and I.
+- **Status:** `deferred-minor`
+- **Tier:** text (non-gating)
+- **Widened (whole-diff s1 N-2, 3bca6ae):** **N-2:** this extends the filed `ms-invalid-char-message-invisible-char`; it is not a re-report. A printable non-ASCII lookalike is named as typed, so U+212A KELVIN SIGN prints `invalid character 'K'`, which reads as an ASCII letter whose lowercase is in the alphabet. It fails closed (exit 1). Fix (later): the filed item's escaped form should cover any non-ASCII character, not only non-printing ones.
+
+### `fix-9-5-cite-toolkit-indel-erasure-item` — FIX 9.5 should cite the existing toolkit item `m-format-indel-erasure-decode-extend-to-8` (repo: **mnemonic-secret** `design/FIX_bughunt_ms.md`; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-01, FIX review r1 N-2 (`design/agent-reports/bughunt-fix-review-r1-ms.md`).
+- **Where:** FIX 9.5 (`impl-bch-erasure-decoding-ms`). The toolkit item is at `design/FOLLOWUPS.md:4175` (open); its "Companion" line expects an ms entry "to be filed in lockstep when scheduled", and Brian's `?`-in-indel direction is the same work.
+- **Fix (for later):** add the item to 9.5's Companions line.
+- **Why deferred:** Nit; the FIX PR carries only C and I.
+- **Status:** `deferred-minor`
+- **Tier:** docs (non-gating)
+
+### `fix-2-6-mk1-card-displays-truncated` — FIX 2.6's three `mk1` card displays are cut at 80 columns, so those transcripts do not reproduce as printed (repo: **mnemonic-secret** `design/FIX_bughunt_ms.md`; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-01, FIX review r2 (`design/agent-reports/bughunt-fix-review-r2-ms.md`), graded Minor (M-1).
+- **Where:** FIX 2.6, lines 527, 541 and 552 (the `mk1` strings of the three transcripts).
+- **What:** those lines print the first `mk1` string as 80 characters; the real string is 111. Run with the cards as printed at 527 and 541, the three commands that read them exit 2 (`could not be recovered` and, for the guess, `too many errors ... singleton bound = 8`), not the recorded 5, 4 and 5. Line 552 is truncated too, but its recorded exit 2 is the same either way. With the full strings every recorded result reproduces (exit 5, exit 4 with `--max-subst 1`, exit 5 with the `'2' -> '9'` correction). Conditions: evidence section only, no holder text; the next reader who re-runs 2.6 sees a false failure.
+- **Fix (for later):** in those three lines append `zpn3glvvquvgpms6mzamgctgratycf` to lines 527 and 552 (they end `…rfg8rw7dk`) and `kzpn3glvvquvgpms6mzamgctgratycf` to line 541 (it ends `…rfg8rw7d`). The full lines are `mk1qpg397pqqsq5gjlzeeutks2zvzrtp70pm6trteu3ssr0mjvzcsa5rf53k63zcmsnf3z6rfg8rw7dkzpn3glvvquvgpms6mzamgctgratycf` (527, 552) and `mk1qpg397pqqsq5gjlze2eutks2zvzrtp70pm6trteu3ssr0mjvzcsa5rf53k63zcmsnf3z6rfg8rw7dkzpn3glvvquvgpms6mzamgctgratycf` (541).
+- **Why deferred:** Minor; the FIX PR carries only C and I (`design/FIX_bughunt_ms.md`).
+- **Status:** `deferred-minor`
+- **Tier:** docs (non-gating)
+
+### `primer-leave-out-two-strings-silent` — the primer's leave-out route exits 2 when characters are left out of two strings of one `mk1`/`md1` card, and the text is silent (repo: **mnemonic-toolkit** manual, via this FIX's 5.6.6; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-01, FIX review r2 (`design/agent-reports/bughunt-fix-review-r2-ms.md`), graded Minor (M-2); pre-existing in the text.
+- **Where:** FIX 5.6.6 (New block), the paragraph that ends "(not only the damaged one)."
+- **What:** characters left out of two strings of one `mk1`/`md1` card: the leave-out command exits 2, and the text is silent. One character out of each of the two `mk1` strings: `--max-indel 1` and `--max-indel 2` both exit 2. One string left out and a (wrong) guess typed in the other works (exit 5; exit 4 with `--max-subst 1`), and route 2 with one wrong guess in each string works (exit 5). Fails closed; the text's scope is "in one string". Conditions: an `mk1`/`md1` card, two of its strings each with an unreadable character, and the leave-out route chosen.
+- **Fix (for later):** after "(not only the damaged one)." in 5.6.6: "If unreadable characters are in more than one string of an `mk1` or `md1` card, leave characters out of one string only and type a best guess for the others."
+- **Why deferred:** Minor; the FIX PR carries only C and I (`design/FIX_bughunt_ms.md`).
+- **Status:** `deferred-minor`
+- **Tier:** `cross-repo`, docs (non-gating)
+
+### `fix-2-6-ms-split-transcript-abridged` — FIX 2.6's `ms split` transcript is not what `ms split` prints (repo: **mnemonic-secret** `design/FIX_bughunt_ms.md`; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-01, FIX review r2 (`design/agent-reports/bughunt-fix-review-r2-ms.md`), graded Nit (N-1).
+- **Where:** FIX 2.6, the `ms split` transcript.
+- **What:** the doc shows `share 1: ms12h997qq65…`; the tool prints all N shares on stdout (grouped in fives) and `share i of N:` labels on stderr. The shares used afterwards are valid (the `ms combine` block reproduces).
+- **Fix (for later):** show `$ ms split …` as three stdout lines of share strings and note that the `share i of N:` labels are on stderr, or mark the line "(abridged)".
+- **Why deferred:** Nit; the FIX PR carries only C and I (`design/FIX_bughunt_ms.md`).
+- **Status:** `deferred-minor`
+- **Tier:** docs (non-gating)
+
+### `primer-lowercase-rule-after-subst-hint` — the primer's leave-out bullet gives the lowercase rule after the `--max-subst 1` hint that cannot help a capitals card, and its preamble says "as you read it" (repo: **mnemonic-toolkit** manual, via `design/FIX_bughunt_ms.md` 5.6.6; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-01, FIX review r3 (`design/agent-reports/bughunt-fix-review-r3-ms.md`), graded Minor (M-1).
+- **Where:** FIX 5.6.6 New block (and the ninth edit of the script): the preamble "Put the card in `card.txt` as you read it", the code block, and the sentence order "Exit 2 means nothing was found: if the string may also hold a wrong character, run the command again with `--max-subst 1` added ... This search reads lowercase only: if your plate is engraved in capitals, type the card in lowercase for this command".
+- **What:** A holder with an engraved capitals plate follows the preamble ("as you read it", so capitals), runs the printed command (exit 2), and reads the next sentence, which sends them to `--max-subst 1`; that also exits 2 on every capitals card (measured above). The rule that fixes it is four lines later in the same bullet. Fails closed (exit 2, no wrong string); the text does say what to do. Conditions (the likelihood test): (a) a capitals plate, which is the fork's default for an `ms1` seed plate, so not unusual; (b) the holder runs the command before reading the end of the bullet; (c) on exit 2 they follow the `--max-subst 1` hint without reading the next sentence. (b) and (c) are two unusual conditions, and the tool fails closed, so this is Minor; no printed command fails once the bullet is read to its end.
+- **Fix (for later):** In 5.6.6, move the sentence so the rule precedes the command. Delete from the end of the first bullet: "This search reads lowercase only: if your plate is engraved in capitals, type the card in lowercase for this command (the second way takes either case). " and in the bullet's first sentence replace "Give `--max-indel` the number you left out (1 to 4; this example left out 1):" with "Type the card in lowercase for this command, even if your plate is engraved in capitals: this search reads lowercase only (the second way takes either case). Give `--max-indel` the number you left out (1 to 4; this example left out 1):". Same edit in the script's ninth edit; re-record its sha256.
+- **Why deferred:** Minor; the FIX PR carries only C and I (`design/FIX_bughunt_ms.md`).
+- **Status:** `deferred-minor`
+- **Tier:** `cross-repo`, docs (non-gating)
+
+### `ms-decode-calls-punctuation-mixed-case` — `ms decode` and `ms inspect` call `?` or `!` in a lowercase string "mixed case", where `ms repair` (after FIX_bughunt_ms) says "invalid character" (repo: **mnemonic-secret**; owning phase: **the next ms triage pass**)
+
+- **Surfaced:** 2026-11-01, while checking `design/FIX_bughunt_ms.md`, and the round-2 triage's open question (`/scratch/cache/bughunt/ms2/reach-t1-decode-chars.txt`). No RED row yet. Proposed grade Minor: it fails closed and names the character, but calls it a case error; it needs a holder who types a punctuation mark, such as BIP-93's `?`, into `decode` or `inspect` on a lowercase string.
+- **What:** on ms 0.20.1, `echo 'ms10entrsqz4?42424242424242424242424q8lurdrzjnyn08' | ms decode -` prints `error: mixed case at character '?' (codex32 strings must be all-lower or all-upper)`, exit 1; `!` gives the same; `b` gives `invalid character 'b' (not in codex32 alphabet)`; the all-uppercase twin with `?` gives `invalid character '?'`. Cause: the vendored codex32 `set_check_case` (`crates/ms-codec/src/codex32/checksum.rs:166`) treats any ASCII character that is neither a digit nor lowercase as uppercase.
+- **Proposed fix (for the triage to confirm):** only an ASCII letter sets or checks the case; any other character outside the alphabet is `InvalidChar(c)`, so `ms decode` and `ms inspect` print `invalid character '?' (not in codex32 alphabet)`, exit 1, the text `ms repair` prints after FIX_bughunt_ms. It edits vendored codex32 code, whose parity gate covers valid strings only. The toolkit's `mnemonic repair` already refuses with its own accurate text (`non-bech32 char '?' at position N`, exit 2).
+- **Status:** `needs-triage`
+- **Tier:** text (grade at triage)
+
+### `impl-bch-erasure-decoding-ms` — erasure decoding of `?` for ms1, the third leg of `impl-bch-erasure-decoding-md-mk` (repo: **mnemonic-secret**, first step in **mnemonic-toolkit**; owning phase: **after the bug-hunt fix PR**)
+
+- **Surfaced:** 2026-11-01, bug-hunt triage round 2, T1 and T1b (`design/agent-reports/bughunt-triage2-ms.md`, `bughunt-grade2-ms.md`). BIP-93 line 152: "up to 8 unreadable characters (called erasures)"; lines 155 and 158: "we recommend that: … Implementations interpret "?" as an erasure." Brian 2026-11-01: "Fix bugs before erasure feature work". The bug-fix PR (`design/FIX_bughunt_ms.md`) makes a `?` a correct refusal (`invalid character '?' (not in codex32 alphabet)`, exit 1) and corrects the toolkit manual's BCH primer, which promised 8-erasure correction.
+- **Companions:** `descriptor-mnemonic/design/FOLLOWUPS.md` and `mnemonic-key/design/FOLLOWUPS.md` → `impl-bch-erasure-decoding-md-mk`, filed 2026-07-10 by the BIP-alignment cycle (`mnemonic-toolkit/design/BUGLIST_bip_alignment_cycle_2026-07-10.md` DG-1), which downgraded md1/mk1's erasure MUST to SHOULD/informative. ms was outside that cycle. This entry is the ms1 leg.
+- **Code:** ms1's string layer is the vendored rust-codex32 0.1.0 (`crates/ms-codec/src/codex32/`; no erasure code). Its substitution decoder is ms-codec's own `bch.rs`/`bch_decode.rs` (BIP-93's regular code, target `MS_REGULAR_CONST = 0x10ce0795c2fd1e62a`). `bch_decode.rs` was forked from mk-codec v0.3.1 and mirrors md-codec's, so the three legs share one decoder shape and differ in target residue.
+- **Measured (controller, `/scratch/cache/bughunt/ms2/controller-subst-probe.txt`):** `ms repair` corrects 1, 2, 3 and 4 random substitutions to the original in 300/300 trials each and refuses 5 and 6 in 300/300, with no miscorrection. One or two `?` gave exit 1 with #7's length message in 20/20. Rewriting each `?` as `q` and then repairing corrected every case up to 4 marks (300/300 at k = 4). Also measured: leaving 1-4 characters out and running `mnemonic repair --max-indel N` recovers them (exit 5; controller `controller-indel-probe.txt`, grading `/scratch/cache/bughunt/ms-grade/probe/indel_probe.txt`).
+- **Triage estimate:** polymod is GF(2)-linear in the symbols, so an erasure solve is a 65-equation system in 5e unknowns; the triage's Python oracle (`/scratch/cache/bughunt/ms2/erasure_oracle.py`) recovers 1-8 scattered and 8 or 13 consecutive erasures uniquely. The work: `?` parsing, the solver, a policy for erasures mixed with substitutions, `CorrectionDetail.was = '?'`, exit 4, spec and TRACE rows, manual lockstep, then an ms-codec release and a toolkit bump. About 150-250 lines of production code, 20+ tests, three repos. Fill-and-check (32^e candidates) is exact for small e and not usable at 8.
+- **Design direction (Brian 2026-11-01, "So maybe a better fix is to add "?" feature to indel?"):** the preferred first step. The toolkit's `mnemonic repair` accepts `?`, fills each marked position with all 32 symbols (32^k candidates; practical to about k = 4-5), checksum-checks, and reports through the existing indel/VERIFY-ME exits for ms1, mk1 and md1 alike. A valid fill of 8 or fewer marked positions is unique by BIP-93's 8-erasure guarantee, and with substitutions mixed in while marks + 2 × substitutions ≤ 8 (md1/mk1 need their code distance confirmed). True BCH erasure decoding (to 8 marks, and re-upgrading the md1/mk1 BIP MUST) stays the later leg.
+- **Journey input (Brian 2026-11-01, "Knowing exactly which character on a plate is unreadable will be common and user might even be able to tell that only a few options are possible for the unreadable character"):** known-position fill is the primary model. Per-position candidate sets (for example `[ce]`; `?` = any of the 32 symbols) cut the search to the product of the set sizes. At most 8 marks stays unique; with more marks the tool lists every valid candidate as VERIFY-ME and refuses to pick. `?` and `[` are shell glob characters, so the feature spec settles quoting (ms1 already reads stdin or `--in`). The feature spec starts with a live journey walk with Brian.
+- **Rows:** `crates/ms-codec/tests/bughunt_t.rs::bughunt_ms_t1_question_mark_erasure` and `::bughunt_ms_t1b_eight_erasures_recovered`, both `#[ignore = "planned-feature: impl-bch-erasure-decoding-ms"]`; they test `ms_codec::decode_with_correction`, so they stay ignored until ms-codec itself fills `?`. That change also flips the `?` cases of `bughunt_ms_07_codec_non_alphabet_is_invalid_char` and `bughunt_ms_07b_repair_names_char_as_typed` from refusal to recovery, and the BCH primer's "Unreadable characters: what to type".
+- **Status:** `planned-feature`
+- **Tier:** `feature` / cross-repo
+
+### `ms-encode-shares-zero-n-check-order-unpinned` — `encode_shares` ZERO: the FIX's "`n != 1` is checked first" has no row (mutant F1c survives) (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Status:** `deferred-minor`
+- **Source:** `design/agent-reports/whole-diff-bughunt-ms-s2.md` (commit 4dfdc39), M1; filed 2026-11-01 from the bug-hunt ms whole-diff review.
+- **What:** **M1 (F1c). `encode_shares` ZERO: "`n != 1` is checked first" is unpinned.** FIX 2.1 says `n != 1` still returns `InvalidShareCount { k: 0, n }` first. Moving `encode(tag, secret)?` ahead of the `n` check survives: a reserved tag with `n = 2` then returns `ReservedTagNotEmittedInV01` instead of `InvalidShareCount`. Conditions: a library caller passing `Threshold::ZERO` (none does; `ms split -k 0` refuses earlier), with `n != 1`, with a reserved or mismatched tag. Both outcomes are refusals. Fix text (one more assertion in row 01): `assert!(matches!(encode_shares(seed_tag, Threshold::ZERO, 2, &entr16), Err(Error::InvalidShareCount { k: 0, n: 2 })));`
+
+### `ms-first-non-alphabet-char-unpinned` — "first non-alphabet character ends the parse" has no row: every row has one bad character (mutant F2e survives) (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Status:** `deferred-minor`
+- **Source:** `design/agent-reports/whole-diff-bughunt-ms-s2.md` (commit 4dfdc39), M2; filed 2026-11-01 from the bug-hunt ms whole-diff review.
+- **What:** **M2 (F2e). "First" non-alphabet character is unpinned.** FIX 2.4 says the first data-part character not in the alphabet ends the parse. A variant that scans on and reports the last one survives (every row has a single bad character). Conditions: two or more non-alphabet characters in one `ms repair` input. It still refuses, naming a character that really is invalid. Fix text (codec 07): `format!("{}b?{}", &good[..12], &good[14..])` must give `InvalidChar('b')`.
+
+### `ms-combine-json-preimage-phrase-unpinned` — `ms combine --json` (default `--to phrase`) on a preimage set is unpinned (mutant F3b2 survives) (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Status:** `deferred-minor`
+- **Source:** `design/agent-reports/whole-diff-bughunt-ms-s2.md` (commit 4dfdc39), M3; filed 2026-11-01 from the bug-hunt ms whole-diff review.
+- **What:** **M3 (F3b2). `ms combine --json` (default `--to phrase`) on a preimage set is unpinned.** Passing `false` instead of `args.json` to `emit_preimage` survives: `--json` would print the text record. The build rewrapped this line in the new `if args.to == CombineTo::Phrase`. Conditions: a future edit to that line, on a preimage set, with `--json`. Fix text (new row next to 04e): `ms combine --json -` on the preimage shares exits 0 with stdout equal to `ms decode --json -` on `encode(Tag::HASH, &x)`.
+
+### `ms-combine-to-ms1-stderr-unasserted` — `ms combine --to ms1` stderr is unasserted (mutants F3i, F3j survive) (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Status:** `deferred-minor`
+- **Source:** `design/agent-reports/whole-diff-bughunt-ms-s2.md` (commit 4dfdc39), M4; filed 2026-11-01 from the bug-hunt ms whole-diff review.
+- **What:** **M4 (F3i, F3j). `--to ms1` stderr is unasserted.** Printing the "these 64 hex characters" warning on `--to ms1` text mode survives (F3i), as does dropping the PrivateKeyMaterial advisory on `--to ms1` (F3j; no test anywhere asserts that advisory for `--to ms1`, for any kind, so this half is older than the build, and it is secret-handling, which is never C or I). Conditions: a regression in a one-arm code path, on a preimage set with `--to ms1`. Fix text: add `assert_eq!(err_s(&o), format!("{PRIVATE_KEY_ADVISORY}\n"));` to rows 04 and 04c.
+
+### `ms-inspect-t2-pinned-at-one-point` — `ms inspect` T2 (`mnem-unknown-language`) is pinned at one point only (mutants F5b, F5c, F5d survive) (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Status:** `deferred-minor`
+- **Source:** `design/agent-reports/whole-diff-bughunt-ms-s2.md` (commit 4dfdc39), M5; filed 2026-11-01 from the bug-hunt ms whole-diff review.
+- **What:** **M5 (F5b, F5c, F5d). T2 is pinned at one point.** Row t2 uses code 10 with a valid length. Survivors: the reason pushed after `payload-length-mismatch` (FIX 2.5 and section 3 item 5 say before it); `get(code as usize + 1)` (flags code 9, Portuguese, as unknown: a false FAIL on a valid card; no test inspects a mnem string with code 9); `code == 10` only (codes 11..255 and 0x10 unflagged). The real code is one expression, `MNEM_LANGUAGE_NAMES.get(code as usize).is_none()`, so these need a future edit. Conditions: an edit to that expression, and (for the order) a hand-made string with both an unknown code and a bad length. Fix text (extend row t2): inspect a language-9 mnem string and assert `OK: would decode v0.2`; inspect a language-0x10 string and assert `mnem-unknown-language`; inspect language 10 with a payload of 17 bytes after the code and assert `failure_reasons` starts `["unexpected-string-length", "mnem-unknown-language", "payload-length-mismatch"]` (check the exact vector against the built `ms` before pinning).
+
+### `ms-inspect-secret-share-k3-to-9-unpinned` — `ms inspect` secret share at k = 3..9 is unpinned: only k = 2 has a row (mutant F4e survives) (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Status:** `deferred-minor`
+- **Source:** `design/agent-reports/whole-diff-bughunt-ms-s2.md` (commit 4dfdc39), N1; filed 2026-11-01 from the bug-hunt ms whole-diff review.
+- **What:** **N1 (F4e). Secret share at `k` = 3..9.** Only `k` = 2 is pinned; a predicate narrowed to `threshold == 2` survives. The predicate is `share_index == 's'` and `is_share` already gates on `2..=9`, so it is hypothetical.
+
+### `ms-combine-to-ms1-read-back-claim-unpinned` — FIX 2.2 and manual 5.1 say `ms decode` and `ms hashlock --in` read the `--to ms1` string; no row runs them (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Status:** `deferred-minor`
+- **Source:** `design/agent-reports/whole-diff-bughunt-ms-s2.md` (commit 4dfdc39), N2; filed 2026-11-01 from the bug-hunt ms whole-diff review.
+- **What:** **N2. The read-back claim has no row.** FIX 2.2 and manual 5.1 say the `--to ms1` string is read by `ms decode` and `ms hashlock --in`. Row 04 compares it to `ms_codec::encode(Tag::HASH, ...)` but never runs those commands. They work on the built `ms` (checked above).
+
+### `ms-repair-exit4-unverified-line-for-hashlock-plate` — the primer sends a damaged hashlock plate to `ms repair`, whose exit-4 "confirm the derived address/xpub" line does not fit a preimage (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Status:** `deferred-minor`
+- **Source:** `design/agent-reports/whole-diff-bughunt-ms-s1.md` (commit 3bca6ae), N-1; filed 2026-11-01 from the bug-hunt ms whole-diff review.
+- **What:** **N-1:** the primer newly sends a damaged hashlock plate to `ms repair` ("use the second way for those"). `ms repair`'s unchanged exit-4 stderr then says "confirm the derived address/xpub against a known-good copy". A preimage has neither, and `ms derive` refuses it. The primer's own "compare the result with the plate" is the usable check, and a wrong preimage cannot spend, so no funds are at risk. Fix (later): a preimage-kind variant of the UNVERIFIED line, for example "confirm with `ms hashlock --in` that its digest matches the hash in your wallet policy".
+
+### `ms-decode-repair-advise-combine-for-s-index-share` — `ms decode` and `ms repair` on an s-index share still advise `ms combine`, which `ms combine` refuses (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Status:** `deferred-minor`
+- **Source:** `design/agent-reports/whole-diff-bughunt-ms-s1.md` (commit 3bca6ae), first bullet of "Design lines (ungraded)"; filed 2026-11-01 from the bug-hunt ms whole-diff review.
+- **What:** `ms decode` and `ms repair` on an s-index share (threshold 2-9) still advise "use `ms combine` to recombine K shares", which `ms combine` refuses. That is pre-existing text, and it now contradicts the new `inspect` reason for the same string.
