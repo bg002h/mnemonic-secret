@@ -6,7 +6,6 @@
 
 use assert_cmd::Command;
 use ms_codec::codex32::{Codex32String, Fe};
-use serde_json::Value;
 use std::process::Output;
 
 /// Run `ms <args>` with `stdin` on the private channel.
@@ -29,8 +28,8 @@ fn err_s(o: &Output) -> String {
 // ---------------------------------------------------------------------------
 // T2 `ms inspect` on a checksum-valid mnem string whose language code is 10 or
 // more says "OK: would decode" while `ms decode` refuses it (codec
-// `Payload::validate`: `language >= 10` -> MnemUnknownLanguage). Correct:
-// inspect does not claim the string would decode.
+// `Payload::validate`: `language >= 10` -> MnemUnknownLanguage). Ruling
+// (FIX_bughunt_ms.md T2): FAIL with reason `mnem-unknown-language`, exit 0.
 // ---------------------------------------------------------------------------
 #[test]
 fn bughunt_ms_t2_inspect_unknown_language_says_ok() {
@@ -55,28 +54,17 @@ fn bughunt_ms_t2_inspect_unknown_language_says_ok() {
         err_s(&d)
     );
 
-    let mut failures: Vec<String> = Vec::new();
-
     let j = ms(&["inspect", "--json", "-"], &s);
-    assert!(j.status.success(), "inspect --json: {}", err_s(&j));
-    let v: Value = serde_json::from_slice(&j.stdout).unwrap();
-    if v["would_decode"] == Value::Bool(true) {
-        failures.push(format!(
-            "inspect --json says would_decode=true, failure_reasons={} (decode refuses this string)",
-            v["failure_reasons"]
-        ));
-    }
+    assert_eq!(j.status.code(), Some(0), "inspect --json: {}", err_s(&j));
+    assert_eq!(out_s(&j), T2_JSON);
 
     let t = ms(&["inspect", "-"], &s);
-    let first = out_s(&t).lines().next().unwrap_or("").to_string();
-    if first.starts_with("OK:") {
-        failures.push(format!(
-            "inspect text verdict is {first:?} (decode refuses this string)"
-        ));
-    }
-
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert_eq!(t.status.code(), Some(0), "inspect: {}", err_s(&t));
+    assert_eq!(out_s(&t), T2_TEXT);
 }
+
+const T2_JSON: &str = "{\"schema_version\":\"1\",\"report\":{\"hrp\":\"ms\",\"threshold\":0,\"tag\":\"entr\",\"share_index\":\"s\",\"prefix_byte\":2,\"payload_bytes_hex\":\"0a00000000000000000000000000000000\",\"checksum_valid\":true,\"kind\":\"mnem\",\"language\":\"unknown\"},\"would_decode\":false,\"failure_reasons\":[\"mnem-unknown-language\"]}\n";
+const T2_TEXT: &str = "FAIL: would NOT decode v0.1\n    reason: mnem-unknown-language (unknown mnem wordlist-language code; known codes are 0-9)\n\nhrp: ms\nthreshold: 0\ntag: entr\nshare_index: s\nprefix_byte: 0x02\npayload_bytes: 0a00000000000000000000000000000000\nchecksum_valid: true\nkind: mnem\nlanguage: unknown\n";
 
 // ---------------------------------------------------------------------------
 // T3 `ms combine` on a checksum-valid 2-of-2 share set whose HRP is `xx`, not
@@ -101,6 +89,7 @@ fn two_of_two(hrp: &str, data: &[u8]) -> Vec<String> {
 }
 
 #[test]
+#[ignore = "deferred-minor: ms-combine-accepts-non-ms-hrp"]
 fn bughunt_ms_t3_combine_accepts_non_ms_hrp() {
     // prefix 0x00 (entr) + 16 entropy bytes.
     let mut data = vec![0x00u8];

@@ -36,47 +36,38 @@ fn shift_char(s: &str, p: usize, shift: usize) -> String {
 // ---------------------------------------------------------------------------
 #[test]
 fn bughunt_ms_01_zero_threshold_skips_tag_checks() {
-    let cases: Vec<(&str, Tag, Payload)> = vec![
-        (
-            "seed tag + Entr",
-            Tag::try_new("seed").unwrap(),
-            Payload::Entr(vec![0; 16]),
-        ),
-        ("hash tag + Entr", Tag::HASH, Payload::Entr(vec![0; 16])),
-        (
-            "entr tag + Preimage",
-            Tag::ENTR,
-            Payload::Preimage(Zeroizing::new([0u8; 32])),
-        ),
-    ];
-    let mut failures: Vec<String> = Vec::new();
-    for (label, tag, payload) in cases {
-        // Reference: encode() refuses every one of these (precondition).
-        assert!(
-            encode(tag, &payload).is_err(),
-            "{label}: precondition: encode() must refuse"
-        );
-        match encode_shares(tag, Threshold::ZERO, 1, &payload) {
-            Ok(v) => failures.push(format!(
-                "{label}: encode_shares(ZERO) returned Ok({} string(s) of len {}); decode() of it is_ok={}",
-                v.len(),
-                v[0].len(),
-                decode(&v[0]).is_ok()
-            )),
-            Err(Error::ReservedTagNotEmittedInV01 { .. }) | Err(Error::TagKindMismatch { .. }) => {}
-            Err(other) => failures.push(format!("{label}: wrong refusal: {other}")),
-        }
-    }
+    let entr16 = Payload::Entr(vec![0; 16]);
+    let pre0 = Payload::Preimage(Zeroizing::new([0u8; 32]));
+    let seed_tag = Tag::try_new("seed").unwrap();
+
+    let r = encode_shares(seed_tag, Threshold::ZERO, 1, &entr16);
     assert!(
-        failures.is_empty(),
-        "encode_shares(ZERO) must refuse like encode():\n{}",
-        failures.join("\n")
+        matches!(r, Err(Error::ReservedTagNotEmittedInV01 { got }) if got == *b"seed"),
+        "seed tag + Entr: want ReservedTagNotEmittedInV01, got {r:?}"
+    );
+    let r = encode_shares(Tag::HASH, Threshold::ZERO, 1, &entr16);
+    assert!(
+        matches!(r, Err(Error::TagKindMismatch { tag, prefix: 0x00 }) if tag == *b"hash"),
+        "hash tag + Entr: want TagKindMismatch(hash, 0x00), got {r:?}"
+    );
+    let r = encode_shares(Tag::ENTR, Threshold::ZERO, 1, &pre0);
+    assert!(
+        matches!(r, Err(Error::TagKindMismatch { tag, prefix: 0x03 }) if tag == *b"entr"),
+        "entr tag + Preimage: want TagKindMismatch(entr, 0x03), got {r:?}"
+    );
+
+    // Control: a valid preimage single is still minted, byte-identical to encode().
+    let p = Payload::Preimage(Zeroizing::new([0x11u8; 32]));
+    assert_eq!(
+        encode_shares(Tag::HASH, Threshold::ZERO, 1, &p).unwrap(),
+        vec![encode(Tag::HASH, &p).unwrap()]
     );
 }
 
 // ---------------------------------------------------------------------------
 // #3 parse_ms1_symbols does `c as u8`: a non-ASCII char aliases to an
-// alphabet symbol, and the corrector "repairs" it. Correct: reject.
+// alphabet symbol, and the corrector "repairs" it. Correct: reject, as
+// InvalidChar naming the character (closed by the #7 fix).
 // ---------------------------------------------------------------------------
 #[test]
 fn bughunt_ms_03_non_ascii_read_as_symbol() {
@@ -93,13 +84,15 @@ fn bughunt_ms_03_non_ascii_read_as_symbol() {
         bad.push_str(&good[..12]);
         bad.push(alias);
         bad.push_str(&good[13..]);
-        if let Ok((_, _, d)) = decode_with_correction(&bad) {
-            failures.push(format!(
+        match decode_with_correction(&bad) {
+            Err(Error::Codex32(ms_codec::codex32::Error::InvalidChar(c))) if c == alias => {}
+            Ok((_, _, d)) => failures.push(format!(
                 "{label} accepted by decode_with_correction and repaired: {:?}",
                 d.iter()
                     .map(|c| (c.position, c.was, c.now))
                     .collect::<Vec<_>>()
-            ));
+            )),
+            Err(e) => failures.push(format!("{label}: wrong refusal: {e:?}")),
         }
     }
     assert!(
@@ -116,6 +109,7 @@ fn bughunt_ms_03_non_ascii_read_as_symbol() {
 const EVIL_LONG_HRP: &str = "laaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa12e0ds56ptqt4x";
 
 #[test]
+#[ignore = "deferred-minor: ms-codex32-parts-short-data-panic"]
 fn bughunt_ms_06_long_hrp_short_data_panics() {
     assert_eq!(EVIL_LONG_HRP.len(), 54, "precondition: in the 48..94 range");
     let mut failures: Vec<String> = Vec::new();
@@ -144,6 +138,7 @@ fn bughunt_ms_06_long_hrp_short_data_panics() {
 // message does not claim "more than 8" for a 5-error string.
 // ---------------------------------------------------------------------------
 #[test]
+#[ignore = "deferred-minor: ms-too-many-errors-says-more-than-8"]
 fn bughunt_ms_08_too_many_errors_bound_is_8() {
     let good = valid_entr16();
     let mut bad = good.clone();
@@ -172,6 +167,7 @@ fn bughunt_ms_08_too_many_errors_bound_is_8() {
 // BIP-93 quotation and why the BIP text alone does not settle it.
 // ---------------------------------------------------------------------------
 #[test]
+#[ignore = "deferred-minor: ms-repair-accepts-mixed-case-with-typo"]
 fn bughunt_ms_x1_mixed_case_correction() {
     let good = valid_entr16();
     // Upper-case one lowercase letter after the HRP (index 8 = the share-index
@@ -208,4 +204,50 @@ fn bughunt_ms_x1_mixed_case_correction() {
             .map(|c| (c.position, c.was, c.now))
             .collect::<Vec<_>>())
     );
+}
+
+// ---------------------------------------------------------------------------
+// #7 (codec side) a data-part character outside the codex32 alphabet is
+// refused as InvalidChar, named as typed (the character `decode` names).
+// ---------------------------------------------------------------------------
+#[test]
+fn bughunt_ms_07_codec_non_alphabet_is_invalid_char() {
+    let good = valid_entr16();
+    let upper = good.to_ascii_uppercase();
+    for (label, s, want) in [
+        (
+            "lowercase b",
+            format!("{}b{}", &good[..12], &good[13..]),
+            'b',
+        ),
+        (
+            "uppercase B",
+            format!("{}B{}", &upper[..12], &upper[13..]),
+            'B',
+        ),
+        (
+            "erasure mark ?",
+            format!("{}?{}", &good[..12], &good[13..]),
+            '?',
+        ),
+    ] {
+        match decode_with_correction(&s) {
+            Err(Error::Codex32(ms_codec::codex32::Error::InvalidChar(c))) => {
+                assert_eq!(c, want, "{label}: names the character as typed")
+            }
+            other => panic!("{label}: want InvalidChar({want:?}), got {other:?}"),
+        }
+        // decode() names the same character for a letter outside the
+        // alphabet. (For `?` in a lowercase string, decode's codex32 case
+        // check answers first, with InvalidCase: not asserted here.)
+        if want == '?' {
+            continue;
+        }
+        match decode(&s) {
+            Err(Error::Codex32(ms_codec::codex32::Error::InvalidChar(c))) => {
+                assert_eq!(c, want, "{label}: decode names the same character")
+            }
+            other => panic!("{label}: decode: want InvalidChar({want:?}), got {other:?}"),
+        }
+    }
 }

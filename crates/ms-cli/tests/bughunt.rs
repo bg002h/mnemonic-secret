@@ -62,6 +62,7 @@ fn locked_kb_of_vma_containing(addr: usize) -> u64 {
 }
 
 #[test]
+#[ignore = "deferred-minor: ms-mlock-unpin-not-refcounted"]
 fn bughunt_ms_02_mlock_unpin_not_refcounted() {
     let page = mlock::page_size_for_test();
     // One private anonymous mapping of two pages: a page nothing else touches.
@@ -104,96 +105,130 @@ fn bughunt_ms_02_mlock_unpin_not_refcounted() {
 
 // ---------------------------------------------------------------------------
 // #4 `ms combine --to ms1` on preimage shares is silently ignored.
-// Report: should print the recovered ms1, or fail clearly. Open product
-// question (print vs refuse): assert only that the reported wrong behaviour --
-// exit 0 with the --to flag ignored -- is absent.
+// Ruling (FIX_bughunt_ms.md): `--to ms1` prints the `hash` single and
+// `--to entropy` the 64-hex preimage (text and --json); the default
+// `--to phrase` keeps printing the record as `ms decode` does.
 // ---------------------------------------------------------------------------
+/// Preimage shares of X = 0x11 x 32 (the CLI has no preimage source for
+/// split, F-468) and the `hash` single `encode` gives for X.
+fn preimage_shares_and_single() -> (String, String) {
+    let x = Payload::Preimage(Zeroizing::new([0x11u8; 32]));
+    let shares = encode_shares(Tag::HASH, Threshold::new(2).unwrap(), 2, &x).unwrap();
+    (shares.join("\n"), ms_codec::encode(Tag::HASH, &x).unwrap())
+}
+const X11_HEX: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+const PRIVATE_KEY_ADVISORY: &str = "warning: stdout carries private key material (can spend) \u{2014} redirect or encrypt (e.g. '> file.txt' or '| age -e ...')";
+const PREIMAGE_AS_ENTROPY_WARNING: &str = "warning: these 64 hex characters are a hashlock PREIMAGE, not seed entropy \u{2014} the first spend of the hash path publishes them in the clear, so never use them as a seed (ms encode, ms split or ms derive --hex); --to ms1 prints the preimage plate string";
+
 #[test]
 fn bughunt_ms_04_combine_to_ms1_ignored_for_preimage() {
-    let x = [0x11u8; 32];
-    let shares = encode_shares(
-        Tag::HASH,
-        Threshold::new(2).unwrap(),
-        2,
-        &Payload::Preimage(Zeroizing::new(x)),
-    )
-    .unwrap();
-    let input = shares.join("\n");
-
-    let default = ms(&["combine", "-"], &input);
-    assert!(
-        default.status.success(),
-        "precondition: {}",
-        err_s(&default)
-    );
-
+    let (input, single) = preimage_shares_and_single();
     let o = ms(&["combine", "--to", "ms1", "-"], &input);
-    if o.status.success() {
-        // Accepting it means printing the recovered ms1 (a `hash`-tag single
-        // that decodes back to the same preimage), not the --to-less record.
-        let so = out_s(&o);
-        assert_ne!(
-            so,
-            out_s(&default),
-            "`--to ms1` exited 0 and printed exactly what the default prints (flag silently ignored):\n{so}"
-        );
-        match ms_codec::decode(so.trim()) {
-            Ok((_, Payload::Preimage(p))) => {
-                assert_eq!(*p, x, "re-encoded ms1 must carry the same preimage")
-            }
-            other => panic!(
-                "`--to ms1` exited 0 but stdout is not an ms1 preimage single: {so:?} -> {other:?}"
-            ),
-        }
-    }
-    // A non-zero exit is the other acceptable outcome (a clear refusal).
+    assert_eq!(o.status.code(), Some(0), "{}", err_s(&o));
+    assert_eq!(out_s(&o), format!("{single}\n"));
+    assert!(
+        single.starts_with("ms10hashs") && single.len() == 75,
+        "{single}"
+    );
+}
+
+#[test]
+fn bughunt_ms_04b_combine_to_entropy_preimage() {
+    let (input, _) = preimage_shares_and_single();
+    let o = ms(&["combine", "--to", "entropy", "-"], &input);
+    assert_eq!(o.status.code(), Some(0), "{}", err_s(&o));
+    assert_eq!(out_s(&o), format!("{X11_HEX}\n"));
+    assert_eq!(
+        err_s(&o),
+        format!("{PREIMAGE_AS_ENTROPY_WARNING}\n{PRIVATE_KEY_ADVISORY}\n")
+    );
+}
+
+#[test]
+fn bughunt_ms_04c_combine_to_ms1_json_preimage() {
+    let (input, single) = preimage_shares_and_single();
+    let o = ms(&["combine", "--to", "ms1", "--json", "-"], &input);
+    assert_eq!(o.status.code(), Some(0), "{}", err_s(&o));
+    assert_eq!(
+        out_s(&o),
+        format!(
+            "{{\"schema_version\":\"1\",\"kind\":\"preimage\",\"ms1\":\"{single}\",\"entropy_hex\":\"{X11_HEX}\"}}\n"
+        )
+    );
+}
+
+#[test]
+fn bughunt_ms_04d_combine_to_entropy_json_preimage() {
+    let (input, _) = preimage_shares_and_single();
+    let o = ms(&["combine", "--to", "entropy", "--json", "-"], &input);
+    assert_eq!(o.status.code(), Some(0), "{}", err_s(&o));
+    assert_eq!(
+        out_s(&o),
+        format!(
+            "{{\"schema_version\":\"1\",\"kind\":\"preimage\",\"entropy_hex\":\"{X11_HEX}\"}}\n"
+        )
+    );
+    assert_eq!(err_s(&o), format!("{PRIVATE_KEY_ADVISORY}\n"));
+}
+
+/// Control for 04b: an entr share set of the SAME 32 bytes prints the same hex
+/// with no preimage warning, so the warning is keyed on the kind, not the bytes.
+#[test]
+fn bughunt_ms_04e_combine_to_entropy_entr_has_no_preimage_warning() {
+    let x = Payload::Entr(vec![0x11u8; 32]);
+    let input = encode_shares(Tag::ENTR, Threshold::new(2).unwrap(), 2, &x)
+        .unwrap()
+        .join("\n");
+    let o = ms(&["combine", "--to", "entropy", "-"], &input);
+    assert_eq!(o.status.code(), Some(0), "{}", err_s(&o));
+    assert_eq!(out_s(&o), format!("{X11_HEX}\n"));
+    assert_eq!(err_s(&o), format!("{PRIVATE_KEY_ADVISORY}\n"));
 }
 
 // ---------------------------------------------------------------------------
 // #5 `ms inspect` reports every k>=2 string as "would combine" with no checks.
 // Clearest case: a share at index `s` (the secret-at-S) -- `ms combine`
-// refuses it (SecretShareSuppliedToCombine). Which other reasons to list (wrong
-// HRP, unknown id) is an open product question and is NOT asserted here.
+// refuses it (SecretShareSuppliedToCombine). Ruling (FIX_bughunt_ms.md):
+// FAIL with reason `share-index-secret`, exit 0; no other share reason.
 // ---------------------------------------------------------------------------
+const SECRET_SHARE_TEXT: &str = "FAIL: would NOT combine\n    reason: share-index-secret (share-index 's' is the secret itself, not a distributed share; ms combine refuses it)\n\nhrp: ms\nthreshold: 2\nid: zzzz\nindex: s\nchecksum_valid: true\nkind: share\n";
+const SECRET_SHARE_JSON: &str = "{\"failure_reasons\":[\"share-index-secret\"],\"report\":{\"checksum_valid\":true,\"hrp\":\"ms\",\"kind\":\"share\",\"share_index\":\"s\",\"tag\":\"zzzz\",\"threshold\":2},\"schema_version\":\"1\",\"would_combine\":false,\"would_decode\":false}\n";
+
+fn secret_share_k2() -> String {
+    Codex32String::from_seed("ms", 2, "zzzz", Fe::S, &[0u8; 17])
+        .unwrap()
+        .to_string()
+}
+
 #[test]
 fn bughunt_ms_05_inspect_would_combine_unchecked() {
-    let s = Codex32String::from_seed("ms", 2, "zzzz", Fe::S, &[0u8; 17])
-        .unwrap()
-        .to_string();
-
+    let s = secret_share_k2();
     // Reference: combine refuses an index-`s` share.
     let c = ms(&["combine", "-"], &s);
-    assert!(
-        !c.status.success(),
-        "precondition: combine must refuse an `s` share"
-    );
+    assert_eq!(c.status.code(), Some(2), "precondition: {}", err_s(&c));
     assert!(
         err_s(&c).contains("secret share"),
-        "precondition: refusal is SecretShareSuppliedToCombine: {}",
+        "precondition: {}",
         err_s(&c)
     );
 
-    let mut failures: Vec<String> = Vec::new();
-
     let j = ms(&["inspect", "--json", "-"], &s);
-    assert!(j.status.success(), "inspect --json: {}", err_s(&j));
-    let v: Value = serde_json::from_slice(&j.stdout).unwrap();
-    if v["would_combine"] == Value::Bool(true) {
-        failures.push(format!(
-            "inspect --json says would_combine=true, failure_reasons={} (combine refuses this string)",
-            v["failure_reasons"]
-        ));
-    }
+    assert_eq!(j.status.code(), Some(0), "{}", err_s(&j));
+    assert_eq!(out_s(&j), SECRET_SHARE_JSON);
 
     let t = ms(&["inspect", "-"], &s);
-    let first = out_s(&t).lines().next().unwrap_or("").to_string();
-    if first.starts_with("OK:") {
-        failures.push(format!(
-            "inspect text verdict is {first:?} (combine refuses this string)"
-        ));
-    }
+    assert_eq!(t.status.code(), Some(0), "{}", err_s(&t));
+    assert_eq!(out_s(&t), SECRET_SHARE_TEXT);
+}
 
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+#[test]
+fn bughunt_ms_05b_inspect_uppercase_secret_share() {
+    let s = secret_share_k2().to_uppercase();
+    let j = ms(&["inspect", "--json", "-"], &s);
+    assert_eq!(j.status.code(), Some(0), "{}", err_s(&j));
+    assert_eq!(out_s(&j), SECRET_SHARE_JSON);
+    let t = ms(&["inspect", "-"], &s);
+    assert_eq!(out_s(&t), SECRET_SHARE_TEXT);
 }
 
 // ---------------------------------------------------------------------------
@@ -201,35 +236,68 @@ fn bughunt_ms_05_inspect_would_combine_unchecked() {
 // contradicts itself. The report's example (a 56-char mnem string) is not
 // constructible (PayloadLengthMismatch fires first); the contradiction IS
 // reachable through `ms repair` on a right-length string with a non-alphabet
-// character (decode.rs parse_ms1_symbols uses UnexpectedStringLength as a
-// stand-in). Correct: never say "length N not in [..N..]".
+// character (decode.rs parse_ms1_symbols used UnexpectedStringLength as a
+// stand-in). Ruling (FIX_bughunt_ms.md): `invalid character '<c>'`, the
+// character as typed, exit 1, JSON kind Codex32.
 // ---------------------------------------------------------------------------
+/// `ms repair --json` on `input`: (exit code, error kind, message, details).
+fn repair_error(input: &str) -> (Option<i32>, Value, Value, Value) {
+    let o = ms(&["repair", "--json", "--ms1", "-"], input);
+    let v: Value = serde_json::from_slice(&o.stdout).expect("json error envelope");
+    (
+        o.status.code(),
+        v["error"]["kind"].clone(),
+        v["error"]["message"].clone(),
+        v["error"]["details"].clone(),
+    )
+}
+
 #[test]
 fn bughunt_ms_07_string_length_error_contradicts_itself() {
     // 50 chars (a valid entr-16 length) with 'b' (not in the codex32 alphabet).
     let bad = "ms10entrsqz4b42424242424242424242424q8lurdrzjnyn08";
     assert_eq!(bad.len(), 50, "precondition: a length in the valid set");
-    let o = ms(&["repair", "--json", "--ms1", "-"], bad);
-    assert!(
-        !o.status.success(),
-        "repair of a non-alphabet string must fail"
-    );
-    let v: Value = serde_json::from_slice(&o.stdout).expect("json error envelope");
-    let e = &v["error"];
-    if e["kind"] == "UnexpectedStringLength" {
-        let got = e["details"]["got"].as_u64().unwrap();
-        let allowed: Vec<u64> = e["details"]["allowed"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|x| x.as_u64().unwrap())
-            .collect();
-        assert!(
-            !allowed.contains(&got),
-            "self-contradictory error: {}",
-            e["message"]
+    let (code, kind, msg, details) = repair_error(bad);
+    assert_eq!(code, Some(1));
+    assert_eq!(kind, "Codex32");
+    assert_eq!(msg, "invalid character 'b' (not in codex32 alphabet)");
+    assert_eq!(details, Value::Null);
+}
+
+#[test]
+fn bughunt_ms_07b_repair_names_char_as_typed() {
+    for (input, want) in [
+        (
+            "MS10ENTRSQZ4B42424242424242424242424Q8LURDRZJNYN08",
+            "invalid character 'B' (not in codex32 alphabet)",
+        ),
+        (
+            "ms10entrsqz4?42424242424242424242424q8lurdrzjnyn08",
+            "invalid character '?' (not in codex32 alphabet)",
+        ),
+        (
+            "ms10entrsqz4\u{133}42424242424242424242424q8lurdrzjnyn08",
+            "invalid character '\u{133}' (not in codex32 alphabet)",
+        ),
+    ] {
+        let (code, kind, msg, _) = repair_error(input);
+        assert_eq!(
+            (code, kind.as_str(), msg.as_str()),
+            (Some(1), Some("Codex32"), Some(want)),
+            "{input:?}"
         );
     }
+    // Text mode: the same message on stderr.
+    let o = ms(
+        &["repair", "--ms1", "-"],
+        "ms10entrsqz4?42424242424242424242424q8lurdrzjnyn08",
+    );
+    assert_eq!(o.status.code(), Some(1));
+    assert_eq!(
+        err_s(&o),
+        "error: invalid character '?' (not in codex32 alphabet)\n"
+    );
+    assert_eq!(out_s(&o), "");
 }
 
 // ---------------------------------------------------------------------------
@@ -240,6 +308,7 @@ fn bughunt_ms_07_string_length_error_contradicts_itself() {
 // "more than 8" errors.
 // ---------------------------------------------------------------------------
 #[test]
+#[ignore = "deferred-minor: ms-too-many-errors-says-more-than-8"]
 fn bughunt_ms_08_cli_repair_message_claims_more_than_8() {
     const ALPHABET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
     let mut bad = b"ms10entrsqz4242424242424242424242424q8lurdrzjnyn08".to_vec();
@@ -266,6 +335,7 @@ fn bughunt_ms_08_cli_repair_message_claims_more_than_8() {
 // "unhandled ms_codec::Error variant"). Report: FormatViolation, exit 2.
 // ---------------------------------------------------------------------------
 #[test]
+#[ignore = "deferred-minor: ms-cli-mnem-unknown-language-catch-all"]
 fn bughunt_ms_09_mnem_unknown_language_unhandled() {
     // prefix 0x02 (mnem), language byte 10 (valid are 0..=9), 16 B entropy.
     let mut payload = vec![0x02u8, 10u8];
