@@ -4,6 +4,75 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [0.20.2] — 2026-11-01
+
+Fixes from the ms bug hunt (PR 15; `design/FIX_bughunt_ms.md`). No flag, API or
+wire change: `--help` texts, exit codes and every other path are as in 0.20.1.
+ms-cli now pins `ms-codec =0.10.1`, which carries the repair fix below.
+
+### Fixed
+- **`ms combine --to entropy` and `--to ms1` were ignored for a hashlock
+  preimage share set** (bughunt ms #4). `combine` printed `ms decode`'s
+  preimage record before it looked at `--to`, so `--to ms1` and `--to entropy`
+  both exited 0 with the record. `--to entropy` now prints the 32-byte
+  preimage as 64 lowercase hex characters, and `--to ms1` prints the 75-character
+  `hash` single (`ms10hash…`), byte-identical to what `ms hashlock --out`
+  writes for that preimage. Under `--json` both print `combine`'s object with
+  `kind` `preimage` (`ms1` and `entropy_hex`, or `entropy_hex` alone). In text
+  mode `--to entropy` also warns on stderr that the hex is a hashlock
+  PREIMAGE, not seed entropy: bare hex drops the kind, and `ms encode --hex -`,
+  `ms split --hex -` and `ms derive --hex -` would take it as a seed. The
+  default `--to phrase` is unchanged and prints the record exactly as
+  `ms decode` does. Entr and mnem share sets are unchanged.
+- **`ms inspect` said "would combine" for the secret share at index `s`**
+  (bughunt ms #5). A share-threshold string (threshold 2-9) at share index
+  `s` is the secret itself, which `ms combine` refuses (exit 2), yet
+  `inspect` printed `OK: K-of-N share (would combine: needs 2 shares)`. It now
+  prints `FAIL: would NOT combine` with the reason `share-index-secret`;
+  `--json` sets `would_decode` and `would_combine` to false and
+  `failure_reasons` to `["share-index-secret"]`. Exit 0, as for every
+  `inspect` verdict. Every other share, and every single, is unchanged.
+- **`ms inspect` said "OK: would decode v0.2" for a mnem string whose language
+  code `ms decode` refuses** (bughunt ms T2). A mnem single with a language code
+  of 10 or more printed `language: unknown` under an OK verdict, while
+  `ms decode` fails on it (exit 1). It now prints `FAIL: would NOT decode v0.1`
+  with the reason `mnem-unknown-language` (`--json`: `would_decode` false).
+  Exit 0. A mnem string with a known language code (0-9) is unchanged, and
+  `ms decode`'s own error text for the unknown code is unchanged.
+- **`ms repair` names a character outside the alphabet** (bughunt ms #7, closes
+  #3): the fix is in ms-codec 0.10.1, below. `ms repair` now answers
+  `error: invalid character 'b' (not in codex32 alphabet)`, exit 1 (the exit
+  code is unchanged).
+
+## ms-codec [0.10.1] — 2026-11-01
+
+Fixes from the ms bug hunt (PR 15; `design/FIX_bughunt_ms.md`). No API or wire
+change: the same functions, types and error variants.
+
+### Fixed
+- **`decode_with_correction` read some non-ASCII characters as codex32
+  symbols, and named the wrong problem for a character outside the alphabet**
+  (bughunt ms #7, closes #3). `parse_ms1_symbols` read the data part from a
+  lowercased copy and cast each character to a byte. A letter outside the
+  alphabet ended the parse as `UnexpectedStringLength` (a string-length
+  complaint), and a non-ASCII character such as U+0133 was truncated to the
+  byte `3` and accepted as that symbol, so a card holding a character `ms
+  repair` should have refused was repaired. The first data-part
+  character that is not in the alphabet now ends the parse with
+  `Error::Codex32(InvalidChar(c))`, with `c` as the caller typed it (not
+  lowercased); a non-ASCII character is never a member. `ms repair` prints it as
+  `error: invalid character 'b' (not in codex32 alphabet)`, the words `ms decode`
+  uses, exit 1. A `?` gets the same refusal: erasure decoding does not exist yet.
+- **`encode_shares` with `Threshold::ZERO` skipped `encode()`'s tag checks**
+  (bughunt ms #1). For `n == 1` it built the single directly, so a reserved tag
+  (`seed`, `xprv`, `prvk`) or a tag that names another kind (`hash` with an
+  entr or mnem payload, `entr` with a preimage) minted a string that `decode`
+  refuses. It now returns `encode(tag, secret)`'s result, its refusal included
+  (`ReservedTagNotEmittedInV01`, `TagKindMismatch`); a valid input is
+  byte-identical to before, and `n != 1` still returns `InvalidShareCount`
+  first. No caller in the constellation passes `Threshold::ZERO`, and
+  `ms split -k 0` refuses before it gets there.
+
 ## ms-cli [0.20.1] — 2026-09-25
 
 ### Fixed
