@@ -499,7 +499,7 @@ Refusals name the rule and **never echo the phrase**.
 | --- | --- |
 | `decode` | prints kind, preimage hex and digest. **Never words** — a preimage is not entropy |
 | `inspect` | reports the kind |
-| `combine` | a recovered preimage share set prints as `decode` does |
+| `combine` | a recovered preimage share set prints as `decode` does under `--to phrase` (the default); `--to entropy` prints the 32-byte preimage as 64 hex characters and `--to ms1` prints the `hash` single, byte-identical to what `ms hashlock --out` writes; under `--json` those two print `combine`'s object with `kind` `preimage`; in text mode `--to entropy` also warns on stderr that the hex is a preimage, never seed entropy (FIX_bughunt_ms #4) |
 | `derive`, `verify` | **refuse**, with the executable remedy `ms hashlock <ms1>` |
 | `encode --hex` | unchanged: stays `entr`, so **`ms hashlock` is the only door that creates the kind** |
 | `split` | the codec supports shares of the kind and a test pins it; the CLI has no ms1 source (F-468, out of scope) |
