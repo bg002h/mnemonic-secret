@@ -1037,6 +1037,7 @@ can never be mistaken for BIP-48.
 - **Why deferred:** Nit; the FIX PR carries only C and I.
 - **Status:** `deferred-minor`
 - **Tier:** text (non-gating)
+- **Widened (whole-diff s1 N-2, 3bca6ae):** **N-2:** this extends the filed `ms-invalid-char-message-invisible-char`; it is not a re-report. A printable non-ASCII lookalike is named as typed, so U+212A KELVIN SIGN prints `invalid character 'K'`, which reads as an ASCII letter whose lowercase is in the alphabet. It fails closed (exit 1). Fix (later): the filed item's escaped form should cover any non-ASCII character, not only non-printing ones.
 
 ### `fix-9-5-cite-toolkit-indel-erasure-item` — FIX 9.5 should cite the existing toolkit item `m-format-indel-erasure-decode-extend-to-8` (repo: **mnemonic-secret** `design/FIX_bughunt_ms.md`; owning phase: **none — ownerless residue**)
 
@@ -1107,3 +1108,57 @@ can never be mistaken for BIP-48.
 - **Rows:** `crates/ms-codec/tests/bughunt_t.rs::bughunt_ms_t1_question_mark_erasure` and `::bughunt_ms_t1b_eight_erasures_recovered`, both `#[ignore = "planned-feature: impl-bch-erasure-decoding-ms"]`; they test `ms_codec::decode_with_correction`, so they stay ignored until ms-codec itself fills `?`. That change also flips the `?` cases of `bughunt_ms_07_codec_non_alphabet_is_invalid_char` and `bughunt_ms_07b_repair_names_char_as_typed` from refusal to recovery, and the BCH primer's "Unreadable characters: what to type".
 - **Status:** `planned-feature`
 - **Tier:** `feature` / cross-repo
+
+### `ms-encode-shares-zero-n-check-order-unpinned` — `encode_shares` ZERO: the FIX's "`n != 1` is checked first" has no row (mutant F1c survives) (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Status:** `deferred-minor`
+- **Source:** `design/agent-reports/whole-diff-bughunt-ms-s2.md` (commit 4dfdc39), M1; filed 2026-11-01 from the bug-hunt ms whole-diff review.
+- **What:** **M1 (F1c). `encode_shares` ZERO: "`n != 1` is checked first" is unpinned.** FIX 2.1 says `n != 1` still returns `InvalidShareCount { k: 0, n }` first. Moving `encode(tag, secret)?` ahead of the `n` check survives: a reserved tag with `n = 2` then returns `ReservedTagNotEmittedInV01` instead of `InvalidShareCount`. Conditions: a library caller passing `Threshold::ZERO` (none does; `ms split -k 0` refuses earlier), with `n != 1`, with a reserved or mismatched tag. Both outcomes are refusals. Fix text (one more assertion in row 01): `assert!(matches!(encode_shares(seed_tag, Threshold::ZERO, 2, &entr16), Err(Error::InvalidShareCount { k: 0, n: 2 })));`
+
+### `ms-first-non-alphabet-char-unpinned` — "first non-alphabet character ends the parse" has no row: every row has one bad character (mutant F2e survives) (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Status:** `deferred-minor`
+- **Source:** `design/agent-reports/whole-diff-bughunt-ms-s2.md` (commit 4dfdc39), M2; filed 2026-11-01 from the bug-hunt ms whole-diff review.
+- **What:** **M2 (F2e). "First" non-alphabet character is unpinned.** FIX 2.4 says the first data-part character not in the alphabet ends the parse. A variant that scans on and reports the last one survives (every row has a single bad character). Conditions: two or more non-alphabet characters in one `ms repair` input. It still refuses, naming a character that really is invalid. Fix text (codec 07): `format!("{}b?{}", &good[..12], &good[14..])` must give `InvalidChar('b')`.
+
+### `ms-combine-json-preimage-phrase-unpinned` — `ms combine --json` (default `--to phrase`) on a preimage set is unpinned (mutant F3b2 survives) (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Status:** `deferred-minor`
+- **Source:** `design/agent-reports/whole-diff-bughunt-ms-s2.md` (commit 4dfdc39), M3; filed 2026-11-01 from the bug-hunt ms whole-diff review.
+- **What:** **M3 (F3b2). `ms combine --json` (default `--to phrase`) on a preimage set is unpinned.** Passing `false` instead of `args.json` to `emit_preimage` survives: `--json` would print the text record. The build rewrapped this line in the new `if args.to == CombineTo::Phrase`. Conditions: a future edit to that line, on a preimage set, with `--json`. Fix text (new row next to 04e): `ms combine --json -` on the preimage shares exits 0 with stdout equal to `ms decode --json -` on `encode(Tag::HASH, &x)`.
+
+### `ms-combine-to-ms1-stderr-unasserted` — `ms combine --to ms1` stderr is unasserted (mutants F3i, F3j survive) (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Status:** `deferred-minor`
+- **Source:** `design/agent-reports/whole-diff-bughunt-ms-s2.md` (commit 4dfdc39), M4; filed 2026-11-01 from the bug-hunt ms whole-diff review.
+- **What:** **M4 (F3i, F3j). `--to ms1` stderr is unasserted.** Printing the "these 64 hex characters" warning on `--to ms1` text mode survives (F3i), as does dropping the PrivateKeyMaterial advisory on `--to ms1` (F3j; no test anywhere asserts that advisory for `--to ms1`, for any kind, so this half is older than the build, and it is secret-handling, which is never C or I). Conditions: a regression in a one-arm code path, on a preimage set with `--to ms1`. Fix text: add `assert_eq!(err_s(&o), format!("{PRIVATE_KEY_ADVISORY}\n"));` to rows 04 and 04c.
+
+### `ms-inspect-t2-pinned-at-one-point` — `ms inspect` T2 (`mnem-unknown-language`) is pinned at one point only (mutants F5b, F5c, F5d survive) (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Status:** `deferred-minor`
+- **Source:** `design/agent-reports/whole-diff-bughunt-ms-s2.md` (commit 4dfdc39), M5; filed 2026-11-01 from the bug-hunt ms whole-diff review.
+- **What:** **M5 (F5b, F5c, F5d). T2 is pinned at one point.** Row t2 uses code 10 with a valid length. Survivors: the reason pushed after `payload-length-mismatch` (FIX 2.5 and section 3 item 5 say before it); `get(code as usize + 1)` (flags code 9, Portuguese, as unknown: a false FAIL on a valid card; no test inspects a mnem string with code 9); `code == 10` only (codes 11..255 and 0x10 unflagged). The real code is one expression, `MNEM_LANGUAGE_NAMES.get(code as usize).is_none()`, so these need a future edit. Conditions: an edit to that expression, and (for the order) a hand-made string with both an unknown code and a bad length. Fix text (extend row t2): inspect a language-9 mnem string and assert `OK: would decode v0.2`; inspect a language-0x10 string and assert `mnem-unknown-language`; inspect language 10 with a payload of 17 bytes after the code and assert `failure_reasons` starts `["unexpected-string-length", "mnem-unknown-language", "payload-length-mismatch"]` (check the exact vector against the built `ms` before pinning).
+
+### `ms-inspect-secret-share-k3-to-9-unpinned` — `ms inspect` secret share at k = 3..9 is unpinned: only k = 2 has a row (mutant F4e survives) (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Status:** `deferred-minor`
+- **Source:** `design/agent-reports/whole-diff-bughunt-ms-s2.md` (commit 4dfdc39), N1; filed 2026-11-01 from the bug-hunt ms whole-diff review.
+- **What:** **N1 (F4e). Secret share at `k` = 3..9.** Only `k` = 2 is pinned; a predicate narrowed to `threshold == 2` survives. The predicate is `share_index == 's'` and `is_share` already gates on `2..=9`, so it is hypothetical.
+
+### `ms-combine-to-ms1-read-back-claim-unpinned` — FIX 2.2 and manual 5.1 say `ms decode` and `ms hashlock --in` read the `--to ms1` string; no row runs them (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Status:** `deferred-minor`
+- **Source:** `design/agent-reports/whole-diff-bughunt-ms-s2.md` (commit 4dfdc39), N2; filed 2026-11-01 from the bug-hunt ms whole-diff review.
+- **What:** **N2. The read-back claim has no row.** FIX 2.2 and manual 5.1 say the `--to ms1` string is read by `ms decode` and `ms hashlock --in`. Row 04 compares it to `ms_codec::encode(Tag::HASH, ...)` but never runs those commands. They work on the built `ms` (checked above).
+
+### `ms-repair-exit4-unverified-line-for-hashlock-plate` — the primer sends a damaged hashlock plate to `ms repair`, whose exit-4 "confirm the derived address/xpub" line does not fit a preimage (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Status:** `deferred-minor`
+- **Source:** `design/agent-reports/whole-diff-bughunt-ms-s1.md` (commit 3bca6ae), N-1; filed 2026-11-01 from the bug-hunt ms whole-diff review.
+- **What:** **N-1:** the primer newly sends a damaged hashlock plate to `ms repair` ("use the second way for those"). `ms repair`'s unchanged exit-4 stderr then says "confirm the derived address/xpub against a known-good copy". A preimage has neither, and `ms derive` refuses it. The primer's own "compare the result with the plate" is the usable check, and a wrong preimage cannot spend, so no funds are at risk. Fix (later): a preimage-kind variant of the UNVERIFIED line, for example "confirm with `ms hashlock --in` that its digest matches the hash in your wallet policy".
+
+### `ms-decode-repair-advise-combine-for-s-index-share` — `ms decode` and `ms repair` on an s-index share still advise `ms combine`, which `ms combine` refuses (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Status:** `deferred-minor`
+- **Source:** `design/agent-reports/whole-diff-bughunt-ms-s1.md` (commit 3bca6ae), first bullet of "Design lines (ungraded)"; filed 2026-11-01 from the bug-hunt ms whole-diff review.
+- **What:** `ms decode` and `ms repair` on an s-index share (threshold 2-9) still advise "use `ms combine` to recombine K shares", which `ms combine` refuses. That is pre-existing text, and it now contradicts the new `inspect` reason for the same string.
