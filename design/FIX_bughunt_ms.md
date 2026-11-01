@@ -12,7 +12,7 @@ Sources, all in `design/agent-reports/`:
 
 The controller's scope decision is settled: #1, #4, #5 and #7 (Important), plus #3, which the #7 fix closes with no extra code. Round 2 adds T2 and the primer overclaim (both Important, `bughunt-grade2-ms.md`). T1 and T3 are Minor and stay out of this PR. T1b (eight `?` recovered) is feature work, sequenced after this PR by Brian's ruling of 2026-11-01, "Fix bugs before erasure feature work" (9.5).
 
-**How this document was checked.** The worktree was copied, without `.git` and `target/`, to `/scratch/cache/bughunt/ms-grade/scratch`. Every code, test and spec edit below was applied there and nowhere else. The production and test edits are saved as a verified reference patch: `/scratch/cache/bughunt/ms-grade/fix-bughunt-ms-reference-r3.patch` (sha256 `26c2026336da72ba760742fba0125290650a333d0ee40bfcaea9c6f32abdc043`). It is round 2's `fix-bughunt-ms-reference-r2.patch` (sha256 `b1f7d1be83a46cddd7b4f9def6d2d346d73c0ab1191f68686ded0cb313d3cd0e`) plus the architect's delta of 2026-11-01 (the text-mode preimage warning of 2.2; the delta alone has sha256 `66a4316e37c2beb991f21bc278c686052427bd73eccc4c6038386d2dcee5f6fa`); round 1's `fix-bughunt-ms-reference.patch` is a subset of both. `git apply --check` of r3 on this worktree (at `7400dfd`) passes. The toolkit manual edits of section 5 are a script, `/scratch/cache/bughunt/ms-grade/toolkit-manual-edits.py` (sha256 `f1bd63aeac7be38f414b8d866c054f3b220fa98ffe031b3adceb0a490c66c58c`), which asserts that each old text occurs once.
+**How this document was checked.** The worktree was copied, without `.git` and `target/`, to `/scratch/cache/bughunt/ms-grade/scratch`. Every code, test and spec edit below was applied there and nowhere else. The production and test edits are saved as a verified reference patch: `/scratch/cache/bughunt/ms-grade/fix-bughunt-ms-reference-r3.patch` (sha256 `26c2026336da72ba760742fba0125290650a333d0ee40bfcaea9c6f32abdc043`). It is round 2's `fix-bughunt-ms-reference-r2.patch` (sha256 `b1f7d1be83a46cddd7b4f9def6d2d346d73c0ab1191f68686ded0cb313d3cd0e`) plus the architect's delta of 2026-11-01 (the text-mode preimage warning of 2.2; the delta alone has sha256 `66a4316e37c2beb991f21bc278c686052427bd73eccc4c6038386d2dcee5f6fa`); round 1's `fix-bughunt-ms-reference.patch` is a subset of both. `git apply --check` of r3 on this worktree (at `7400dfd`) passes. The toolkit manual edits of section 5 are a script, `/scratch/cache/bughunt/ms-grade/toolkit-manual-edits.py` (sha256 `e56d598ec4c486be260bbe5364eafbfa9ab4ffe32e57daaf9b8427cc164124ee`), which asserts that each old text occurs once.
 
 All runs used `PATH=$HOME/.cargo/bin:$PATH` (cargo 1.85.0, the pin), `--locked`, and no `--release`.
 
@@ -622,6 +622,23 @@ stderr: error: repair: chunk could not be recovered within --max-indel 4 (HRP 'm
 exit=2
 ~~~
 
+The leave-out search with a card typed in capitals, as an engraved `ms1` plate reads (grouped in tens, character 15 left out), then the same card in lowercase:
+
+~~~text
+$ cat card.txt
+MS10ENTRSQ QQQZSRQSZS VPCGPY9QKR QDPC8SH9LF 92N5FR33S
+$ mnemonic repair --ms1 - --max-indel 1 < card.txt
+stderr: error: repair: chunk could not be recovered within --max-indel 1 (HRP 'ms'); the string may have more than 1 inserted/dropped characters, or a different error class
+exit=2
+
+$ cat card.txt
+ms10entrsq qqqzsrqszs vpcgpy9qkr qdpc8sh9lf 92n5fr33s
+$ mnemonic repair --ms1 - --max-indel 1 < card.txt
+stdout: ms10entrsqqqqzqsrqszsvpcgpy9qkrqdpc8sh9lf92n5fr33s
+stderr: warning: stdout carries private key material (can spend) — redirect or encrypt (e.g. '> file.txt' or '| age -e ...')
+exit=5
+~~~
+
 The limits stated in 5.6 were measured:
 - Leaving characters out: `mnemonic repair --max-indel 3` and `--max-indel 4` recovered 40/40 random sets of 3 and of 4 left out (exit 5; `/scratch/cache/bughunt/ms-grade/probe/indel_probe.txt`). The controller's probe recovered 1 (47/47) and 2 (60/60) (`/scratch/cache/bughunt/ms2/controller-indel-probe.txt`).
 - Guessing: `ms repair` recovered 1, 2, 3 and 4 wrong guesses (47/47, then 60/60 each, exit 4) and refused 5 (60/60, exit 2) (same probe file).
@@ -817,9 +834,11 @@ line (not only the damaged one).
   character, run the command again with `--max-subst 1` added (raise
   it for more wrong characters; the characters left out plus the
   wrong ones may be at most 4); such a recovery usually exits 4, a
-  candidate you confirm before use. This search does not work for a
-  hashlock preimage plate (`ms10hash…`), nor for every `md1` card of
-  a single string; use the second way for those.
+  candidate you confirm before use. This search reads lowercase only:
+  if your plate is engraved in capitals, type the card in lowercase
+  for this command (the second way takes either case). It does not
+  work for a hashlock preimage plate (`ms10hash…`), nor for an `md1`
+  card of a single string; use the second way for those.
 - **Type your best guess** for each unreadable character: any
   character of the card's alphabet, in the same case as the rest.
   Then run `ms repair --in card.txt` for an `ms1` card, or
@@ -1127,6 +1146,36 @@ Each item is a line of 9.1 with status `owed-to-build`, closed by its GREEN comm
 - **Why deferred:** Nit; the FIX PR carries only C and I.
 - **Status:** `deferred-minor`
 - **Tier:** docs (non-gating)
+
+### `fix-2-6-mk1-card-displays-truncated` — FIX 2.6's three `mk1` card displays are cut at 80 columns, so those transcripts do not reproduce as printed (repo: **mnemonic-secret** `design/FIX_bughunt_ms.md`; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-01, FIX review r2 (`design/agent-reports/bughunt-fix-review-r2-ms.md`), graded Minor (M-1).
+- **Where:** FIX 2.6, lines 527, 541 and 552 (the `mk1` strings of the three transcripts).
+- **What:** those lines print the first `mk1` string as 80 characters; the real string is 111. Run with the cards as printed at 527 and 541, the three commands that read them exit 2 (`could not be recovered` and, for the guess, `too many errors ... singleton bound = 8`), not the recorded 5, 4 and 5. Line 552 is truncated too, but its recorded exit 2 is the same either way. With the full strings every recorded result reproduces (exit 5, exit 4 with `--max-subst 1`, exit 5 with the `'2' -> '9'` correction). Conditions: evidence section only, no holder text; the next reader who re-runs 2.6 sees a false failure.
+- **Fix (for later):** in those three lines append `zpn3glvvquvgpms6mzamgctgratycf` to lines 527 and 552 (they end `…rfg8rw7dk`) and `kzpn3glvvquvgpms6mzamgctgratycf` to line 541 (it ends `…rfg8rw7d`). The full lines are `mk1qpg397pqqsq5gjlzeeutks2zvzrtp70pm6trteu3ssr0mjvzcsa5rf53k63zcmsnf3z6rfg8rw7dkzpn3glvvquvgpms6mzamgctgratycf` (527, 552) and `mk1qpg397pqqsq5gjlze2eutks2zvzrtp70pm6trteu3ssr0mjvzcsa5rf53k63zcmsnf3z6rfg8rw7dkzpn3glvvquvgpms6mzamgctgratycf` (541).
+- **Why deferred:** Minor; the FIX PR carries only C and I (`design/FIX_bughunt_ms.md`).
+- **Status:** `deferred-minor`
+- **Tier:** docs (non-gating)
+
+### `primer-leave-out-two-strings-silent` — the primer's leave-out route exits 2 when characters are left out of two strings of one `mk1`/`md1` card, and the text is silent (repo: **mnemonic-toolkit** manual, via this FIX's 5.6.6; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-01, FIX review r2 (`design/agent-reports/bughunt-fix-review-r2-ms.md`), graded Minor (M-2); pre-existing in the text.
+- **Where:** FIX 5.6.6 (New block), the paragraph that ends "(not only the damaged one)."
+- **What:** characters left out of two strings of one `mk1`/`md1` card: the leave-out command exits 2, and the text is silent. One character out of each of the two `mk1` strings: `--max-indel 1` and `--max-indel 2` both exit 2. One string left out and a (wrong) guess typed in the other works (exit 5; exit 4 with `--max-subst 1`), and route 2 with one wrong guess in each string works (exit 5). Fails closed; the text's scope is "in one string". Conditions: an `mk1`/`md1` card, two of its strings each with an unreadable character, and the leave-out route chosen.
+- **Fix (for later):** after "(not only the damaged one)." in 5.6.6: "If unreadable characters are in more than one string of an `mk1` or `md1` card, leave characters out of one string only and type a best guess for the others."
+- **Why deferred:** Minor; the FIX PR carries only C and I (`design/FIX_bughunt_ms.md`).
+- **Status:** `deferred-minor`
+- **Tier:** `cross-repo`, docs (non-gating)
+
+### `fix-2-6-ms-split-transcript-abridged` — FIX 2.6's `ms split` transcript is not what `ms split` prints (repo: **mnemonic-secret** `design/FIX_bughunt_ms.md`; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-01, FIX review r2 (`design/agent-reports/bughunt-fix-review-r2-ms.md`), graded Nit (N-1).
+- **Where:** FIX 2.6, the `ms split` transcript.
+- **What:** the doc shows `share 1: ms12h997qq65…`; the tool prints all N shares on stdout (grouped in fives) and `share i of N:` labels on stderr. The shares used afterwards are valid (the `ms combine` block reproduces).
+- **Fix (for later):** show `$ ms split …` as three stdout lines of share strings and note that the `share i of N:` labels are on stderr, or mark the line "(abridged)".
+- **Why deferred:** Nit; the FIX PR carries only C and I (`design/FIX_bughunt_ms.md`).
+- **Status:** `deferred-minor`
+- **Tier:** docs (non-gating)
 ~~~
 
 ### 9.3 Append to `design/FOLLOWUPS.md` (status `needs-triage`)
@@ -1152,6 +1201,15 @@ Each item is a line of 9.1 with status `owed-to-build`, closed by its GREEN comm
 - **Why deferred:** the ms-codec release and the pin bump (0.7 → 0.10.x) are separate toolkit work.
 - **Status:** `open`
 - **Tier:** `cross-repo`
+
+### `toolkit-repair-indel-search-rejects-capitals` — `mnemonic repair --max-indel` exits 2 on an all-capitals card that the same tool repairs without `--max-indel` (companion)
+
+- **Surfaced:** 2026-11-01, FIX review r2 (`design/agent-reports/bughunt-fix-review-r2-ms.md`, I-1, graded Important; this entry is the tool half, filed deferred-minor by coordinator routing).
+- **Where:** the indel search of `mnemonic repair --max-indel`; the primer text that relies on it is FIX 5.6.6 (`design/FIX_bughunt_ms.md` in mnemonic-secret).
+- **What:** `mnemonic repair --max-indel` exits 2 on an all-capitals `ms1`, `mk1` or `md1` card that the same tool repairs without `--max-indel`; the primer tells the holder to retype in lowercase (FIX 5.6.6). Measured: the engraved capitals entr-16 card with one character left out exits 2 at `--max-indel 1`, also with `--max-subst 1`; the same card in lowercase exits 5.
+- **Why deferred:** No code change in this PR; owning phase: the toolkit's next `mnemonic repair` change.
+- **Status:** `deferred-minor`
+- **Tier:** `cross-repo`, text / behaviour (non-gating)
 ~~~
 
 ### 9.5 Append to `design/FOLLOWUPS.md` (status `planned-feature`)
