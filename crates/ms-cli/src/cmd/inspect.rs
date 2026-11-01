@@ -90,15 +90,30 @@ fn is_share(report: &InspectReport) -> bool {
     (2..=9).contains(&report.threshold)
 }
 
+/// True iff a share-threshold string sits at index `s`: the secret itself,
+/// which `ms combine` refuses (`SecretShareSuppliedToCombine`). The report's
+/// fields are canonical lowercase, so an all-uppercase `S` is caught too.
+fn is_secret_share(report: &InspectReport) -> bool {
+    report.share_index == 's'
+}
+
 /// Text report for a lone K-of-N share. Reports kind/threshold/id/index +
 /// "would combine (needs k)". Suppresses prefix_byte / payload_bytes / the
 /// entr/mnem kind — a distributed share's data()[0] is interpolated, not a
 /// payload-kind prefix.
 fn emit_share_text(report: &InspectReport) {
-    println!(
-        "OK: K-of-N share (would combine: needs {} shares)",
-        report.threshold
-    );
+    if is_secret_share(report) {
+        println!("FAIL: would NOT combine");
+        println!(
+            "    reason: share-index-secret ({})",
+            reason_text("share-index-secret")
+        );
+    } else {
+        println!(
+            "OK: K-of-N share (would combine: needs {} shares)",
+            report.threshold
+        );
+    }
     println!();
     println!("hrp: {}", report.hrp);
     println!("threshold: {}", report.threshold);
@@ -111,10 +126,12 @@ fn emit_share_text(report: &InspectReport) {
     println!("kind: share");
 }
 
-/// JSON report for a lone K-of-N share. `would_decode: true` carries the
-/// "would combine" semantics (a share is a valid read). The garbage
+/// JSON report for a lone K-of-N share. `would_decode` carries the "would
+/// combine" semantics: true for a distributed share, false for the secret at
+/// index `s` (reason `share-index-secret`). The garbage
 /// prefix_byte / payload_bytes_hex / entr-mnem kind are omitted.
 fn emit_share_json(report: &InspectReport) -> Result<()> {
+    let secret = is_secret_share(report);
     let json = serde_json::json!({
         "schema_version": "1",
         "report": {
@@ -125,9 +142,9 @@ fn emit_share_json(report: &InspectReport) -> Result<()> {
             "checksum_valid": report.checksum_valid,
             "kind": "share",
         },
-        "would_decode": true,
-        "would_combine": true,
-        "failure_reasons": Vec::<&str>::new(),
+        "would_decode": !secret,
+        "would_combine": !secret,
+        "failure_reasons": if secret { vec!["share-index-secret"] } else { Vec::<&str>::new() },
     });
     println!(
         "{}",
@@ -213,6 +230,15 @@ fn analyze(report: &InspectReport, str_len: usize) -> (bool, Vec<&'static str>) 
             }
         }
         InspectKind::Mnem => {
+            // The codec's `Payload::validate` refuses a language code it does
+            // not know (`MnemUnknownLanguage`, checked before the length), so
+            // `decode` would refuse this string: say so (FIX_bughunt_ms T2).
+            if report
+                .language
+                .is_some_and(|code| MNEM_LANGUAGE_NAMES.get(code as usize).is_none())
+            {
+                reasons.push("mnem-unknown-language");
+            }
             // payload_bytes = [lang_byte, entropy...]; valid if len - 1 ∈ VALID_ENTR_LENGTHS.
             let entropy_len = report.payload_bytes.len().saturating_sub(1);
             if !VALID_ENTR_LENGTHS.contains(&entropy_len) {
@@ -233,10 +259,16 @@ fn reason_text(tag: &'static str) -> &'static str {
         "wrong-hrp" => "HRP is not \"ms\"",
         "threshold-not-zero" => "threshold not 0 (v0.1 is single-string only)",
         "share-index-not-secret" => "share-index not 's' (BIP-93 requires 's' for threshold=0)",
+        "share-index-secret" => {
+            "share-index 's' is the secret itself, not a distributed share; ms combine refuses it"
+        }
         "reserved-tag-not-emitted" => "tag is reserved-not-emitted in v0.1; deferred to v0.2+",
         "unknown-tag" => "tag not in the accept set (entr, hash)",
         "tag-kind-mismatch" => "the id names a different kind than the prefix byte carries",
         "non-zero-prefix" => "prefix byte is not a recognised kind (0x00=entr, 0x02=mnem, 0x03=preimage)",
+        "mnem-unknown-language" => {
+            "unknown mnem wordlist-language code; known codes are 0-9"
+        }
         "payload-length-mismatch" => {
             "payload length not valid for kind (entr: [16,20,24,28,32] B; mnem: [17,21,25,29,33] B)"
         }
