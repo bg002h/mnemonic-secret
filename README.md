@@ -82,12 +82,12 @@ ms1 v0.1 does NOT carry the BIP-39 wordlist language on the wire. A user whose o
 
 ## Family
 
-`ms-codec` is one of three sibling format crates plus a future toolkit:
+`ms-codec` is one of three sibling format crates plus the toolkit:
 
 - **md-codec** ([repo](https://github.com/bg002h/descriptor-mnemonic)) — wallet descriptors / templates (`md1`, HRP `md`).
 - **mk-codec** ([repo](https://github.com/bg002h/mnemonic-key)) — xpubs (`mk1`, HRP `mk`).
 - **ms-codec** (this crate) — BIP-39 entropy (`ms1`, HRP `ms`).
-- **mnemonic-toolkit** (planned) — top-level integration: take a BIP-39 phrase, emit a complete ms1 + mk1 + md1 engravable bundle.
+- **mnemonic-toolkit** ([repo](https://github.com/bg002h/mnemonic-toolkit)) — top-level integration: take a BIP-39 phrase, emit a complete ms1 + mk1 + md1 engravable bundle.
 
 ## Verifying your download
 
