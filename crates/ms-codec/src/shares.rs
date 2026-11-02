@@ -85,8 +85,9 @@ impl Threshold {
 
 /// Split a secret (`entr` or `mnem`) into `n` codex32 K-of-N shares.
 ///
-/// - `threshold == ZERO`: `n` MUST be 1; returns a single string **byte-identical**
-///   to `encode(tag, secret)` — the v0.1 single-string construction
+/// - `threshold == ZERO`: `n` MUST be 1; returns exactly what `encode(tag, secret)`
+///   returns, its refusal included (a reserved tag, or a tag that names another
+///   kind, is refused, never minted) — the v0.1 single-string construction
 ///   (`from_seed(HRP, 0, tag, Fe::S, [prefix]||payload)`, deterministic). The
 ///   `id` stays the type `tag` (NOT random) — load-bearing for byte-identity.
 /// - `threshold == k ∈ 2..=9`: validate `k <= n <= 31` (else `InvalidShareCount`).
@@ -112,8 +113,7 @@ pub fn encode_shares(
         if n != 1 {
             return Err(Error::InvalidShareCount { k: 0, n });
         }
-        let single = Codex32String::from_seed(HRP, 0, tag.as_str(), Fe::S, &bytes[..])?;
-        return Ok(vec![single.to_string()]);
+        return Ok(vec![crate::encode::encode(tag, secret)?]);
     }
 
     let k = threshold.get();
