@@ -2,6 +2,8 @@
 
 This file is auto-loaded by Claude Code when starting a session in this repository.
 
+@AGENTS.md
+
 ## Project at a glance
 
 `ms1` is the third sibling in the m-format family — a Bitcoin BIP-style backup format for **secret material**. HRP `ms`. Unlike the sibling `md1` (HRP `md`, repo `bg002h/descriptor-mnemonic`) and `mk1` (HRP `mk`, repo `bg002h/mnemonic-key`) which fork BIP-93's BCH plumbing locally with HRP-mixed per-format target residues, ms1 adopts **BIP-93 codex32 directly** via Andrew Poelstra's `rust-codex32` crate (CC0, on crates.io at `=0.1.0`). The three formats engrave together as a coherent backup bundle: md1 = template/policy, mk1 = xpubs, ms1 = secret. v0.1 is single-string (BIP-93 threshold = 0); K-of-N share encoding is planned in v0.2.
