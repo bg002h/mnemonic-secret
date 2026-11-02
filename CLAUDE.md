@@ -4,6 +4,15 @@ This file is auto-loaded by Claude Code when starting a session in this reposito
 
 @AGENTS.md
 
+## Known hazards
+
+- **Dispatch by payload kind (ms-codec, ms-cli).** Entr, Mnem and Preimage are distinct payload kinds; recovery code must dispatch on the kind. A hashlock preimage is not mnemonic entropy.
+- **Language and passphrase (ms-cli).** A Mnem card carries its BIP-39 wordlist language on the wire and that byte is authoritative (`--language` is advisory for it); an Entr card carries none. The same entropy under two wordlists is two different wallets. The BIP-39 passphrase is supplied separately and is never part of the card.
+- **Corrected versus verified (ms-cli repair).** A BCH-corrected ms1 is an unverified candidate, not a recovered wallet: a substitution correction can alias to a different valid seed undetectably. Never report repair success as verification.
+- **Secret buffers (ms-codec).** The Entr and Mnem byte buffers are plain `Vec<u8>` and the public payload types derive `Debug`; only Preimage is scrubbed on drop. Do not infer scrubbing from the public type or its `Debug`; callers wrap the buffers in `Zeroizing`.
+- **Consumer pins (ms-codec).** The toolkit, mnemonic-engrave and mnemonic-refugium each pin ms-codec independently (by version or git rev). Audit their locks before promising consumer support for an API or wire change.
+- **GUI mirror (ms-cli).** A flag change in ms-cli also updates mnemonic-gui's ms schema mirror (and its pinned-upstream tag), in addition to the toolkit manual chapter required below.
+
 ## Project at a glance
 
 `ms1` is the third sibling in the m-format family — a Bitcoin BIP-style backup format for **secret material**. HRP `ms`. Unlike the sibling `md1` (HRP `md`, repo `bg002h/descriptor-mnemonic`) and `mk1` (HRP `mk`, repo `bg002h/mnemonic-key`) which fork BIP-93's BCH plumbing locally with HRP-mixed per-format target residues, ms1 adopts **BIP-93 codex32 directly** via Andrew Poelstra's `rust-codex32` crate (CC0, on crates.io at `=0.1.0`). The three formats engrave together as a coherent backup bundle: md1 = template/policy, mk1 = xpubs, ms1 = secret. v0.1 is single-string (BIP-93 threshold = 0); K-of-N share encoding is planned in v0.2.
