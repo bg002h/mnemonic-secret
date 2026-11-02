@@ -2,7 +2,7 @@
 
 Companion CLI to the [`ms-codec`](https://crates.io/crates/ms-codec) library — encode BIP-39 entropy as `ms1` strings for steel-plate engraving, decode/inspect/verify the engraved strings, dump the SHA-pinned test-vector corpus, and BCH error-correct a damaged ms1 string.
 
-`ms` keeps `encode`, `decode` and the ms1-only verbs `hashlock`, `split` and `combine`. Verbs that several formats share belong to the toolkit (`mnemonic`). `repair` moves first: `ms repair` is planned for removal, and `mnemonic repair --ms1 -` (paste the string, press Enter, then Ctrl-D) repairs an ms1 string today. `inspect`, `verify` and `derive` are candidates to move later. `vectors`, `gui-schema` and `gen-man` describe `ms` itself and stay. Full table: [Which tool owns which verb](https://github.com/bg002h/mnemonic-toolkit/blob/master/docs/manual/src/50-comparing/51-format-decision.md#which-tool-owns-which-verb).
+`ms` keeps `encode`, `decode` and the ms1-only verbs `hashlock`, `split` and `combine`. Verbs that several formats share belong to the toolkit (`mnemonic`). `repair` moves first: `ms repair` is planned for removal, and `mnemonic repair --ms1 -` (paste the string, press Enter, then Ctrl-D) repairs a seed ms1 string today. `mnemonic repair` does not read a hashlock preimage plate (`ms10hash…`) yet: repair one with `ms repair --ms1 -`, the same way. `inspect`, `verify` and `derive` are candidates to move later. `vectors`, `gui-schema` and `gen-man` describe `ms` itself and stay. Full table: [Which tool owns which verb](https://github.com/bg002h/mnemonic-toolkit/blob/master/docs/manual/src/50-comparing/51-format-decision.md#which-tool-owns-which-verb).
 
 ## Installation
 
