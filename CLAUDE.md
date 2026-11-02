@@ -50,7 +50,7 @@ The end-user manual for the m-format constellation lives in the sibling `bg002h/
 
 ## Cross-repo coordination
 
-Four-way star: `descriptor-mnemonic` (md1) ↔ `mnemonic-key` (mk1) ↔ `mnemonic-secret` (ms1) ↔ future `mnemonic-toolkit`.
+Four-way star: `descriptor-mnemonic` (md1) ↔ `mnemonic-key` (mk1) ↔ `mnemonic-secret` (ms1) ↔ `mnemonic-toolkit`.
 
 - Follow-up items affecting another sibling are mirrored: a primary entry in this repo's `design/FOLLOWUPS.md` at tier `cross-repo`, a companion entry in the affected sibling's tracker. Both entries cite each other.
 - The `mc-codex32` shared-crate extraction plan (originally gated on "md+mk both at v1.0 with cross-validated vectors") was **retired 2026-05-03**: ms1 uses `rust-codex32` directly, and md1↔mk1's HRP-mixed BCH isn't upstreamable to it. md1↔mk1 BCH stays forked; the *pattern* will be documented in a future cross-repo `PATTERNS.md`. See cross-repo `FOLLOWUPS.md` entry `mc-codex32-extraction-retired-2026-05-03` in either sibling repo.

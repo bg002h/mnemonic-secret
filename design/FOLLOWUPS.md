@@ -1162,3 +1162,11 @@ can never be mistaken for BIP-48.
 - **Status:** `deferred-minor`
 - **Source:** `design/agent-reports/whole-diff-bughunt-ms-s1.md` (commit 3bca6ae), first bullet of "Design lines (ungraded)"; filed 2026-11-01 from the bug-hunt ms whole-diff review.
 - **What:** `ms decode` and `ms repair` on an s-index share (threshold 2-9) still advise "use `ms combine` to recombine K shares", which `ms combine` refuses. That is pre-existing text, and it now contradicts the new `inspect` reason for the same string.
+
+### `verb-ownership-docs-review-minors` — arch-docs whole-diff s1 Minor m-2 and Nit n-3 (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+deferred-minor. From the toolkit-side review report `agent-reports/whole-diff-arch-docs-s1.md` (coordinator repo), 0C/1I/2M/4N; I-1 is fixed in this PR.
+
+- m-2: `crates/ms-cli/README.md` "press Enter, then Ctrl-D" does not end input in a Windows console (Ctrl-Z then Enter). Fails closed: the tool keeps waiting. Suggested: "(paste the string, press Enter, then Ctrl-D; in a Windows console, Ctrl-Z then Enter)".
+- n-3: `README.md:85` "one of three sibling format crates" and `CLAUDE.md` "Four-way star" omit mt-codec and mr-codec.
+- Owed when `ms repair` is removed: it cannot go before the toolkit's ms-codec pin reaches 0.8 or later (`toolkit-ms-codec-bump-bughunt-ms-fixes`) and `mnemonic repair` reads kind `0x03` (hashlock preimage plates); the README's "planned for removal" sentence and its hashlock sentence change with it.
