@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## ms-cli [Unreleased]
 
+## ms-cli [0.20.3] — 2026-11-04
+
 No functional change since 0.20.2. Only documentation files changed (README,
 `crates/ms-cli/README.md`, `AGENTS.md`, `CLAUDE.md`, `design/FOLLOWUPS.md`).
 
