@@ -4,6 +4,13 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-cli [Unreleased]
+
+## ms-cli [0.20.3] — 2026-11-04
+
+No functional change since 0.20.2. Only documentation files changed (README,
+`crates/ms-cli/README.md`, `AGENTS.md`, `CLAUDE.md`, `design/FOLLOWUPS.md`).
+
 ## ms-cli [0.20.2] — 2026-11-01
 
 Fixes from the ms bug hunt (PR 15; `design/FIX_bughunt_ms.md`). No flag, API or
