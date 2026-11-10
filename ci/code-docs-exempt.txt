@@ -6,3 +6,7 @@
 # Not run by CI (called only by scripts/plan-build-gate-ms.sh, a local plan
 # gate).
 ^scripts/plan-handwire-ms-hashlock\.py$
+
+# Not run by CI: the local ci/staging push ritual. It names design/FOLLOWUPS.md
+# only in a citation-gate pathspec that excludes it.
+^scripts/push-via-staging\.sh$
