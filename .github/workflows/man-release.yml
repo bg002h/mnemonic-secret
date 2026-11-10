@@ -63,9 +63,9 @@ jobs:
         run: gh release upload "$REF_NAME" ms-man.tar.gz --clobber
 
   # ── F-324: derive the mnemonic-io-lib rev from Cargo.lock ──────────────────
-  # Mirrors ci/repro/vendor-freshness.sh's own extraction exactly (same regex,
-  # same fail-closed-on-empty behaviour) so the `repro` job below never carries
-  # a hand-written copy of the rev that could drift from the lockfile the pin
+  # Derives the rev from Cargo.lock, as ci/repro/vendor-freshness.sh does, and
+  # fails closed on an empty result, so the `repro` job below never carries a
+  # hand-written copy of the rev that could drift from the lockfile the pin
   # actually lives in.
   pins:
     name: derive git-source pins

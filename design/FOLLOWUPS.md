@@ -1170,3 +1170,9 @@ deferred-minor. From the toolkit-side review report `agent-reports/whole-diff-ar
 - m-2: `crates/ms-cli/README.md` "press Enter, then Ctrl-D" does not end input in a Windows console (Ctrl-Z then Enter). Fails closed: the tool keeps waiting. Suggested: "(paste the string, press Enter, then Ctrl-D; in a Windows console, Ctrl-Z then Enter)".
 - n-3: `README.md:85` "one of three sibling format crates" and `CLAUDE.md` "Four-way star" omit mt-codec and mr-codec.
 - Owed when `ms repair` is removed: it cannot go before the toolkit's ms-codec pin reaches 0.8 or later (`toolkit-ms-codec-bump-bughunt-ms-fixes`) and `mnemonic repair` reads kind `0x03` (hashlock preimage plates); the README's "planned for removal" sentence and its hashlock sentence change with it.
+
+### `vendor-freshness-shared` — one shared vendor-freshness gate for five repos
+
+- **Spec:** mnemonic-toolkit `design/SPEC_vendor_freshness_shared.md`.
+- **Status:** resolved -- shipped by this PR
+- Companion: mnemonic-toolkit design/FOLLOWUPS.md::vendor-freshness-shared
