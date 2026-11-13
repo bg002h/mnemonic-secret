@@ -1225,6 +1225,18 @@ deferred-minor. From the toolkit-side review report `agent-reports/whole-diff-ar
 - **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding N-3 (review of `design/FIX_ms_output_sink.md` at head 778014c).
 - **What:** `design/FIX_ms_output_sink.md` (line 13 at head 778014c): cites rule Q4 as L102-124; the brief cites L102-151.
 
+### `ms-output-sink-wd-s1-m1-changelog-history-json-forms` — the CHANGELOG history sentence says `split` and `derive` exited 0 on a failing stdout; their `--json` forms panicked (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/whole-diff-ms-output-sink-s1.md` finding M-1 (whole-diff review of PR #25 at head c5f43b7a).
+- **What:** `CHANGELOG.md` (lines 12-14 at head c5f43b7a) says `split` and `derive` "dropped the error and exited 0". Run on the base with `>/dev/full`: `derive --json` and `split -k 2 -n 3 --json` exit 101 (panic); `split` in its text form, `hashlock --json` and `decode --json` of a preimage plate exit 0. The new behaviour is described correctly; only the history sentence is inexact. Wording: "`split` and `derive` (their text forms), `hashlock`, `decode` of a hashlock preimage plate, `--help` and `--version` dropped the error and exited 0".
+
+### `ms-output-sink-wd-s1-m2-sigxfsz-file-size-limit` — a stdout file over `ulimit -f` kills ms with SIGXFSZ (exit 153), before and after the output sink (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/whole-diff-ms-output-sink-s1.md` finding M-2 (whole-diff review of PR #25 at head c5f43b7a; not from that diff).
+- **What:** `bash -c 'ulimit -f 2; ms gui-schema > f'` dies by signal (exit 153) with 2048 bytes written, on the base and on the head. It fails closed. With `trap '' XFSZ` the head exits 1 with `ms: cannot write the output: File too large (os error 27)`. Possible change: ignore SIGXFSZ at start so a file-size limit is a write error like the others.
+
 ### `vendor-freshness-shared` — one shared vendor-freshness gate for five repos
 
 - **Spec:** mnemonic-toolkit `design/SPEC_vendor_freshness_shared.md`.
