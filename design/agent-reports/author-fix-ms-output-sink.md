@@ -39,3 +39,30 @@ section; mutation-gate.sh; no catalog row added for the new script (no catalog i
 No production code on the branch. Nothing under /tmp used for builds.
 
 Counts: Critical 0, Important 0, Minor 0, Nit 0
+
+## R1 fold (2026-11-13)
+
+Folded into `design/FIX_ms_output_sink.md` and `scripts/ms-output-sink-fix-gate.sh`:
+
+- The architect's read-only-stdout ruling: sections 3 and 4 replaced byte for byte by
+  `fix.diff` and `rows.diff`, all 17 `old:`/`new:` pairs of `texts.md`, the moved counts
+  (rows 10 to 11, RED commands 9 to 10, suite 678 to 679, sink.rs 94 to 120 lines, two new
+  plants P19 and P20). The folded file was confirmed to differ from the head document only by
+  those pairs and blocks before use.
+- I-1 (section 9 item 7: `release.yml` runs on a PR, with a Windows leg), verbatim.
+- I-2 is replaced by the ruling, as the brief says.
+- Rulings: P-1 and P-2 rewritten as decided (section 10 and the intro); P-2 now names toolkit
+  `ms-manual-exit-codes` as the owner of exit-3 manual text (the wording change of the ruling).
+- Gate: the compare runs against `/scratch/cache/architect-output-sink-ro/ms`; counts and the
+  "does NOT cover" line updated.
+- Filed in `design/FOLLOWUPS.md`: 6 Minors and 3 Nits as `deferred-minor`; the document's
+  FOLLOWUPS hunk still passes `git apply --check` on the head.
+
+Gate last line: `GATE PASS`.
+
+Points to note (not STOPs): M-5 is both folded (it is the ruling's wording change) and filed,
+so the finding keeps a trace. The deferred-minor entries use the file's `Status`/`Surfaced`/
+`What` form with no Tier line, as the other deferred-minor entries do, and sit before the last
+entry so the document's end-of-file hunk still applies.
+
+STOPs: none.
