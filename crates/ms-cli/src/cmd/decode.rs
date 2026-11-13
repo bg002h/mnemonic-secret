@@ -223,7 +223,7 @@ pub(crate) fn emit_preimage(x: &[u8; 32], json: bool) -> crate::error::Result<u8
         .map(|k| (k.token(), hex::encode(k.digest(x).as_slice())))
         .collect();
     let hx = hex::encode(x);
-    let mut out = std::io::stdout().lock();
+    let mut out = crate::sink::Out;
     if json {
         let digests: serde_json::Map<String, serde_json::Value> = by_kind
             .iter()
@@ -266,7 +266,6 @@ pub(crate) fn emit_preimage(x: &[u8; 32], json: bool) -> crate::error::Result<u8
         )
         .ok();
     }
-    drop(out);
     let mut err = std::io::stderr().lock();
     crate::advisory::emit_output_class_advisory(
         crate::advisory::OutputClass::PrivateKeyMaterial,

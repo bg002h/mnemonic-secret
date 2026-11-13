@@ -5,6 +5,10 @@
 
 #![allow(missing_docs)] // ms-cli is binary-only; field-level docs are pretty but not load-bearing for a non-published lib API. Mirror md-cli precedent at crates/md-cli/src/main.rs:1.
 
+// First, so its print macros shadow std's in every module below.
+#[macro_use]
+mod sink;
+
 mod advisory;
 mod argv_guard;
 mod bip39_friendly;
@@ -232,10 +236,18 @@ fn main() -> ExitCode {
             // catch-all 64 below preserves SPEC §6's carve-out for *real*
             // parse errors (overrides clap's default of 2 to keep 2
             // reserved for ms1 format violations).
-            e.print().ok();
+            // --help and --version go to stdout under the same write-error
+            // rule as the verbs (`sink`); a parse error goes to stderr.
+            if e.use_stderr() || !sink::read_only() {
+                if let Err(w) = e.print() {
+                    if !e.use_stderr() {
+                        sink::failed(&w);
+                    }
+                }
+            }
             return match e.kind() {
                 clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
-                    ExitCode::SUCCESS
+                    ExitCode::from(sink::exit_code(0, true))
                 }
                 _ => ExitCode::from(64),
             };
@@ -243,6 +255,7 @@ fn main() -> ExitCode {
     };
 
     let json_mode = is_json_mode(&cli.command);
+    let verify_mode = matches!(cli.command, Command::Verify(_));
 
     let result: Result<u8> = match cli.command {
         Command::Derive(args) => cmd::derive::run(args),
@@ -259,11 +272,11 @@ fn main() -> ExitCode {
         Command::Combine(args) => cmd::combine::run(args),
     };
 
-    let exit = match result {
-        Ok(code) => ExitCode::from(code),
+    let (code, success) = match result {
+        Ok(code) => (code, true),
         Err(e) => {
-            emit_error(&e, json_mode);
-            ExitCode::from(e.exit_code())
+            emit_error(&e, json_mode, verify_mode);
+            (e.exit_code(), false)
         }
     };
 
@@ -272,7 +285,7 @@ fn main() -> ExitCode {
     // when failure_count == 0. Runs on both Ok and Err paths.
     mlock::report_at_exit();
 
-    exit
+    ExitCode::from(sink::exit_code(code, success))
 }
 
 fn is_json_mode(cmd: &Command) -> bool {
@@ -292,14 +305,17 @@ fn is_json_mode(cmd: &Command) -> bool {
     }
 }
 
-fn emit_error(e: &CliError, json_mode: bool) {
+fn emit_error(e: &CliError, json_mode: bool, verify_mode: bool) {
     // Special case: FutureFormat is a "success-shaped" exit-3 path used by
     // verify. In text mode, cmd::verify::emit_future_format already wrote the
     // "OK: valid future format" line to stdout; emitting an "error: ..."
     // message to stderr here would contradict that. Skip the stderr write.
+    // Only verify prints that line: decode, derive, hashlock and repair print
+    // nothing, so for them the error line is the only output (E4,
+    // `ms-future-format-silent-exit-3`).
     // In JSON mode we DO want the error envelope (cmd handler suppressed its
     // own stdout output specifically so this path produces the envelope).
-    if matches!(e, CliError::FutureFormat { .. }) && !json_mode {
+    if matches!(e, CliError::FutureFormat { .. }) && !json_mode && verify_mode {
         return;
     }
 

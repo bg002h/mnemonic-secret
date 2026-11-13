@@ -445,7 +445,7 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
         _ => None,
     };
 
-    let mut stdout = std::io::stdout().lock();
+    let mut stdout = crate::sink::Out;
     if args.json {
         let mut o = serde_json::Map::new();
         o.insert("digest".into(), hex(h).into());
@@ -502,7 +502,6 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
     } else {
         writeln!(stdout, "{record}").ok();
     }
-    drop(stdout);
 
     let mut stderr = std::io::stderr().lock();
     if !args.no_engraving_card {

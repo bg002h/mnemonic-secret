@@ -6,6 +6,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## ms-cli [Unreleased]
 
+### Fixed
+- **A stdout that cannot take the output no longer panics or reports success.**
+  Most verbs wrote with `println!`, which panicked (exit 101, "failed printing
+  to stdout") on a full disk or `> /dev/full`; `split`, `derive`, `hashlock`,
+  `decode` of a hashlock preimage plate, `--help` and `--version` dropped the
+  error and exited 0 with the output lost. Now any stdout write error other
+  than a closed pipe prints `ms: cannot write the output: <error>` on stderr
+  and exits 1, also when a verb's `--out FILE` was already written (the file
+  stays); a verb that was already failing keeps its own code (`verify`'s 3 and
+  4 included). `repair`'s 4 is a result, not a failure: a candidate that never
+  reached stdout exits 1. A reader that closes the pipe early (`ms gui-schema |
+  head -1`) only stops the output, and the exit code is the verb's own, where
+  0.20.3 could panic with exit 101. Text on stderr (the engraving card, the
+  advisories) is printed as before. `tests/output_errors.rs`.
+- **A reserved-tag ms1 now says why it exits 3.** `decode`, `derive`,
+  `hashlock` and `repair` exited 3 with nothing on stdout or stderr for an ms1
+  whose tag is reserved for a later format (`seed`, for example). They now
+  print `error: tag "seed" reserved-not-emitted in v0.1; deferred to v0.2+`
+  on stderr; the exit code is still 3. `verify` is unchanged: it prints
+  `OK: valid future format (v0.2+, tag seed)` on stdout and exits 3.
+  `tests/future_format_names_the_problem.rs`.
+
 ## ms-cli [0.20.3] — 2026-11-04
 
 No functional change since 0.20.2. Only documentation files changed (README,

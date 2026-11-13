@@ -569,7 +569,7 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
             .map_err(|e| CliError::BadInput(format!("json serialization: {e}")))?;
         println!("{s}");
     } else {
-        let mut stdout = std::io::stdout();
+        let mut stdout = crate::sink::Out;
         writeln!(stdout, "master_fingerprint:  {master_fp}").ok();
         if let Some((path, xpub)) = &account {
             writeln!(stdout, "account_path:        {path}").ok();

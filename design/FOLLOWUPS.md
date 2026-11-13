@@ -1171,8 +1171,91 @@ deferred-minor. From the toolkit-side review report `agent-reports/whole-diff-ar
 - n-3: `README.md:85` "one of three sibling format crates" and `CLAUDE.md` "Four-way star" omit mt-codec and mr-codec.
 - Owed when `ms repair` is removed: it cannot go before the toolkit's ms-codec pin reaches 0.8 or later (`toolkit-ms-codec-bump-bughunt-ms-fixes`) and `mnemonic repair` reads kind `0x03` (hashlock preimage plates); the README's "planned for removal" sentence and its hashlock sentence change with it.
 
+### `ms-output-sink-fix-r1-m1-mr-manual-line` — the FIX document cites `45-mr.md:48`, which is L45 at toolkit f1388e8c (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding M-1 (review of `design/FIX_ms_output_sink.md` at head 778014c).
+- **What:** `design/FIX_ms_output_sink.md` (line 37 at head 778014c): `45-mr.md:48` is L45 at toolkit f1388e8c. Correct the cite.
+
+### `ms-output-sink-fix-r1-m2-manual-says-nothing-of-closed-stdout` — the manual paragraph says nothing of `>&-` (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding M-2 (review of `design/FIX_ms_output_sink.md` at head 778014c).
+- **What:** `design/FIX_ms_output_sink.md` (line 91 at head 778014c, the manual paragraph) says nothing of `>&-` (exit 0, output discarded), which mr's row states. The grade's text is held verbatim, so adding it is a ruling, not a builder edit.
+
+### `ms-output-sink-fix-r1-m3-flush-in-out-write-unseen` — no row can see the flush in `Out::write` (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding M-3 (review of `design/FIX_ms_output_sink.md` at head 778014c).
+- **What:** `crates/ms-cli/tests/output_errors.rs` (section 4): no row can see the flush in `Out::write`; a plant removing it survives. Equivalent today because every output ends in a newline.
+
+### `ms-output-sink-fix-r1-m4-build-order-no-commit-step` — build order step 2 has no commit and the mutation gate has no build-order step (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding M-4 (review of `design/FIX_ms_output_sink.md` at head 778014c).
+- **What:** `design/FIX_ms_output_sink.md` (lines 983-990 and 1006 at head 778014c): step 2 of the build order has no "commit", and the mutation gate has no build-order step.
+
+### `ms-output-sink-fix-r1-m5-cite-ms-manual-exit-codes` — P-2 should cite toolkit `ms-manual-exit-codes` as the owner of exit-3 text (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding M-5 (review of `design/FIX_ms_output_sink.md` at head 778014c).
+- **What:** `design/FIX_ms_output_sink.md` (lines 1074-1078 at head 778014c, P-2): cite toolkit `ms-manual-exit-codes` (f1388e8c `design/FOLLOWUPS.md` L6613) as the owner. The R1 fold already applied this wording as part of the P-2 ruling; the entry stays so the finding has a trace.
+
+### `ms-output-sink-fix-r1-m6-only-the-sink-names-stdout-platform-and-alias` — `only_the_sink_names_stdout` sits under the linux cfg and misses an alias (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding M-6 (review of `design/FIX_ms_output_sink.md` at head 778014c).
+- **What:** `crates/ms-cli/tests/output_errors.rs:11`: `only_the_sink_names_stdout` is platform-free but sits under the file's `cfg(target_os = "linux")`; its text match misses an alias (`use std::io::stdout as so; so()`).
+
+### `ms-output-sink-fix-r1-n1-short-sha-without-a-length` — P-1 says "short sha" without a length (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding N-1 (review of `design/FIX_ms_output_sink.md` at head 778014c).
+- **What:** `design/FIX_ms_output_sink.md` (line 1069 at head 778014c, P-1): say "the 7-character short sha".
+
+### `ms-output-sink-fix-r1-n2-tier-v1plus-for-a-resolved-entry` — block 3.8 `ms-future-format-silent-exit-3` has Tier `v1+`, defined as "deferred indefinitely", for a resolved entry (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding N-2 (review of `design/FIX_ms_output_sink.md` at head 778014c).
+- **What:** Block 3.8, entry `ms-future-format-silent-exit-3`: Tier `v1+` is defined as "deferred indefinitely" (this file's tier list) for a resolved entry.
+
+### `ms-output-sink-fix-r1-n3-rule-q4-line-range` — the FIX document cites rule Q4 as L102-124 and the brief cites L102-151 (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding N-3 (review of `design/FIX_ms_output_sink.md` at head 778014c).
+- **What:** `design/FIX_ms_output_sink.md` (line 13 at head 778014c): cites rule Q4 as L102-124; the brief cites L102-151.
+
+### `ms-output-sink-wd-s1-m1-changelog-history-json-forms` — the CHANGELOG history sentence says `split` and `derive` exited 0 on a failing stdout; their `--json` forms panicked (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/whole-diff-ms-output-sink-s1.md` finding M-1 (whole-diff review of PR #25 at head c5f43b7a).
+- **What:** `CHANGELOG.md` (lines 12-14 at head c5f43b7a) says `split` and `derive` "dropped the error and exited 0". Run on the base with `>/dev/full`: `derive --json` and `split -k 2 -n 3 --json` exit 101 (panic); `split` in its text form, `hashlock --json` and `decode --json` of a preimage plate exit 0. The new behaviour is described correctly; only the history sentence is inexact. Wording: "`split` and `derive` (their text forms), `hashlock`, `decode` of a hashlock preimage plate, `--help` and `--version` dropped the error and exited 0".
+
+### `ms-output-sink-wd-s1-m2-sigxfsz-file-size-limit` — a stdout file over `ulimit -f` kills ms with SIGXFSZ (exit 153), before and after the output sink (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/whole-diff-ms-output-sink-s1.md` finding M-2 (whole-diff review of PR #25 at head c5f43b7a; not from that diff).
+- **What:** `bash -c 'ulimit -f 2; ms gui-schema > f'` dies by signal (exit 153) with 2048 bytes written, on the base and on the head. It fails closed. With `trap '' XFSZ` the head exits 1 with `ms: cannot write the output: File too large (os error 27)`. Possible change: ignore SIGXFSZ at start so a file-size limit is a write error like the others.
+
 ### `vendor-freshness-shared` — one shared vendor-freshness gate for five repos
 
 - **Spec:** mnemonic-toolkit `design/SPEC_vendor_freshness_shared.md`.
 - **Status:** resolved -- shipped by this PR
 - Companion: mnemonic-toolkit design/FOLLOWUPS.md::vendor-freshness-shared
+
+### `ms-output-sink` — a stdout write error panicked (exit 101) or was dropped (exit 0, output lost) (repo: **mnemonic-secret**; owning phase: this PR)
+
+- **Surfaced:** 2026-11-13, the crash sweep's F1 family rule (coordinator `agent-reports/grade-mk-crash-sweep-1.md` Q4) and the ms triage (`agent-reports/triage-ms-output-errors.md`); graded in `agent-reports/grade-ms-md-output-errors.md`: full stdout Important, silent exit 0 Important, closed reader Minor (fixed here at no extra cost).
+- **Where:** every `println!`/`print!` of `crates/ms-cli/src`, the four direct writers (`cmd/decode.rs` `emit_preimage`, `cmd/split.rs` `emit_text`, `cmd/derive.rs` text, `cmd/hashlock.rs`), and clap's `e.print().ok()` in `main.rs`.
+- **What:** One stdout path, `src/sink.rs` (`out.rs` is `--out FILE`): a closed pipe stops the output and keeps the verb's code; any other stdout error prints `ms: cannot write the output: <error>` and exits 1 for an `Ok` return (0, `repair`'s 4), keeping an `Err` return's code (1, 2, 3, 4, 64); a stderr error is ignored. Rows: `tests/output_errors.rs`.
+- **Companion:** mnemonic-toolkit `design/FOLLOWUPS.md::ms-manual-when-stdout-fails` (the `43-ms.md` section; it lands with the toolkit PR that pins the first ms-cli release carrying this fix).
+- **Status:** `resolved cf996a7`
+- **Tier:** `cross-repo`
+
+### `ms-future-format-silent-exit-3` — a reserved-tag ms1 made decode/derive/hashlock/repair exit 3 with no output (repo: **mnemonic-secret**; owning phase: this PR)
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/architect-crash-sweep-exit-sets.md` Q4 E4 (Important: the tool did not name the problem).
+- **Where:** `crates/ms-cli/src/main.rs` `emit_error`: the text-mode skip for `CliError::FutureFormat`.
+- **What:** The skip exists because `verify` prints its own `OK: valid future format` line on stdout (`cmd/verify.rs` `emit_future_format`); `decode`, `derive`, `hashlock` and `repair` print nothing, so a reserved-tag ms1 (`seed`) exited 3 with stdout and stderr empty. The skip now applies to `verify` only; the other four print `error: tag "seed" reserved-not-emitted in v0.1; deferred to v0.2+`. Rows: `tests/future_format_names_the_problem.rs`.
+- **Status:** `resolved cf996a7`
+- **Tier:** `v1+`
