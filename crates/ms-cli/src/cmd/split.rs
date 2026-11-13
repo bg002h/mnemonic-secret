@@ -226,8 +226,7 @@ fn emit_json(
 /// (mirrors the engraving-card panel). Emit ALL stdout shares first, then the
 /// stderr labels.
 fn emit_text(shares: &[String], group_size: usize, separator: char) {
-    let stdout = std::io::stdout();
-    let mut out = stdout.lock();
+    let mut out = crate::sink::Out;
     for share in shares {
         let _ = writeln!(out, "{}", render_grouped(share, group_size, separator));
     }

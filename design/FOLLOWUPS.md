@@ -1230,3 +1230,20 @@ deferred-minor. From the toolkit-side review report `agent-reports/whole-diff-ar
 - **Spec:** mnemonic-toolkit `design/SPEC_vendor_freshness_shared.md`.
 - **Status:** resolved -- shipped by this PR
 - Companion: mnemonic-toolkit design/FOLLOWUPS.md::vendor-freshness-shared
+
+### `ms-output-sink` — a stdout write error panicked (exit 101) or was dropped (exit 0, output lost) (repo: **mnemonic-secret**; owning phase: this PR)
+
+- **Surfaced:** 2026-11-13, the crash sweep's F1 family rule (coordinator `agent-reports/grade-mk-crash-sweep-1.md` Q4) and the ms triage (`agent-reports/triage-ms-output-errors.md`); graded in `agent-reports/grade-ms-md-output-errors.md`: full stdout Important, silent exit 0 Important, closed reader Minor (fixed here at no extra cost).
+- **Where:** every `println!`/`print!` of `crates/ms-cli/src`, the four direct writers (`cmd/decode.rs` `emit_preimage`, `cmd/split.rs` `emit_text`, `cmd/derive.rs` text, `cmd/hashlock.rs`), and clap's `e.print().ok()` in `main.rs`.
+- **What:** One stdout path, `src/sink.rs` (`out.rs` is `--out FILE`): a closed pipe stops the output and keeps the verb's code; any other stdout error prints `ms: cannot write the output: <error>` and exits 1 for an `Ok` return (0, `repair`'s 4), keeping an `Err` return's code (1, 2, 3, 4, 64); a stderr error is ignored. Rows: `tests/output_errors.rs`.
+- **Companion:** mnemonic-toolkit `design/FOLLOWUPS.md::ms-manual-when-stdout-fails` (the `43-ms.md` section; it lands with the toolkit PR that pins the first ms-cli release carrying this fix).
+- **Status:** `resolved <COMMIT>`
+- **Tier:** `cross-repo`
+
+### `ms-future-format-silent-exit-3` — a reserved-tag ms1 made decode/derive/hashlock/repair exit 3 with no output (repo: **mnemonic-secret**; owning phase: this PR)
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/architect-crash-sweep-exit-sets.md` Q4 E4 (Important: the tool did not name the problem).
+- **Where:** `crates/ms-cli/src/main.rs` `emit_error`: the text-mode skip for `CliError::FutureFormat`.
+- **What:** The skip exists because `verify` prints its own `OK: valid future format` line on stdout (`cmd/verify.rs` `emit_future_format`); `decode`, `derive`, `hashlock` and `repair` print nothing, so a reserved-tag ms1 (`seed`) exited 3 with stdout and stderr empty. The skip now applies to `verify` only; the other four print `error: tag "seed" reserved-not-emitted in v0.1; deferred to v0.2+`. Rows: `tests/future_format_names_the_problem.rs`.
+- **Status:** `resolved <COMMIT>`
+- **Tier:** `v1+`
