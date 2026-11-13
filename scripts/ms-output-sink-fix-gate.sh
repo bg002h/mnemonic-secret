@@ -4,18 +4,18 @@
 # What it does:
 #   1. Extracts the document's blocks (section 3 plain `diff` blocks, section 4 `diff`
 #      rows, the `sh` RED commands and the `text` guard command) and checks that the
-#      code blocks and the rows hash to the sha256 the document states. If the grade's
+#      code blocks and the rows hash to the sha256 the document states. If the architect's
 #      files exist, it also cmp's them byte for byte.
 #   2. In its own detached worktree at the base commit: applies the rows, runs every
 #      RED command as printed and requires each to FAIL with its `## expect:`
-#      substring; the guard row must PASS on the base; whole set "10 tests run: 1 passed, 9 failed".
-#   3. Applies the code blocks (FOLLOWUPS included); requires the ten rows green, the
-#      full workspace suite "678 tests run: 678 passed, 23 skipped", doc tests, fmt
+#      substring; the guard row must PASS on the base; whole set "11 tests run: 1 passed, 10 failed".
+#   3. Applies the code blocks (FOLLOWUPS included); requires the eleven rows green, the
+#      full workspace suite "679 tests run: 679 passed, 23 skipped", doc tests, fmt
 #      (+1.95.0, the CI pin), clippy.
 #   4. Self-test: the checker must reject a wrong expectation and a run that passed,
 #      or the gate dies.
 #
-# What it does NOT cover: the grade's 18 plants (not re-run); the macOS, musl, release,
+# What it does NOT cover: the grade's 18 plants and the architect's two (not re-run); the macOS, musl, release,
 # miri, FreeBSD, history-purge, g6 and fuzz CI legs; the toolkit manual section; the
 # coordinator's mutation-gate.sh; any review; the `<COMMIT>` substitution in FOLLOWUPS.
 #
@@ -28,7 +28,7 @@ DOC=$(realpath "$DOC")
 BASE=${BASE:-548da55a4b709442be3391ec8d44a1b74f1aa61b}
 W=${W:-/scratch/cache/ms-output-sink-gate-wt}
 OUT=${OUT:-/scratch/cache/ms-output-sink-gate-out}
-GRADE=${GRADE:-/scratch/cache/grade-ms-md-output-errors/ms}
+GRADE=${GRADE:-/scratch/cache/architect-output-sink-ro/ms}
 export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-/scratch/cache/ms-output-sink-gate-target}
 case "$W$OUT$CARGO_TARGET_DIR" in /tmp*) echo "refusing /tmp" >&2; exit 2;; esac
 mkdir -p "$OUT"
@@ -56,16 +56,16 @@ assert hashlib.sha256(code.encode()).hexdigest()==want,'code blocks differ from 
 assert hashlib.sha256(rows.encode()).hexdigest()==wantr,'rows blocks differ from the stated sha256'
 assert len(blocks(s3,'diff'))==8,'expected 8 code blocks'
 assert len(blocks(s4,'diff'))==2,'expected 2 rows blocks'
-assert len([l for l in red.splitlines() if l.startswith('cargo nextest')])==9,'expected 9 RED commands'
+assert len([l for l in red.splitlines() if l.startswith('cargo nextest')])==10,'expected 10 RED commands'
 assert len([l for l in guard.splitlines() if l.startswith('cargo nextest')])==1,'expected 1 guard command'
 for n,v in (('code.diff',code),('rows.diff',rows),('red.sh',red),('guard.sh',guard)):
     open(out+'/'+n,'w').write(v)
 PY
 if [ -f "$GRADE/fix.diff" ]; then
-  cmp "$OUT/code.diff" "$GRADE/fix.diff" || die "code blocks differ from the grade's fix.diff"
-  cmp "$OUT/rows.diff" "$GRADE/rows.diff" || die "rows differ from the grade's rows.diff"
-  echo "cmp: blocks identical to the grade's files"
-else echo "cmp: grade files absent, sha256 only"; fi
+  cmp "$OUT/code.diff" "$GRADE/fix.diff" || die "code blocks differ from the architect's fix.diff"
+  cmp "$OUT/rows.diff" "$GRADE/rows.diff" || die "rows differ from the architect's rows.diff"
+  echo "cmp: blocks identical to the architect's files"
+else echo "cmp: architect files absent, sha256 only"; fi
 
 # worktree at the base
 [ -e "$W/.git" ] || git -C "$REPO" worktree add --detach "$W" "$BASE" >/dev/null
@@ -92,7 +92,7 @@ while IFS= read -r line; do
   echo "RED $n ok (rc=$rc): $cmd"
   [ -n "$first_log" ] || { first_log=$log; first_rc=$rc; }
 done < "$OUT/red.sh"
-[ "$n" -eq 9 ] || die "expected 9 RED commands, ran $n"
+[ "$n" -eq 10 ] || die "expected 10 RED commands, ran $n"
 # the guard passes on the base
 gcmd=$(grep '^cargo nextest' "$OUT/guard.sh")
 rc=0; (cd "$W" && eval "$gcmd") >"$OUT/guard.log" 2>&1 || rc=$?
@@ -100,8 +100,8 @@ rc=0; (cd "$W" && eval "$gcmd") >"$OUT/guard.log" 2>&1 || rc=$?
 echo "guard ok on the base: verify_says_ok_on_stdout_and_nothing_on_stderr"
 # whole-set RED
 rc=0; (cd "$W" && cargo nextest run --locked -j 8 --no-fail-fast -E 'binary(output_errors) | binary(future_format_names_the_problem)') >"$OUT/red-all.log" 2>&1 || rc=$?
-grep -q '10 tests run: 1 passed, 9 failed' "$OUT/red-all.log" || die "whole-set RED is not 1 passed, 9 failed"
-echo "RED whole set: $(grep -o '10 tests run: 1 passed, 9 failed' "$OUT/red-all.log")"
+grep -q '11 tests run: 1 passed, 10 failed' "$OUT/red-all.log" || die "whole-set RED is not 1 passed, 10 failed"
+echo "RED whole set: $(grep -o '11 tests run: 1 passed, 10 failed' "$OUT/red-all.log")"
 # self-test of the checker
 red_check "$first_log" "$first_rc" "NO-SUCH-TEXT-XYZ" && die "self-test: a wrong expectation was accepted"
 red_check "$OUT/guard.log" 0 "1 test run" && die "self-test: a passing run was accepted as RED"
@@ -116,14 +116,14 @@ run() { # name cmd...
   (cd "$W" && "$@") >"$OUT/$name.log" 2>&1 || { tail -n 30 "$OUT/$name.log" >&2; die "$name failed"; }
 }
 run rows cargo nextest run --locked -j 8 -E 'binary(output_errors) | binary(future_format_names_the_problem)'
-grep -q '10 tests run: 10 passed' "$OUT/rows.log" || die "rows are not 10/10"
+grep -q '11 tests run: 11 passed' "$OUT/rows.log" || die "rows are not 11/11"
 run suite cargo nextest run --locked -j 8
-grep -q '678 tests run: 678 passed, 23 skipped' "$OUT/suite.log" || die "suite is not 678/678: $(grep 'tests run' "$OUT/suite.log")"
+grep -q '679 tests run: 679 passed, 23 skipped' "$OUT/suite.log" || die "suite is not 679/679: $(grep 'tests run' "$OUT/suite.log")"
 run doc cargo test --locked --workspace --doc
 run fmt cargo +1.95.0 fmt --all -- --check
 run clippy cargo clippy --locked --workspace --all-targets -- -D warnings
-echo "GREEN rows: $(grep -o '10 tests run: 10 passed' "$OUT/rows.log")"
-echo "GREEN suite: $(grep -o '678 tests run: 678 passed, 23 skipped' "$OUT/suite.log")"
+echo "GREEN rows: $(grep -o '11 tests run: 11 passed' "$OUT/rows.log")"
+echo "GREEN suite: $(grep -o '679 tests run: 679 passed, 23 skipped' "$OUT/suite.log")"
 echo "GREEN doc, fmt, clippy: ok"
 reset
 echo "GATE PASS"

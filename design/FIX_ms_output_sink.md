@@ -12,14 +12,16 @@ section 4 below), the rule `agent-reports/grade-mk-crash-sweep-1.md` Q4
 (L102-124), and for E4 `agent-reports/architect-crash-sweep-exit-sets.md` Q4
 (L176-191). The same fix in mnemonic-key is `design/FIX_mk_output_sink.md`.
 
-Everything below is transcribed from the grade. The grade built this exact diff
-and ran it both ways (RED: 10 tests run, 1 passed, 9 failed; GREEN: workspace
-678 tests run, 678 passed, 23 skipped; 18 plants, 18 die). Where the grade did
+Everything below is transcribed from the grade, with the read-only stdout probe
+of the architect ruling (coordinator `agent-reports/architect-output-sink-read-only-stdout.md`) added. The grade built its diff and the
+architect built and ran this exact one both ways (RED: 11 tests run, 1 passed,
+10 failed; GREEN: workspace 679 tests run, 679 passed, 23 skipped; the grade's
+18 plants die, and the architect's two). Where the grade did
 not decide a point that a holder can see, it is a STOP in section 10, not a
 choice.
 
-**No STOP is open.** S1 is ruled (section 8). Section 10 lists two proposals
-(P-1, P-2) on points of process and scope the grade left unsaid; neither
+**No STOP is open.** S1 is ruled (section 8). Section 10 records two decisions
+(P-1, P-2, both ruled) on points of process and scope the grade left unsaid; neither
 changes a text, a code or a row a holder sees.
 
 ## 1. Spec delta (exact texts)
@@ -91,6 +93,11 @@ the stdout output (0, and `repair`'s 4); an `Err` return is a failing code.
   output stops; at exit `ms: cannot write the output: <error>` is printed on
   stderr. An `Ok` code (0, and `repair`'s 4) becomes **1**; an `Err` code is
   kept (1, 2, 3, 4 and 64 included, so `verify`'s 3 and its mismatch 4 stay).
+  A stdout opened read-only (`ms vectors 1</dev/null`) is such an error: std's
+  stdout reports EBADF as a successful write, so the sink checks fd 1 once
+  (`fcntl(F_GETFL)`, unix only) at the first write or `--help`/`--version` and
+  records `Bad file descriptor (os error 9)`. A verb that writes nothing to
+  stdout is not touched.
 - Stderr write errors are ignored (this covers `2>&1 | head`). Stderr text
   keeps being printed after stdout is lost; the rule stops stdout only
   (grade section 2, ruling 5).
@@ -112,6 +119,8 @@ the stdout output (0, and `repair`'s 4); an `Err` return is a failing code.
 | 3d | the same, `hashlock --random --json` (a usage error, envelope on stdout) | stops | the line | 64 (kept) | `full_stdout_keeps_a_failing_code` |
 | 4 | `--help` / `--version` / `help` / `decode --help`, closed reader | stops | none | 0 | `closed_reader_exits_with_the_verbs_code` (`--help`, `--version`) |
 | 5 | `--help` / `--version` / `help` / `decode --help`, other stdout error | stops | the line | 1 | `full_stdout_exits_1_with_the_line` |
+| 5b | stdout opened read-only (`1</dev/null`): `vectors`, `gui-schema`, `decode`, `--help`, `--version` | lost (before: lost with exit 0) | `ms: cannot write the output: Bad file descriptor (os error 9)` last line | 1 | `read_only_stdout_exits_1_with_the_line` |
+| 5c | the same, `encode --out FILE` (writes nothing to stdout) | none | no `cannot write` | 0 | `read_only_stdout_exits_1_with_the_line` |
 | 6 | stderr write error (stdout and stderr both closed: `encode`, `decode`, `repair` of a damaged card) | as case 1 | ignored | the verb's own (0, 0, 4) | `closed_reader_on_stdout_and_stderr_exits_the_verbs_code` |
 | 7 | `--out FILE` written, then stdout lost (`hashlock --out FILE`, the public digest record is on stdout) | stops | the `THIS CARD CARRIES THE PREIMAGE` card is still printed, then the line last | 1; the file stays and holds the card (`ms decode FILE` rebuilds the record) | `full_stdout_after_an_out_file_exits_1_and_keeps_the_file` |
 | 8 (E4) | reserved-tag ms1 (`seed`) into `decode -`, `derive -`, `hashlock -`, `repair --ms1 -` | empty | `error: tag "seed" reserved-not-emitted in v0.1; deferred to v0.2+` last | 3 (unchanged) | `a_reserved_tag_exits_3_with_the_error_line` |
@@ -133,8 +142,8 @@ re-graded).
 
 The eight blocks 3.1 to 3.8 are `fix.diff` split by file, in the diff's own
 order, byte for byte: concatenated they equal the grade's file
-(sha256 `0e1ea194be0d5770e25f4a95fc10366c2a9a8a990f1c881a51fa687fe9c03f62`, checked by the gate). Apply them with `git apply`. They
-touch `src/sink.rs` (new, 94 lines), `src/main.rs`, `cmd/decode.rs`,
+(sha256 `f739e9e69bc414001b5fb91e73c77d4fcf22a6800232ecf90fcc232f51bf09ec`, checked by the gate). Apply them with `git apply`. They
+touch `src/sink.rs` (new, 120 lines), `src/main.rs`, `cmd/decode.rs`,
 `cmd/derive.rs`, `cmd/hashlock.rs`, `cmd/split.rs`, `CHANGELOG.md` and
 `design/FOLLOWUPS.md`. The FOLLOWUPS block (3.8) is part of the grade's file and
 carries `resolved <COMMIT>` as the grade left it (P-1, section 10).
@@ -270,7 +279,7 @@ index 1cf5210..2f7bad7 100644
 
 ```diff
 diff --git c/crates/ms-cli/src/main.rs i/crates/ms-cli/src/main.rs
-index 24ddef4..c0d33db 100644
+index 24ddef4..8fc66f0 100644
 --- c/crates/ms-cli/src/main.rs
 +++ i/crates/ms-cli/src/main.rs
 @@ -5,6 +5,10 @@
@@ -284,16 +293,18 @@ index 24ddef4..c0d33db 100644
  mod advisory;
  mod argv_guard;
  mod bip39_friendly;
-@@ -232,10 +236,16 @@ fn main() -> ExitCode {
+@@ -232,10 +236,18 @@ fn main() -> ExitCode {
              // catch-all 64 below preserves SPEC §6's carve-out for *real*
              // parse errors (overrides clap's default of 2 to keep 2
              // reserved for ms1 format violations).
 -            e.print().ok();
 +            // --help and --version go to stdout under the same write-error
 +            // rule as the verbs (`sink`); a parse error goes to stderr.
-+            if let Err(w) = e.print() {
-+                if !e.use_stderr() {
-+                    sink::failed(&w);
++            if e.use_stderr() || !sink::read_only() {
++                if let Err(w) = e.print() {
++                    if !e.use_stderr() {
++                        sink::failed(&w);
++                    }
 +                }
 +            }
              return match e.kind() {
@@ -303,7 +314,7 @@ index 24ddef4..c0d33db 100644
                  }
                  _ => ExitCode::from(64),
              };
-@@ -243,6 +253,7 @@ fn main() -> ExitCode {
+@@ -243,6 +255,7 @@ fn main() -> ExitCode {
      };
  
      let json_mode = is_json_mode(&cli.command);
@@ -311,7 +322,7 @@ index 24ddef4..c0d33db 100644
  
      let result: Result<u8> = match cli.command {
          Command::Derive(args) => cmd::derive::run(args),
-@@ -259,11 +270,11 @@ fn main() -> ExitCode {
+@@ -259,11 +272,11 @@ fn main() -> ExitCode {
          Command::Combine(args) => cmd::combine::run(args),
      };
  
@@ -327,7 +338,7 @@ index 24ddef4..c0d33db 100644
          }
      };
  
-@@ -272,7 +283,7 @@ fn main() -> ExitCode {
+@@ -272,7 +285,7 @@ fn main() -> ExitCode {
      // when failure_count == 0. Runs on both Ok and Err paths.
      mlock::report_at_exit();
  
@@ -336,7 +347,7 @@ index 24ddef4..c0d33db 100644
  }
  
  fn is_json_mode(cmd: &Command) -> bool {
-@@ -292,14 +303,17 @@ fn is_json_mode(cmd: &Command) -> bool {
+@@ -292,14 +305,17 @@ fn is_json_mode(cmd: &Command) -> bool {
      }
  }
  
@@ -363,10 +374,10 @@ index 24ddef4..c0d33db 100644
 ```diff
 diff --git c/crates/ms-cli/src/sink.rs i/crates/ms-cli/src/sink.rs
 new file mode 100644
-index 0000000..6bacc66
+index 0000000..1fc5534
 --- /dev/null
 +++ i/crates/ms-cli/src/sink.rs
-@@ -0,0 +1,94 @@
+@@ -0,0 +1,120 @@
 +//! The one stdout path. Every `print!`/`println!` in ms-cli resolves to the
 +//! macros below (declared `#[macro_use]` first in `main.rs`, so they shadow
 +//! std's in every module), and so do `eprint!`/`eprintln!`. The few verbs that
@@ -401,7 +412,7 @@ index 0000000..6bacc66
 +
 +impl Write for Out {
 +    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-+        if !CLOSED.load(Ordering::Relaxed) {
++        if !CLOSED.load(Ordering::Relaxed) && !read_only() {
 +            let mut o = std::io::stdout().lock();
 +            if let Err(e) = o.write_all(buf).and_then(|()| o.flush()) {
 +                failed(&e);
@@ -412,6 +423,32 @@ index 0000000..6bacc66
 +    fn flush(&mut self) -> std::io::Result<()> {
 +        Ok(())
 +    }
++}
++
++/// std's stdout reports EBADF as a successful write, so a stdout opened
++/// read-only (`1</dev/null`) would lose the output with exit 0. Checked once,
++/// at the first write (or clap's `--help`/`--version`): then EBADF is recorded
++/// as the write error. A verb that writes nothing to stdout is not touched.
++pub(crate) fn read_only() -> bool {
++    static RO: OnceLock<bool> = OnceLock::new();
++    *RO.get_or_init(|| {
++        #[cfg(unix)]
++        {
++            // SAFETY: fcntl(F_GETFL) takes no pointer; a bad fd returns -1.
++            let fl = unsafe { libc::fcntl(1, libc::F_GETFL) };
++            let ro = fl >= 0 && (fl & libc::O_ACCMODE) == libc::O_RDONLY;
++            if ro {
++                failed(&std::io::Error::from_raw_os_error(libc::EBADF));
++            }
++            ro
++        }
++        // Windows: std turns only an invalid handle into a success, so a
++        // read-only handle's error reaches the sink as written.
++        #[cfg(not(unix))]
++        {
++            false
++        }
++    })
 +}
 +
 +/// Records a failed stdout write (also used for clap's `--help`/`--version`).
@@ -497,7 +534,7 @@ index 0f560bc..309838c 100644
 ## 4. RED rows
 
 The rows are `fix`'s `rows.diff`, byte for byte: two new files, concatenated
-the grade's file (sha256 `23079e7199db0df08cf4a76ef6f751e0992a45300a53e81ceb9653baf49a2bd8`). Apply them
+the grade's file (sha256 `5272296ac211a93096f0878fbed588fb8494ebcdbe2b849ee9f7e87002978831`). Apply them
 first, on the unmodified base, then run each command in the `sh` block, from
 the repo root with `$HOME/.cargo/bin` first in PATH (the pin is 1.85.0). The
 text after `## expect:` is a substring of the failing run's output.
@@ -577,10 +614,10 @@ index 0000000..5a40561
 ```diff
 diff --git c/crates/ms-cli/tests/output_errors.rs i/crates/ms-cli/tests/output_errors.rs
 new file mode 100644
-index 0000000..4464f81
+index 0000000..b055494
 --- /dev/null
 +++ i/crates/ms-cli/tests/output_errors.rs
-@@ -0,0 +1,323 @@
+@@ -0,0 +1,364 @@
 +//! What ms does when stdout cannot take its output (crash sweep F1 and the
 +//! family rule, grade-mk-crash-sweep-1 Q4; the ms/md output-error triage).
 +//!
@@ -904,6 +941,47 @@ index 0000000..4464f81
 +    }
 +    assert!(bad.is_empty(), "stdout named outside src/sink.rs: {bad:?}");
 +}
++
++/// std's stdout reports EBADF as a successful write, so a stdout opened
++/// read-only (`ms vectors 1</dev/null`) lost the output and exited 0.
++#[test]
++fn read_only_stdout_exits_1_with_the_line() {
++    const BADF: &str = "ms: cannot write the output: Bad file descriptor (os error 9)";
++    let on_read_only = |a: &[String]| {
++        let ro = std::fs::File::open("/dev/null").unwrap();
++        ms().args(a)
++            .stdout(Stdio::from(ro))
++            .stderr(Stdio::piped())
++            .output()
++            .unwrap()
++    };
++    for a in [
++        s(&["vectors"]),
++        s(&["gui-schema"]),
++        s(&["decode", A, MS1]),
++        s(&["--help"]),
++        s(&["--version"]),
++    ] {
++        let o = on_read_only(&a);
++        let err = String::from_utf8_lossy(&o.stderr);
++        assert_eq!(o.status.code(), Some(1), "{a:?}: {err}");
++        assert_eq!(err.lines().last(), Some(BADF), "{a:?}: {err}");
++    }
++    // A verb that writes nothing to stdout keeps its code and prints no line.
++    let f = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("output_errors_ro.ms1");
++    let _ = std::fs::remove_file(&f);
++    let o = on_read_only(&s(&[
++        "encode",
++        A,
++        "--phrase",
++        PHRASE,
++        "--out",
++        f.to_str().unwrap(),
++    ]));
++    let err = String::from_utf8_lossy(&o.stderr);
++    assert_eq!(o.status.code(), Some(0), "{err}");
++    assert!(!err.contains("cannot write"), "{err}");
++}
 ```
 
 ```sh
@@ -916,6 +994,7 @@ cargo nextest run --locked -j 8 -E 'test(/(^|::)closed_reader_exits_with_the_ver
 cargo nextest run --locked -j 8 -E 'test(/(^|::)closed_reader_on_stdout_and_stderr_exits_the_verbs_code$/)' ## expect: left: Some(101)
 cargo nextest run --locked -j 8 -E 'test(/(^|::)only_the_sink_names_stdout$/)' ## expect: stdout named outside src/sink.rs
 cargo nextest run --locked -j 8 -E 'test(/(^|::)a_reserved_tag_exits_3_with_the_error_line$/)' ## expect: exit 3 without the line
+cargo nextest run --locked -j 8 -E 'test(/(^|::)read_only_stdout_exits_1_with_the_line$/)' ## expect: left: Some(0)
 ```
 
 The guard row, which PASSES on the base (the gate requires it):
@@ -935,13 +1014,14 @@ cargo nextest run --locked -j 8 -E 'test(/(^|::)verify_says_ok_on_stdout_and_not
 | `closed_reader_on_stdout_and_stderr_exits_the_verbs_code` | `encode` 0, `decode` 0, `repair` 4 with both streams closed | FAIL: `left: Some(101)` |
 | `only_the_sink_names_stdout` | PASS: no source file but `src/sink.rs` contains `stdout(`, `std::print`, `std::eprint` or `core::print` | FAIL on the base: `stdout named outside src/sink.rs` (the direct writers: `decode`, `derive`, `hashlock`, `split`) |
 | `a_reserved_tag_exits_3_with_the_error_line` | the four verbs exit 3, stdout empty, the E4 line last on stderr | FAIL: `exit 3 without the line`, each `Some(3), stdout "", stderr ""` |
+| `read_only_stdout_exits_1_with_the_line` | `vectors`, `gui-schema`, `decode`, `--help`, `--version` on a stdout opened read-only each exit 1 with `ms: cannot write the output: Bad file descriptor (os error 9)` last; `encode --out FILE` exits 0 with no `cannot write` | FAIL (architect, `redbase-row.log`): `left: Some(0)` / `right: Some(1)` (exit 0, output lost) |
 | `verify_says_ok_on_stdout_and_nothing_on_stderr` | PASS (exit 3, the OK line, empty stderr) | PASS on the base too: a guard, not a RED row. Its teeth are plant P18. |
 
-Whole-set RED (grade `red.log`, with `--no-fail-fast`): **10 tests run: 1 passed, 9 failed** (the
+Whole-set RED (architect `redbase-set.log`, with `--no-fail-fast`): **11 tests run: 1 passed, 10 failed** (the
 passer is the guard). The rows are `cfg(target_os = "linux")` in
 `output_errors.rs`; `future_format_names_the_problem.rs` is portable.
 
-### Tests can fail (the grade's 18 plants)
+### Tests can fail (the grade's 18 plants and the architect's two)
 
 Each plant was made against the fix; each fails at least one row (grade
 `plants.txt`, rerun; the gate does not re-run them). P1 to P13 are the triage's
@@ -969,10 +1049,14 @@ kills.
 | P16 | the preimage writer (`emit_preimage`) writes to `std::io::stdout()` directly | `full_stdout_is_not_a_silent_success`, `only_the_sink_names_stdout` |
 | P17 | E4 silent for every verb (the skip applies to all) | `a_reserved_tag_exits_3_with_the_error_line` |
 | P18 | E4 errors on `verify` too (the skip removed) | `verify_says_ok_on_stdout_and_nothing_on_stderr` |
+| P19 | the clap branch not probed (`if true {` for `if e.use_stderr() \|\| !sink::read_only() {`) | `read_only_stdout_exits_1_with_the_line` (at `--help`, `left: Some(0)`) |
+| P20 | the probe records no error (its `failed(...EBADF)` line removed) | `read_only_stdout_exits_1_with_the_line` (`left: Some(0)`) |
+
+P19 and P20 were run by the architect against the ruled tree (coordinator `agent-reports/architect-output-sink-read-only-stdout.md`, `plant-P1.log`, `plant-P2.log`). P1 to P18 were run against the grade's diff; P4 plants the clap branch, which the probe now wraps.
 
 ## 5. Tests that change
 
-None changes. Two files are added: `crates/ms-cli/tests/output_errors.rs` (8
+None changes. Two files are added: `crates/ms-cli/tests/output_errors.rs` (9
 tests) and `crates/ms-cli/tests/future_format_names_the_problem.rs` (2 tests),
 section 4. The triage's own rows are not committed (the grade pinned its two
 weak fixtures, R1: the usage-error fixture is now `hashlock --random --json`
@@ -980,9 +1064,9 @@ with 64, and the verify mismatch is asserted `== 4`).
 
 ## 6. Build order
 
-1. Add the rows (section 4) as their own commit; run the RED commands: nine
+1. Add the rows (section 4) as their own commit; run the RED commands: ten
    FAIL for the stated reasons, the guard row PASSES.
-2. Apply sections 3.1 to 3.8 (the grade's diff). Run the ten rows: GREEN.
+2. Apply sections 3.1 to 3.8 (the grade's diff with the architect's probe). Run the eleven rows: GREEN.
 3. Gate (section 7). Then replace `<COMMIT>` in the two FOLLOWUPS entries (P-1).
 4. Toolkit manual section (section 8): not part of this PR; it goes in the
    toolkit PR that pins the first ms-cli release carrying this fix (S1, ruled).
@@ -997,9 +1081,9 @@ the code blocks, shows the rows and the full workspace suite green, and has a
 self-test that goes red on a broken row. Its header states what it does not
 cover. The commands it runs, each to a file, then grep:
 
-- `cargo nextest run --locked -j 8` expecting **678 tests run: 678 passed, 23 skipped**
-  (grade, `green.log`: base 668 plus the 10 rows).
-- `cargo nextest run --locked -j 8 -E 'binary(output_errors) | binary(future_format_names_the_problem)'`: **10 tests run: 10 passed** (a short or empty count is a FAIL).
+- `cargo nextest run --locked -j 8` expecting **679 tests run: 679 passed, 23 skipped**
+  (architect, `g-suite.log`: base 668 plus the 11 rows).
+- `cargo nextest run --locked -j 8 -E 'binary(output_errors) | binary(future_format_names_the_problem)'`: **11 tests run: 11 passed** (a short or empty count is a FAIL).
 - `cargo test --locked --workspace --doc`
 - `cargo +1.95.0 fmt --all -- --check` (the CI pin; the grade ran it so)
 - `cargo clippy --locked --workspace --all-targets -- -D warnings`
@@ -1050,29 +1134,29 @@ The Companion line in this repo's own entry is in block 3.8 (`ms-output-sink`:
 ## 9. Checks recorded
 
 - **Version:** no bump (section 1).
-- **Evidence (grade):** RED 10 run, 1 passed, 9 failed (`red.log`); GREEN workspace 678 run, 678 passed, 23 skipped (`green.log`); `cargo +1.95.0 fmt --all -- --check` rc 0; `clippy --workspace --all-targets -D warnings` rc 0; `cargo test --workspace --doc` rc 0. Frequency (grade `freq.txt`): `vectors | true` panics 300/300 on the base and 0/300 fixed; `vectors --pretty | head -3` and `gui-schema | head -1` 0/300 on both.
-- **Not run by the grade, so CI on the PR must show them** (`.github/workflows/`; the rows are Linux-only, `sink.rs` is std-only):
+- **Evidence (grade, then architect for the read-only probe):** RED 11 run, 1 passed, 10 failed (`redbase-set.log`); GREEN workspace 679 run, 679 passed, 23 skipped (`g-suite.log`); `cargo check --target x86_64-unknown-freebsd -p ms-cli` rc 0; `cargo +1.95.0 fmt --all -- --check` rc 0; `clippy --workspace --all-targets -D warnings` rc 0; `cargo test --workspace --doc` rc 0. Frequency (grade `freq.txt`): `vectors | true` panics 300/300 on the base and 0/300 fixed; `vectors --pretty | head -3` and `gui-schema | head -1` 0/300 on both.
+- **Not run by the grade, so CI on the PR must show them** (`.github/workflows/`; the rows are Linux-only; `sink.rs` is std plus one `libc::fcntl` under `cfg(unix)`):
   1. `rust.yml` `test (macos-latest)`: the whole suite on macOS (the `output_errors.rs` rows compile to nothing there; `future_format_names_the_problem.rs` runs).
   2. `rust.yml` `test (ubuntu-latest)`, including the G2.x fresh-subprocess steps and `test (release, ubuntu-latest, mlock einval)`.
   3. `rust.yml` `test (ms-codec)`, `clippy (ms-codec)`, `clippy` (the shared-files check, the conformance-vector checksum and `cargo clippy --all-targets -p ms-cli`), `fmt (pinned 1.95.0)`.
   4. `rust.yml` `miri (mlock unsafe)`.
   5. `rust.yml` `musl compile/test` (x86_64 and aarch64 natives, release mode) and `freebsd compile-gate`: `sink.rs` must compile there.
   6. `rust.yml` `history purge` and `g6 invariant`: both jobs run the `ms` binary (the `history_purge` and `mlock_g6_invariant` tests); they must stay green.
-  7. `fuzz-smoke.yml` and `vendor-freshness.yml`, whichever their path filters select; `release.yml` and `man-release.yml` are not run by a PR.
+  7. `release.yml` on the PR: `release test (ubuntu-latest)` (the whole suite again) and `build ms (macos-x86_64)`, `build ms (macos-aarch64)` and `build ms (windows-x86_64)`, each with its "Smoke-test the binary" step (the Windows leg is the only one where `sink.rs` and the shadowing macros compile and run without SIGPIPE; it runs because the PR is not a draft and its branch does not start `release-`). `fuzz-smoke.yml` and `vendor-freshness.yml`, whichever their path filters select. `man-release.yml` runs on an `ms-cli-v*` tag only.
 - **Gate coverage:** the gate script's header lists what it does not cover.
 
 ## 10. STOP (none open)
 
 - **S1: ruled** (section 8).
-- **P-1 (proposed): the `<COMMIT>` placeholder.** The grade's FOLLOWUPS entries
+- **P-1 (ruled, accepted): the `<COMMIT>` placeholder.** The grade's FOLLOWUPS entries
   read `resolved <COMMIT>` and the grade does not say who substitutes it or
-  when. Proposal: the builder replaces both with the short sha of the commit
+  when. Decided: the builder replaces both with the short sha of the commit
   that applies sections 3.1 to 3.8, in a following commit of the same PR (the
   block stays byte-identical to the grade's so the gate can check it). Not a
   holder-visible text.
-- **P-2 (proposed): no manual text for E4.** The grade rules the manual
+- **P-2 (ruled, accepted): no manual text for E4.** The grade rules the manual
   section of section 8 only. The E4 stderr line is new printed text, but
   `43-ms.md` has no sentence about a reserved-tag exit 3 today (grep of toolkit
   master 47baf6f2 for `reserved`, `future format`, `exit 3`: no hit on this
-  point), so nothing in it becomes false. Proposal: no E4 manual text. If the
-  owner wants one it is a new ruling.
+  point), so nothing in it becomes false. Decided: no E4 manual text. The owner of
+  exit-3 manual text is the toolkit entry `ms-manual-exit-codes`.
