@@ -1171,6 +1171,60 @@ deferred-minor. From the toolkit-side review report `agent-reports/whole-diff-ar
 - n-3: `README.md:85` "one of three sibling format crates" and `CLAUDE.md` "Four-way star" omit mt-codec and mr-codec.
 - Owed when `ms repair` is removed: it cannot go before the toolkit's ms-codec pin reaches 0.8 or later (`toolkit-ms-codec-bump-bughunt-ms-fixes`) and `mnemonic repair` reads kind `0x03` (hashlock preimage plates); the README's "planned for removal" sentence and its hashlock sentence change with it.
 
+### `ms-output-sink-fix-r1-m1-mr-manual-line` — the FIX document cites `45-mr.md:48`, which is L45 at toolkit f1388e8c (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding M-1 (review of `design/FIX_ms_output_sink.md` at head 778014c).
+- **What:** `design/FIX_ms_output_sink.md` (line 37 at head 778014c): `45-mr.md:48` is L45 at toolkit f1388e8c. Correct the cite.
+
+### `ms-output-sink-fix-r1-m2-manual-says-nothing-of-closed-stdout` — the manual paragraph says nothing of `>&-` (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding M-2 (review of `design/FIX_ms_output_sink.md` at head 778014c).
+- **What:** `design/FIX_ms_output_sink.md` (line 91 at head 778014c, the manual paragraph) says nothing of `>&-` (exit 0, output discarded), which mr's row states. The grade's text is held verbatim, so adding it is a ruling, not a builder edit.
+
+### `ms-output-sink-fix-r1-m3-flush-in-out-write-unseen` — no row can see the flush in `Out::write` (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding M-3 (review of `design/FIX_ms_output_sink.md` at head 778014c).
+- **What:** `crates/ms-cli/tests/output_errors.rs` (section 4): no row can see the flush in `Out::write`; a plant removing it survives. Equivalent today because every output ends in a newline.
+
+### `ms-output-sink-fix-r1-m4-build-order-no-commit-step` — build order step 2 has no commit and the mutation gate has no build-order step (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding M-4 (review of `design/FIX_ms_output_sink.md` at head 778014c).
+- **What:** `design/FIX_ms_output_sink.md` (lines 983-990 and 1006 at head 778014c): step 2 of the build order has no "commit", and the mutation gate has no build-order step.
+
+### `ms-output-sink-fix-r1-m5-cite-ms-manual-exit-codes` — P-2 should cite toolkit `ms-manual-exit-codes` as the owner of exit-3 text (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding M-5 (review of `design/FIX_ms_output_sink.md` at head 778014c).
+- **What:** `design/FIX_ms_output_sink.md` (lines 1074-1078 at head 778014c, P-2): cite toolkit `ms-manual-exit-codes` (f1388e8c `design/FOLLOWUPS.md` L6613) as the owner. The R1 fold already applied this wording as part of the P-2 ruling; the entry stays so the finding has a trace.
+
+### `ms-output-sink-fix-r1-m6-only-the-sink-names-stdout-platform-and-alias` — `only_the_sink_names_stdout` sits under the linux cfg and misses an alias (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding M-6 (review of `design/FIX_ms_output_sink.md` at head 778014c).
+- **What:** `crates/ms-cli/tests/output_errors.rs:11`: `only_the_sink_names_stdout` is platform-free but sits under the file's `cfg(target_os = "linux")`; its text match misses an alias (`use std::io::stdout as so; so()`).
+
+### `ms-output-sink-fix-r1-n1-short-sha-without-a-length` — P-1 says "short sha" without a length (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding N-1 (review of `design/FIX_ms_output_sink.md` at head 778014c).
+- **What:** `design/FIX_ms_output_sink.md` (line 1069 at head 778014c, P-1): say "the 7-character short sha".
+
+### `ms-output-sink-fix-r1-n2-tier-v1plus-for-a-resolved-entry` — block 3.8 `ms-future-format-silent-exit-3` has Tier `v1+`, defined as "deferred indefinitely", for a resolved entry (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding N-2 (review of `design/FIX_ms_output_sink.md` at head 778014c).
+- **What:** Block 3.8, entry `ms-future-format-silent-exit-3`: Tier `v1+` is defined as "deferred indefinitely" (this file's tier list) for a resolved entry.
+
+### `ms-output-sink-fix-r1-n3-rule-q4-line-range` — the FIX document cites rule Q4 as L102-124 and the brief cites L102-151 (repo: **mnemonic-secret**; owning phase: **ms-output-sink-followups**)
+
+- **Status:** `deferred-minor`
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-fix-ms-output-sink-r1.md` finding N-3 (review of `design/FIX_ms_output_sink.md` at head 778014c).
+- **What:** `design/FIX_ms_output_sink.md` (line 13 at head 778014c): cites rule Q4 as L102-124; the brief cites L102-151.
+
 ### `vendor-freshness-shared` — one shared vendor-freshness gate for five repos
 
 - **Spec:** mnemonic-toolkit `design/SPEC_vendor_freshness_shared.md`.
