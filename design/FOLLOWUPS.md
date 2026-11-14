@@ -1259,3 +1259,12 @@ deferred-minor. From the toolkit-side review report `agent-reports/whole-diff-ar
 - **What:** The skip exists because `verify` prints its own `OK: valid future format` line on stdout (`cmd/verify.rs` `emit_future_format`); `decode`, `derive`, `hashlock` and `repair` print nothing, so a reserved-tag ms1 (`seed`) exited 3 with stdout and stderr empty. The skip now applies to `verify` only; the other four print `error: tag "seed" reserved-not-emitted in v0.1; deferred to v0.2+`. Rows: `tests/future_format_names_the_problem.rs`.
 - **Status:** `resolved cf996a7`
 - **Tier:** `v1+`
+
+### `ms-derive-phrase-arm-no-one-liner` — the argv guard's derive phrase arm says "there is no one-liner", but one exists (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/grade-ms-remedies.md` ("Logged, no grade"); graded Minor.
+- **Where:** `crates/ms-cli/src/argv_guard.rs` `private_channels`, the `"derive"` phrase arm (F-581's text).
+- **What:** the arm prints two commands (`ms encode --in seed.txt --out card.ms1`, then `ms derive --in card.ms1`) and the comment says there is no one-liner. `ms derive --phrase - < seed.txt` exits 0 (measured), so the text costs the holder one extra step. Not wrong, and nothing fails as printed.
+- **Why deferred:** Minor; the passphrase still needs its own channel, and the remedy-text FIX carries only the Important items.
+- **Status:** `deferred-minor`
+- **Tier:** `v1+`

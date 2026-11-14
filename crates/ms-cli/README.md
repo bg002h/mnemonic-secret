@@ -15,20 +15,20 @@ The installed binary is named `ms`.
 ## Quickstart
 
 ```bash
-# Encode a 12-word BIP-39 mnemonic.
-ms encode --phrase "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+# Encode a 12-word BIP-39 mnemonic held in seed.txt.
+ms encode --phrase - < seed.txt
 
 # Recover from an engraved string.
-ms decode ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f
+ms decode --in card.ms1
 
 # Verify an engraved string round-trips against the original phrase.
-ms verify ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f --phrase "abandon abandon ... about"
+ms verify --in card.ms1 --phrase - < seed.txt
 
 # Inspect a candidate string for structural validity.
-ms inspect ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f
+ms inspect --in card.ms1
 ```
 
-All commands support stdin input (`-` or omitted positional) and `--json` for tooling.
+A secret on the command line (phrase, hex or ms1) is refused, because the shell has already written it to history; every command reads it from a file (`--in FILE`) or stdin, and takes `--json` for tooling.
 
 ## Engraving caveat
 
@@ -38,8 +38,8 @@ All commands support stdin input (`-` or omitted positional) and `--json` for to
 
 ```bash
 # Repair a corrupted ms1 string (up to 4 single-character substitutions
-# via BCH(93,80,8) t=4 capacity).
-ms repair --ms1 ms10entrsqqqqqqqqqqqzqqqqqqqqqqqqqqqqcj9sxraq34v7f
+# via BCH(93,80,8) t=4 capacity). broken.txt holds ms10entrsqqqqqqqqqqqzqqqqqqqqqqqqqqqqcj9sxraq34v7f.
+ms repair --in broken.txt
 # stdout:
 #   # Repair report
 #   #   ms1 chunk 0: 1 correction at position 17: 'z' -> 'q'
@@ -52,7 +52,7 @@ ms repair --ms1 - < broken.txt
 
 # JSON envelope (cross-CLI parser reuse: byte-matches
 # `mnemonic repair --json` / `mk repair --json` / `md repair --json`):
-ms repair --ms1 ms10entrsqq... --json
+ms repair --in broken.txt --json
 ```
 
 | Exit | Meaning |

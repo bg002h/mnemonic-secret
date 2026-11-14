@@ -283,7 +283,7 @@ The four loud sites, by what the verb is FOR:
 | `cmd/decode.rs:107` | `ms decode` | **functional**: print kind, preimage hex, digest |
 | `cmd/decode.rs:112` | `ms decode` | **functional**: same |
 | `cmd/combine.rs:166` | `ms combine` | **functional**: a recovered preimage share set prints as `decode` does (review N-1) |
-| `cmd/payload_lang.rs:61` | `ms verify`, `ms derive` | **typed refusal** with the remedy `ms hashlock <ms1>` |
+| `cmd/payload_lang.rs:46` | `ms verify`, `ms derive` | **typed refusal** with the remedy `ms hashlock --in FILE` (or `ms hashlock -`) |
 
 The split is by *what the verb is for*, not by convenience (r1 verification,
 finding 1): a verb that READS a secret prints a preimage as a preimage; a verb
@@ -500,7 +500,7 @@ Refusals name the rule and **never echo the phrase**.
 | `decode` | prints kind, preimage hex and digest. **Never words** — a preimage is not entropy |
 | `inspect` | reports the kind |
 | `combine` | a recovered preimage share set prints as `decode` does under `--to phrase` (the default); `--to entropy` prints the 32-byte preimage as 64 hex characters and `--to ms1` prints the `hash` single, byte-identical to what `ms hashlock --out` writes; under `--json` those two print `combine`'s object with `kind` `preimage`; in text mode `--to entropy` also warns on stderr that the hex is a preimage, never seed entropy (FIX_bughunt_ms #4) |
-| `derive`, `verify` | **refuse**, with the executable remedy `ms hashlock <ms1>` |
+| `derive`, `verify` | **refuse**, with the executable remedy `ms hashlock --in FILE` (or `ms hashlock -`) |
 | `encode --hex` | unchanged: stays `entr`, so **`ms hashlock` is the only door that creates the kind** |
 | `split` | the codec supports shares of the kind and a test pins it; the CLI has no ms1 source (F-468, out of scope) |
 | `repair` | unchanged and benign — `cmd/repair.rs:141` binds `(_tag, _payload, corrections)` and discards the payload — but named here because it is the verb an operator reaches for with a scratched preimage plate, and §1's "misreads cannot convert one kind into another" is a claim about its engine, `decode_with_correction` (adversarial M-3) |
