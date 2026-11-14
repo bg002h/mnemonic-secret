@@ -45,7 +45,9 @@ C-20 and D are Minors the grade fixes in the diff, so no entry. The split `--out
 - The workflow's `docs-only.sh` gating step needs CI event context; every changed file set includes code, so none of the skipped-on-docs-only steps is skipped.
 
 ## STOPs
-None. Observations (not decisions): the grade says 706 workspace tests; this run counted per job, not the whole workspace
+1. CHANGELOG entry NOT written: the grade (§6 row CHANGELOG.md:392, §8) says "the fix adds its own entry" and lists a CHANGELOG entry among the ms changes, but gives no text. Wording is undecided, so I stopped. Place: `## ms-cli [Unreleased]` / `### Fixed` (the existing convention). Needs the coordinator's wording.
+
+Observations (not decisions): the grade says 706 workspace tests; this run counted per job, not the whole workspace
 (ms-codec 210 + ms-cli 496). The README's `ms verify` example comment (L24, "round-trips against the original phrase") was not in the grade's list and is left as is.
 
-Counts: Critical 0, Important 0 (found by me), Minor 0, STOPs 0.
+Counts: Critical 0, Important 0 (found by me), Minor 0, STOPs 1.
