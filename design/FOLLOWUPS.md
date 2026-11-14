@@ -1269,6 +1269,24 @@ deferred-minor. From the toolkit-side review report `agent-reports/whole-diff-ar
 - **Status:** `deferred-minor`
 - **Tier:** `v1+`
 
+### `ms-remedies-review-minors` — Minors and Nits of the remedy-text diff review (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-ms-remedies-diff.md` (0 C / 2 I / 9 M / 3 N; both Importants fixed on the branch).
+- **Where:** `crates/ms-cli/tests/argv_remedy_runs.rs`, `crates/ms-cli/src/argv_guard.rs` `private_channels`, `crates/ms-cli/src/cmd/hashlock.rs`, `design/SPEC_ms_hashlock.md`.
+- **What:**
+  - M-1: `c_phrase_stdin_remedy` runs a retyped list, not the refusal's own text; the review gives the row `c2_phrase_stdin_refusal_channels_run_as_printed` (run, not added).
+  - M-2: no row drives the shared ms1 arm for `derive`, `inspect`, `combine`; rows `k_derive_ms1` and `k_inspect_ms1` are given (run, not added).
+  - M-3: the derive passphrase line can lose `< pass.txt` unseen (the row feeds an empty stdin).
+  - M-4: the printed `-k K -n N` and `FILE` are placeholders; pasted as printed, `ms split -k K -n N --in seed.txt` exits 64. The text never says K and N are numbers.
+  - M-5: mutation survivor `cmd/hashlock.rs:603` (`!(args.json && args.no_engraving_card)` replaced by `true`): no row with `--json --no-engraving-card`; older than this fix.
+  - M-6: `design/SPEC_ms_hashlock.md` :300, :510, :876 cite `payload_lang.rs:61`; the `unreachable!` arm is at :68.
+  - M-8: for a preimage plate through `verify`/`derive`, an entropy card through `hashlock` and an `s` card through `combine`, the guard prints an `--in FILE` line that then exits 1 or 2; it fails closed and the refusal names the right verb.
+  - N-1: `ms derive --passphrase X` leads with `ms encode --in seed.txt --out card.ms1`, which replaces an existing `card.ms1` (the 2026-08-26 overwrite ruling).
+  - N-2: `ms hashlock --passphrase X` (not a hashlock flag) prints `--hashlock-phrase-stdin < phrase.txt`.
+- **Why deferred:** Minor and Nit; the review stops at 0 C / 0 I.
+- **Status:** `deferred-minor`
+- **Tier:** `v1+`
+
 ### `ms-split-out-refuses-existing` — `ms split --out` overwrote an existing share set (repo: **mnemonic-secret**; owning phase: this PR)
 
 - **Surfaced:** 2026-11-13, coordinator `agent-reports/grade-ms-remedies.md` §7; owner ruling 2026-11-13 ("Refuse"); graded Important.

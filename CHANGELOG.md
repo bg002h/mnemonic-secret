@@ -19,12 +19,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `ms encode -`, `ms split -` and `ms repair -` (exit 64: none of them takes a
   bare `-`), `split` lines without `-k` and `-n`, `ms verify --in FILE` and
   `ms verify -` for a typed phrase (both failed, and no working line was
-  shown), `ms hashlock <ms1>` (refused by the guard itself) and, for a verb
-  with no channel for the material, a line that verb cannot parse
-  (`ms verify --hex -`); `derive`'s `--hex` remedy led with the phrase route.
-  Every printed line is now one that runs. The README Quickstart examples are
-  changed to forms the guard accepts. No flag, verb or exit code changes.
-  `tests/argv_remedy_runs.rs`.
+  shown), and, for a verb with no channel for the material, a line that verb
+  cannot parse (`ms verify --hex -`); `derive`'s `--hex` remedy led with the
+  phrase route. The typed refusals for a preimage plate (`ms verify`/`ms
+  derive`) and for a plate given as a hashlock phrase printed `ms hashlock
+  <ms1>` (refused by the guard itself) or an "ms1 argument" channel; they now
+  name `--in FILE` and `-`. The brainwallet warning's alternative is now
+  `--random --out FILE` (bare `--random` exits 64). Where a verb has no
+  channel for the material, the guard now prints `ms <verb> --help`. The
+  README Quickstart is changed to forms the guard accepts. No flag, verb or
+  exit code changes. `tests/argv_remedy_runs.rs`.
 - **A stdout that cannot take the output no longer panics or reports success.**
   Most verbs wrote with `println!`, which panicked (exit 101, "failed printing
   to stdout") on a full disk or `> /dev/full`; `split`, `derive`, `hashlock`,

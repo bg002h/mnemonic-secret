@@ -15,8 +15,10 @@ The installed binary is named `ms`.
 ## Quickstart
 
 ```bash
-# Encode a 12-word BIP-39 mnemonic held in seed.txt.
-ms encode --phrase - < seed.txt
+# Write your 12-word phrase into seed.txt first, with a text editor: a phrase typed on a command line is refused, and your shell would keep it in history.
+
+# Encode the phrase held in seed.txt into the card file card.ms1.
+ms encode --phrase - --out card.ms1 < seed.txt
 
 # Recover from an engraved string.
 ms decode --in card.ms1
