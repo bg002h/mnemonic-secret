@@ -1268,3 +1268,12 @@ deferred-minor. From the toolkit-side review report `agent-reports/whole-diff-ar
 - **Why deferred:** Minor; the passphrase still needs its own channel, and the remedy-text FIX carries only the Important items.
 - **Status:** `deferred-minor`
 - **Tier:** `v1+`
+
+### `ms-split-out-refuses-existing` — `ms split --out` overwrote an existing share set (repo: **mnemonic-secret**; owning phase: this PR)
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/grade-ms-remedies.md` §7; owner ruling 2026-11-13 ("Refuse"); graded Important.
+- **Where:** `crates/ms-cli/src/cmd/split.rs` (`run`, `write_shares`), `crates/ms-cli/src/out.rs` (`refuse_existing_out`, `write_artifact_create_new`).
+- **What:** `--out FILE` over an existing file exited 0 and replaced the old set; a new set does not combine with the old one (`id mismatch among shares`). Now exit 64 before the secret is read, and the create is `create_new`. Rows: `tests/split_out_refuses_existing.rs`, the unit test in `cmd/split.rs`.
+- **Companion:** mnemonic-toolkit `design/FOLLOWUPS.md::ms-split-out-refuses-existing-manual` (`43-ms.md`, `67-split.md`); mnemonic-gui `design/FOLLOWUPS.md::ms-split-out-help-mirror` (`src/schema/ms.rs` split `--out` help).
+- **Status:** `open`
+- **Tier:** `cross-repo`
