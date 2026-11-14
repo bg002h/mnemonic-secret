@@ -136,6 +136,11 @@ fn fixtures(dir: &Path, verb: &str) {
         "broken.txt",
         &format!("{}\n", broken.iter().collect::<String>()),
     );
+    // `split --out` refuses an existing file, and split's own example writes
+    // shares.txt: under `split` it must not be a fixture.
+    if verb == "split" {
+        return;
+    }
     // Built from its own seed file: under `hashlock`, phrase.txt is not one.
     w(".seed-for-shares.txt", Z12);
     let split = ms()

@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## ms-cli [Unreleased]
 
+### Changed
+- **`ms split --out FILE` refuses an existing FILE** (exit 64, naming it), as
+  `ms hashlock --random --out` does: each run draws a new share set, so a set
+  it overwrote could not be re-made. It used to overwrite and exit 0. The
+  check runs before the secret is read; a directory, a symlink (dangling or
+  not) and `/dev/null` count as existing. `encode`, `repair` and the other
+  `hashlock` sources still overwrite. `tests/split_out_refuses_existing.rs`.
+
 ### Fixed
 - **Remedy lines that `ms` prints now run as printed.** The argv guard printed
   `ms encode -`, `ms split -` and `ms repair -` (exit 64: none of them takes a

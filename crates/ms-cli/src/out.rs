@@ -16,13 +16,38 @@
 
 use crate::error::{CliError, Result};
 
+/// The exit-64 refusal for an existing `--out` path. `what` names the artifact
+/// that cannot be re-made ("a --random preimage", "a new share set").
+fn exists_refusal(path: &std::path::Path, what: &str) -> CliError {
+    CliError::Usage(format!(
+        "--out {} already exists; {what} will not overwrite it (choose another file, or move the old one first)",
+        path.display()
+    ))
+}
+
+/// Refuse an existing `--out` path BEFORE any input is read or randomness drawn.
+/// `symlink_metadata` does not follow links, so a dangling symlink counts as
+/// existing, as it does for `O_EXCL`. Any other lookup error is left for the
+/// create to report. The create stays `create_new`: this check is early, not
+/// atomic.
+pub(crate) fn refuse_existing_out(path: &std::path::Path, what: &str) -> Result<()> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Err(exists_refusal(path, what)),
+        Err(_) => Ok(()),
+    }
+}
+
 /// Like `write_artifact`, but REFUSES an existing path (exit 64, naming it)
-/// instead of truncating. For `--random` only: that artifact is a function of
-/// nothing and cannot be re-made (SPEC_ms_hashlock §4.1).
+/// instead of truncating. For artifacts that are a function of nothing and
+/// cannot be re-made: `hashlock --random` (SPEC_ms_hashlock §4.1) and `split`.
 ///
 /// The refusal names the PATH and never the artifact, for the same reason
 /// `write_artifact`'s does.
-pub(crate) fn write_artifact_create_new(path: &std::path::Path, body: &str) -> Result<()> {
+pub(crate) fn write_artifact_create_new(
+    path: &std::path::Path,
+    body: &str,
+    what: &str,
+) -> Result<()> {
     use std::io::Write;
     let mut opts = std::fs::OpenOptions::new();
     opts.write(true).create_new(true);
@@ -36,10 +61,7 @@ pub(crate) fn write_artifact_create_new(path: &std::path::Path, body: &str) -> R
     let mut f = match opts.open(path) {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            return Err(CliError::Usage(format!(
-                "--out {} already exists; a --random preimage will not overwrite it (choose another file, or move the old one first)",
-                path.display()
-            )));
+            return Err(exists_refusal(path, what));
         }
         Err(e) => {
             return Err(CliError::BadInput(format!(

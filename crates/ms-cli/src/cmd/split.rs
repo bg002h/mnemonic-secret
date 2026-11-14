@@ -29,11 +29,11 @@ use crate::language::CliLanguage;
 pub struct SplitArgs {
     /// Write the canonical artifact to FILE, **owner-only (0600)**.
     ///
-    /// Through the shared crate's `write::write_private`, which sets the mode on
-    /// the OPEN FILE as well as passing it to `OpenOptions` -- the latter binds
-    /// on CREATE only, so an existing 0644 target would otherwise stay 0644 and
-    /// the tool would report success. It OVERWRITES (§6b), and truncates, so a
-    /// shrinking rewrite leaves no tail of the old file.
+    /// FILE must not exist: each run draws a new share set, so a set it
+    /// overwrote could not be re-made. Any existing FILE (a directory, a
+    /// symlink, /dev/null) is refused with exit 64 before the secret is read,
+    /// and the file is created with O_CREAT|O_EXCL, so one that appears after
+    /// that check is refused too.
     ///
     /// **Not to be confused with `ms gen-man --out <DIR>`**, which is shipped,
     /// exampled, driven by this repo's `man-release.yml` and by
@@ -104,6 +104,11 @@ pub fn run(mut args: SplitArgs) -> Result<u8> {
         std::mem::take(&mut args.phrase).map(Zeroizing::new);
     let hex_arg: Option<Zeroizing<String>> = std::mem::take(&mut args.hex).map(Zeroizing::new);
 
+    // An existing --out is refused before the secret is read or a share drawn.
+    if let Some(path) = args.out.as_deref() {
+        crate::out::refuse_existing_out(path, SPLIT_OUT_WHAT)?;
+    }
+
     // Shared entropy-resolution + AUTO-route (English/hex → entr; non-English
     // phrase → mnem). The 2nd tuple element (language_for_card) is ignored —
     // split derives the JSON `language` field from the Payload itself.
@@ -143,7 +148,7 @@ pub fn run(mut args: SplitArgs) -> Result<u8> {
             body.push('\n');
         }
         let body = zeroize::Zeroizing::new(body);
-        crate::out::write_artifact(path, &body)?;
+        write_shares(path, &body)?;
     }
 
     if args.json {
@@ -168,6 +173,14 @@ pub fn run(mut args: SplitArgs) -> Result<u8> {
         );
     }
     Ok(0)
+}
+
+/// What `split --out` refuses to overwrite, in the exit-64 message.
+const SPLIT_OUT_WHAT: &str = "a new share set";
+
+/// Create-new, never truncate: the early check in `run` is not atomic.
+fn write_shares(path: &std::path::Path, body: &str) -> Result<()> {
+    crate::out::write_artifact_create_new(path, body, SPLIT_OUT_WHAT)
 }
 
 /// The 4-char codex32 id field of a share string (between the `1` separator +
@@ -240,5 +253,27 @@ fn emit_labels(shares: &[String]) {
     let mut err = stderr.lock();
     for (i, _share) in shares.iter().enumerate() {
         let _ = writeln!(err, "share {} of {}:", i + 1, shares.len());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// The write itself is create-new: a file that appears between the early
+    /// check and the write is refused, not truncated.
+    #[test]
+    fn write_shares_refuses_a_file_that_appeared_after_the_check() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("shares.txt");
+        std::fs::write(&p, "planted\n").unwrap();
+        let e = super::write_shares(&p, "new\n").unwrap_err();
+        assert_eq!(e.exit_code(), 64);
+        assert_eq!(
+            e.message(),
+            format!(
+                "--out {} already exists; a new share set will not overwrite it (choose another file, or move the old one first)",
+                p.display()
+            )
+        );
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "planted\n");
     }
 }

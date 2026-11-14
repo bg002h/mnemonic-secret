@@ -414,7 +414,11 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
 
     if let Some(path) = args.out.as_deref() {
         if is_random {
-            crate::out::write_artifact_create_new(path, &format!("{ms1}\n"))?;
+            crate::out::write_artifact_create_new(
+                path,
+                &format!("{ms1}\n"),
+                "a --random preimage",
+            )?;
         } else {
             crate::out::write_artifact(path, &format!("{ms1}\n"))?;
         }

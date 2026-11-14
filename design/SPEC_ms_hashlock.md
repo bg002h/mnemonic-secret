@@ -352,6 +352,11 @@ filename (`--out X.txt`) is the shape a second policy would reuse on Tuesday
 and destroy Monday's (R0 r0 adversarial C-2). The other four sources keep the
 2026-08-26 semantics unchanged, and `--out` still creates owner-only.
 
+**`ms split --out` refuses the same way** (owner ruling 2026-11-13): each run
+draws a new share set, so the 2026-08-26 premise fails for it too. Its message
+says `a new share set will not overwrite it`, and it refuses before the secret
+is read. `encode` and `repair` keep the 2026-08-26 semantics.
+
 **Zero sources is exit 64**, listing the five sources — the same treatment two
 sources gets. It must not default to stdin: a bare `ms hashlock` at a terminal
 would then block with no prompt, which is the `mt` finding §4.3 fixes for one
