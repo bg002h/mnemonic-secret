@@ -1295,3 +1295,16 @@ deferred-minor. From the toolkit-side review report `agent-reports/whole-diff-ar
 - **Companion:** mnemonic-toolkit `design/FOLLOWUPS.md::ms-split-out-refuses-existing-manual` (`43-ms.md`, `67-split.md`); mnemonic-gui `design/FOLLOWUPS.md::ms-split-out-help-mirror` (`src/schema/ms.rs` split `--out` help).
 - **Status:** `open`
 - **Tier:** `cross-repo`
+
+### `ms-split-out-review-minors` — Minors and Nits of the `split --out` refusal review (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-13, coordinator `agent-reports/review-ms-split-out-diff.md` (0 C / 1 I / 2 M / 2 N; the Important, a missing row, is added on the branch).
+- **Where:** `crates/ms-cli/src/out.rs` `write_artifact_create_new`, `design/SPEC_ms_v0_2_kofn.md` §3, `crates/ms-cli/tests/f677_help_matches_behaviour.rs`.
+- **What:**
+  - M1: a write that fails after the create (no space, a quota, a file-size limit) exits 1 and leaves a 0-byte FILE; the next run refuses it as "the old one". Also true of `hashlock --random`. The review gives the fix (remove the file this run created when the write fails) and the row `a_failed_write_leaves_no_file_behind` (run, not added).
+  - M2: the kofn spec bullet says the refusal comes "before the secret is read"; a FILE that appears after the check is refused at the create (exit 64, after the read), and `FILE/` naming a regular file fails at the create with exit 1. Both fail closed. The review gives the sentence to append.
+  - N1: f677 `fixtures()` returns early for split, so a fixture added after that point is silently absent under split.
+  - N2: the refusal could say the old file is unchanged; ruled text, not changed.
+- **Why deferred:** Minor and Nit; the review stops at 0 C / 0 I.
+- **Status:** `deferred-minor`
+- **Tier:** `v1+`

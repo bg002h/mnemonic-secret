@@ -165,3 +165,21 @@ fn hashlock_random_refusal_text_is_unchanged() {
         )
     );
 }
+
+/// A dangling symlink is refused before the secret is read, not only at the
+/// O_EXCL create (`symlink_metadata`, not `metadata`).
+#[test]
+fn a_dangling_symlink_is_refused_before_the_secret_is_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("link");
+    std::os::unix::fs::symlink(dir.path().join("nowhere"), &p).unwrap();
+    let missing = dir.path().join("no-such-phrase.txt");
+    let out = ms()
+        .args(["split", "--in"])
+        .arg(&missing)
+        .args(["-k", "2", "-n", "3", "--out"])
+        .arg(&p)
+        .output()
+        .unwrap();
+    assert_refused(&out, &p);
+}
