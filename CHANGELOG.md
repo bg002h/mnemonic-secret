@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## ms-cli [Unreleased]
 
+## ms-cli [0.20.4] — 2026-11-13
+
 ### Changed
 - **`ms split --out FILE` refuses an existing FILE** (exit 64, naming it), as
   `ms hashlock --random --out` does: each run draws a new share set, so a set
