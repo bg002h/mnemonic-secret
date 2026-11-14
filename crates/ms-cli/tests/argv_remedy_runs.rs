@@ -581,3 +581,33 @@ fn d_random_fragment() {
             .unwrap_or("")
     );
 }
+
+// A `--help` line always runs, so `row` cannot tell a real channel from the
+// "no channel" fallback. Where a verb HAS a channel for the material, the guard
+// must name it: at least one printed line that is not a `--help` line.
+fn names_a_channel(verb_args: &[&str]) {
+    let o = ms().args(verb_args).output().unwrap();
+    let err = String::from_utf8_lossy(&o.stderr).to_string();
+    assert!(err.contains("on ARGV"), "guard did not fire: {err}");
+    let named = err
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with("ms ") && !l.contains("HISTFILE"))
+        .any(|l| !l.split(" #").next().unwrap().trim().ends_with("--help"));
+    assert!(
+        named,
+        "only a `--help` line was printed for {verb_args:?}: {err}"
+    );
+}
+#[test]
+fn z_a_channel_is_named_where_one_exists() {
+    names_a_channel(&[
+        "hashlock",
+        "--hashlock-phrase",
+        "correct horse battery staple",
+    ]);
+    names_a_channel(&["repair", "--ms1", CARD]);
+    names_a_channel(&["encode", "--hex", HEX]);
+    names_a_channel(&["split", "-k", "2", "-n", "3", "--hex", HEX]);
+    names_a_channel(&["verify", "--in", "x", "--phrase", PHRASE12]);
+}
