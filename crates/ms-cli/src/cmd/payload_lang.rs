@@ -43,7 +43,7 @@ pub(crate) fn payload_entropy_and_language(
         // the executable remedy (SPEC_ms_hashlock §5; review I-3).
         Payload::Preimage(_) => {
             return Err(crate::error::CliError::BadInput(
-                "this is a hashlock preimage plate, not a seed backup; use `ms hashlock <ms1>` (or `ms hashlock --in FILE`) to re-derive its digest".to_string(),
+                "this is a hashlock preimage plate, not a seed backup; use `ms hashlock --in FILE` (or `ms hashlock -` on stdin) to re-derive its digest".to_string(),
             ))
         }
         Payload::Entr(b) => (Zeroizing::new(b), cli_lang, cli_lang_defaulted),

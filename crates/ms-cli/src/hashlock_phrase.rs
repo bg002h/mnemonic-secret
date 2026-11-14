@@ -40,7 +40,7 @@ impl PhraseRefusal {
             PhraseRefusal::NotPrintableAscii { byte, at } => format!(
                 "the hashlock phrase must be printable ASCII (bytes 0x20..0x7E); byte 0x{byte:02x} at position {at} is not"
             ),
-            PhraseRefusal::Ms1Shaped => "that is an ms1 string, not a hashlock phrase; pass it as the ms1 argument, `-` on stdin, or `--in FILE`".to_string(),
+            PhraseRefusal::Ms1Shaped => "that is an ms1 string, not a hashlock phrase; pass it with `--in FILE`, or `-` on stdin".to_string(),
             PhraseRefusal::TooLong { chars } => format!(
                 "the hashlock phrase is {chars} characters; at most {HASHLOCK_PHRASE_MAX_CHARS} are allowed"
             ),

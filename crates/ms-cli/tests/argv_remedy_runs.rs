@@ -28,7 +28,7 @@
 //! So this file EXECUTES what the guard prints, rather than matching its text.
 
 use assert_cmd::Command;
-use std::fs;
+use std::{fs, path::Path};
 
 const PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
 const HEX: &str = "0000000000000000000000000000000000000000000000000000000000000001";
@@ -226,4 +226,388 @@ fn the_phrase_stdin_trap_refuses_and_its_remedy_runs() {
         stdout.contains("account_xpub:") && stdout.contains("xpub"),
         "the prescribed recipe ran but produced no account xpub:\n{stdout}"
     );
+}
+
+// ---- Every printed line RUN, in a directory holding only the material that tripped the guard
+// (plus the files the holder's own command named), with FILE/K/N filled in.
+
+const PHRASE12: &str =
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const CARD: &str = "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f";
+const PASS: &str = "hunter2hunter2";
+
+#[derive(Clone, Copy)]
+enum M {
+    Phrase,
+    Hex,
+    Card,
+    Plate,
+    Pass,
+    HlPhrase,
+}
+
+/// Write the material under the name its channel uses; return (file name, content).
+fn material(dir: &Path, m: M) -> (&'static str, String) {
+    let (name, s) = match m {
+        M::Phrase => ("seed.txt", PHRASE12.to_string()),
+        M::Hex => ("entropy.hex", HEX.to_string()),
+        M::Card => ("card.ms1", CARD.to_string()),
+        M::Plate => {
+            let f = dir.join("card.ms1");
+            assert!(ms()
+                .args(["hashlock", "--random", "--out"])
+                .arg(&f)
+                .output()
+                .unwrap()
+                .status
+                .success());
+            (
+                "card.ms1",
+                fs::read_to_string(&f).unwrap().trim().to_string(),
+            )
+        }
+        M::Pass => ("pass.txt", PASS.to_string()),
+        M::HlPhrase => ("phrase.txt", "correct horse battery staple".to_string()),
+    };
+    fs::write(dir.join(name), &s).unwrap();
+    if matches!(m, M::Hex) {
+        fs::write(dir.join("preimage.hex"), &s).unwrap();
+    }
+    (name, s)
+}
+
+/// Trigger with `args` (`@` = the material, literally on argv); run every printed line.
+fn row(m: M, args: &[&str], aux: &[(&str, &str)]) {
+    let d = tempfile::tempdir().unwrap();
+    for (n, c) in aux {
+        fs::write(d.path().join(n), c).unwrap();
+    }
+    if !aux.iter().any(|(n, _)| *n == "pass.txt") {
+        fs::write(d.path().join("pass.txt"), PASS).unwrap();
+    }
+    let (name, s) = material(d.path(), m);
+    let argv: Vec<&str> = args
+        .iter()
+        .map(|a| if *a == "@" { s.as_str() } else { a })
+        .collect();
+    let o = ms().current_dir(d.path()).args(&argv).output().unwrap();
+    let err = String::from_utf8_lossy(&o.stderr).to_string();
+    assert!(
+        !o.status.success() && err.contains("on ARGV"),
+        "guard did not fire: {err}"
+    );
+    let lines: Vec<&str> = err
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with("ms ") && !l.contains("HISTFILE"))
+        .collect();
+    assert!(!lines.is_empty(), "no printed line");
+    let mut bad = Vec::new();
+    for l in &lines {
+        let body = l.split(" #").next().unwrap().trim();
+        let (cmd, redir) = match body.split_once(" < ") {
+            Some((c, r)) => (c, Some(r.trim())),
+            None => (body, None),
+        };
+        let toks: Vec<String> = cmd
+            .split_whitespace()
+            .skip(1)
+            .map(|w| match w {
+                "FILE" => name.to_string(),
+                "K" => "2".into(),
+                "N" => "3".into(),
+                o => o.into(),
+            })
+            .collect();
+        let mut c = ms();
+        c.current_dir(d.path()).args(&toks);
+        match redir {
+            Some(r) => {
+                c.write_stdin(fs::read(d.path().join(r)).unwrap_or_default());
+            }
+            None if toks.iter().any(|t| t == "-") => {
+                c.write_stdin(s.clone());
+            }
+            None => {}
+        }
+        let r = c.output().unwrap();
+        if !r.status.success() {
+            bad.push(format!(
+                "printed `{l}` FAILED rc={:?}: {}",
+                r.status.code(),
+                String::from_utf8_lossy(&r.stderr)
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+            ));
+        }
+    }
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
+}
+
+// A: the stdin line and split's missing -k/-n
+#[test]
+fn a_encode_phrase() {
+    row(M::Phrase, &["encode", "--phrase", "@"], &[]);
+}
+#[test]
+fn a_split_phrase() {
+    row(
+        M::Phrase,
+        &["split", "-k", "2", "-n", "3", "--phrase", "@"],
+        &[],
+    );
+}
+#[test]
+fn a_split_hex() {
+    row(M::Hex, &["split", "-k", "2", "-n", "3", "--hex", "@"], &[]);
+}
+#[test]
+fn a_repair_ms1() {
+    row(M::Card, &["repair", "--ms1", "@"], &[]);
+}
+// B: verify's phrase
+#[test]
+fn b_verify_phrase() {
+    row(
+        M::Phrase,
+        &["verify", "--in", "card.ms1", "--phrase", "@"],
+        &[("card.ms1", CARD)],
+    );
+}
+// E: a verb given material it has no channel for
+#[test]
+fn e_verify_hex() {
+    row(
+        M::Hex,
+        &["verify", "--in", "card.ms1", "--hex", "@"],
+        &[("card.ms1", CARD)],
+    );
+}
+#[test]
+fn e_decode_phrase() {
+    row(M::Phrase, &["decode", "@"], &[]);
+}
+#[test]
+fn e_inspect_hex() {
+    row(M::Hex, &["inspect", "--hex", "@"], &[]);
+}
+#[test]
+fn e_combine_phrase() {
+    row(M::Phrase, &["combine", "--phrase", "@"], &[]);
+}
+#[test]
+fn e_repair_hex() {
+    row(M::Hex, &["repair", "--hex", "@"], &[]);
+}
+#[test]
+fn e_encode_ms1() {
+    row(M::Card, &["encode", "--phrase", "@"], &[]);
+}
+#[test]
+fn e_split_ms1() {
+    row(
+        M::Card,
+        &["split", "-k", "2", "-n", "3", "--phrase", "@"],
+        &[],
+    );
+}
+#[test]
+fn e_encode_passphrase() {
+    row(
+        M::Pass,
+        &["encode", "--in", "seed.txt", "--passphrase", "@"],
+        &[("seed.txt", PHRASE12)],
+    );
+}
+#[test]
+fn e_verify_hashlock_phrase() {
+    row(
+        M::HlPhrase,
+        &["verify", "--in", "card.ms1", "--hashlock-phrase", "@"],
+        &[("card.ms1", CARD)],
+    );
+}
+// M-2: derive --hex
+#[test]
+fn m2_derive_hex() {
+    row(M::Hex, &["derive", "--hex", "@"], &[]);
+}
+// Controls: pass on master and with the fix (the plant check of the harness)
+#[test]
+fn k_encode_hex() {
+    row(M::Hex, &["encode", "--hex", "@"], &[]);
+}
+#[test]
+fn k_derive_phrase() {
+    row(M::Phrase, &["derive", "--phrase", "@"], &[]);
+}
+#[test]
+fn k_decode_ms1() {
+    row(M::Card, &["decode", "@"], &[]);
+}
+#[test]
+fn k_verify_ms1() {
+    row(M::Card, &["verify", "@"], &[]);
+}
+#[test]
+fn k_hashlock_hex() {
+    row(M::Hex, &["hashlock", "--hex", "@"], &[]);
+}
+#[test]
+fn k_hashlock_plate() {
+    row(M::Plate, &["hashlock", "@"], &[]);
+}
+#[test]
+fn k_hashlock_phrase() {
+    row(M::HlPhrase, &["hashlock", "--hashlock-phrase", "@"], &[]);
+}
+
+// C: texts naming `ms hashlock <ms1>` / "the ms1 argument"
+fn backticked_hashlock(e: &str) -> Vec<String> {
+    e.split('`')
+        .skip(1)
+        .step_by(2)
+        .filter(|s| s.starts_with("ms hashlock"))
+        .map(String::from)
+        .collect()
+}
+fn run_plate_cmd(dir: &Path, cmd: &str, plate: &str) -> Option<String> {
+    let toks: Vec<String> = cmd
+        .split_whitespace()
+        .skip(1)
+        .map(|w| match w {
+            "<ms1>" => plate.to_string(),
+            "FILE" => "card.ms1".into(),
+            o => o.into(),
+        })
+        .collect();
+    let mut c = ms();
+    c.current_dir(dir).args(&toks);
+    if toks.iter().any(|t| t == "-") {
+        c.write_stdin(plate.to_string());
+    }
+    let r = c.output().unwrap();
+    (!r.status.success()).then(|| {
+        format!(
+            "printed `{cmd}` FAILED rc={:?}: {}",
+            r.status.code(),
+            String::from_utf8_lossy(&r.stderr)
+                .lines()
+                .next()
+                .unwrap_or("")
+        )
+    })
+}
+#[test]
+fn c_payload_lang() {
+    for verb in ["derive", "verify"] {
+        let d = tempfile::tempdir().unwrap();
+        let (_, p) = material(d.path(), M::Plate);
+        let o = ms()
+            .current_dir(d.path())
+            .args([verb, "--in", "card.ms1"])
+            .output()
+            .unwrap();
+        let e = String::from_utf8_lossy(&o.stderr).to_string();
+        let cmds = backticked_hashlock(&e);
+        assert!(!o.status.success() && !cmds.is_empty(), "{verb}: {e}");
+        let bad: Vec<String> = cmds
+            .iter()
+            .filter_map(|c| run_plate_cmd(d.path(), c, &p))
+            .collect();
+        assert!(bad.is_empty(), "{verb}: {}", bad.join("\n"));
+    }
+}
+#[test]
+fn c_phrase_stdin_remedy() {
+    let d = tempfile::tempdir().unwrap();
+    let (_, p) = material(d.path(), M::Plate);
+    let o = ms()
+        .current_dir(d.path())
+        .args(["hashlock", "--hashlock-phrase-stdin"])
+        .write_stdin(p.clone())
+        .output()
+        .unwrap();
+    let e = String::from_utf8_lossy(&o.stderr).to_string();
+    assert!(
+        !o.status.success() && e.contains("not a hashlock phrase"),
+        "{e}"
+    );
+    // The remedy names channels; each named one must read the plate.
+    let mut bad = Vec::new();
+    if e.contains("ms1 argument") {
+        bad.extend(run_plate_cmd(d.path(), "ms hashlock <ms1>", &p));
+    }
+    for c in ["ms hashlock --in FILE", "ms hashlock -"] {
+        bad.extend(run_plate_cmd(d.path(), c, &p));
+    }
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
+}
+// D: the brainwallet warning's alternative, completed to a command
+#[test]
+fn d_random_fragment() {
+    let d = tempfile::tempdir().unwrap();
+    let o = ms()
+        .current_dir(d.path())
+        .args(["hashlock", "--hashlock-phrase-stdin", "--method", "sha256"])
+        .write_stdin("correct horse battery staple\n")
+        .output()
+        .unwrap();
+    let e = String::from_utf8_lossy(&o.stderr).to_string();
+    let line = e
+        .lines()
+        .find(|l| l.contains("diceware"))
+        .expect("warning printed");
+    let frag = line.rsplit("or ").next().unwrap().trim_end_matches('.');
+    let toks: Vec<String> = std::iter::once("hashlock".to_string())
+        .chain(frag.split_whitespace().map(|w| {
+            if w == "FILE" {
+                "r.ms1".into()
+            } else {
+                w.into()
+            }
+        }))
+        .collect();
+    let r = ms().current_dir(d.path()).args(&toks).output().unwrap();
+    assert!(
+        r.status.success(),
+        "printed `ms {}` FAILED rc={:?}: {}",
+        toks.join(" "),
+        r.status.code(),
+        String::from_utf8_lossy(&r.stderr)
+            .lines()
+            .next()
+            .unwrap_or("")
+    );
+}
+
+// A `--help` line always runs, so `row` cannot tell a real channel from the
+// "no channel" fallback. Where a verb HAS a channel for the material, the guard
+// must name it: at least one printed line that is not a `--help` line.
+fn names_a_channel(verb_args: &[&str]) {
+    let o = ms().args(verb_args).output().unwrap();
+    let err = String::from_utf8_lossy(&o.stderr).to_string();
+    assert!(err.contains("on ARGV"), "guard did not fire: {err}");
+    let named = err
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with("ms ") && !l.contains("HISTFILE"))
+        .any(|l| !l.split(" #").next().unwrap().trim().ends_with("--help"));
+    assert!(
+        named,
+        "only a `--help` line was printed for {verb_args:?}: {err}"
+    );
+}
+#[test]
+fn z_a_channel_is_named_where_one_exists() {
+    names_a_channel(&[
+        "hashlock",
+        "--hashlock-phrase",
+        "correct horse battery staple",
+    ]);
+    names_a_channel(&["repair", "--ms1", CARD]);
+    names_a_channel(&["encode", "--hex", HEX]);
+    names_a_channel(&["split", "-k", "2", "-n", "3", "--hex", HEX]);
+    names_a_channel(&["verify", "--in", "x", "--phrase", PHRASE12]);
 }

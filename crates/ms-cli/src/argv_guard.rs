@@ -496,24 +496,35 @@ fn private_channels(verb: &str, class: &str, value_is_ms1: bool) -> String {
     // continuation form put the caller's source indentation into the message.
     const PAD: &str = "\n      ";
     let hexish = class.contains("hex");
-    // An ms1 on argv is read back through `--in`/stdin by EVERY verb, whatever
-    // the verb's phrase or hex channel happens to be. This arm is first because
     // THE MATERIAL DECIDES, not the flag it arrived behind: a preimage PLATE
     // passed to `--hashlock-phrase` is classed "a hashlock phrase" by
     // `flag_class`, and the route that reads it is still `--in` -- verified,
-    // `ms hashlock --in <plate>` prints the digest. `hashlock_phrase_rule`
-    // asserts exactly that, and caught this when the first version of this
-    // function keyed off `class` alone.
-    if value_is_ms1 || class.contains("ms1") {
-        return [
+    // `ms hashlock --in <plate>` prints the digest (`hashlock_phrase_rule`).
+    let ms1 = value_is_ms1 || class.contains("ms1");
+    // `split` cannot run without its threshold and share count.
+    let kn = if verb == "split" { " -k K -n N" } else { "" };
+    // No channel of this verb reads this material: name none.
+    let none = |what: &str| {
+        vec![format!(
+            "    ms {verb} --help      # `ms {verb}` has no channel for {what}"
+        )]
+    };
+    let lines: Vec<String> = match verb {
+        // `repair` takes no positional: its stdin channel is `--ms1 -`.
+        "repair" if ms1 => vec![
+            "    ms repair --in FILE      # read the ms1 from a file".to_string(),
+            "    ms repair --ms1 -        # or pipe it on stdin".to_string(),
+        ],
+        "verify" | "derive" | "combine" | "decode" | "inspect" | "hashlock" if ms1 => vec![
             format!("    ms {verb} --in FILE      # read the ms1 from a file"),
             format!("    ms {verb} -              # or pipe it on stdin"),
-        ]
-        .join("\n      ");
-    }
-    let lines: Vec<String> = match verb {
-        // `--in`/stdin on `derive` read an ms1. The phrase has to become a card
-        // first; that is two commands and there is no one-liner.
+        ],
+        _ if ms1 => none("an ms1 string"),
+        // `--in`/stdin on `derive` read an ms1. Hex has its own channel.
+        "derive" if hexish => {
+            vec!["    ms derive --hex - < entropy.hex   # hex on stdin".to_string()]
+        }
+        // A phrase has to become a card first; two commands, no one-liner.
         "derive" => vec![
             "    ms encode --in seed.txt --out card.ms1   # phrase -> card, once".to_string(),
             "    ms derive --in card.ms1                   # then derive from the card".to_string(),
@@ -525,14 +536,19 @@ fn private_channels(verb: &str, class: &str, value_is_ms1: bool) -> String {
             vec!["    ms hashlock --hex - < preimage.hex   # 64 hex on stdin".to_string()]
         }
         "hashlock" => vec!["    ms hashlock --hashlock-phrase-stdin < phrase.txt".to_string()],
-        // encode/split take a phrase through `--in`, hex through `--hex -`.
-        _ if hexish => vec![format!(
-            "    ms {verb} --hex - < entropy.hex   # 64 hex on stdin"
+        "encode" | "split" if hexish => vec![format!(
+            "    ms {verb}{kn} --hex - < entropy.hex   # hex on stdin"
         )],
-        _ => vec![
-            format!("    ms {verb} --in FILE      # read it from a file"),
-            format!("    ms {verb} -              # or pipe it on stdin"),
+        // `--in` on encode/split reads a phrase; stdin is `--phrase -`.
+        "encode" | "split" if class == "a BIP-39 mnemonic" => vec![
+            format!("    ms {verb}{kn} --in FILE      # read it from a file"),
+            format!("    ms {verb}{kn} --phrase -     # or pipe it on stdin"),
         ],
+        // `--in` on verify is the CARD; the phrase rides `--phrase -`.
+        "verify" if class == "a BIP-39 mnemonic" => vec![
+            "    ms verify --in card.ms1 --phrase - < seed.txt   # the card, and the phrase on stdin".to_string(),
+        ],
+        _ => none(class),
     };
     lines.join(PAD)
 }

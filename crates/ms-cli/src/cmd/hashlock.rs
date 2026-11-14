@@ -601,7 +601,7 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
     }
     match d.method {
         Some(Method::Sha256) if !(args.json && args.no_engraving_card) => {
-            writeln!(stderr, "WARNING: This is the brainwallet construction: anyone holding the digest tests 10^10 phrases per second. A phrase a person chose is not safe here; use six diceware words or --random.").ok();
+            writeln!(stderr, "WARNING: This is the brainwallet construction: anyone holding the digest tests 10^10 phrases per second. A phrase a person chose is not safe here; use six diceware words or --random --out FILE.").ok();
         }
         Some(Method::Hardened) if !(args.json && args.no_engraving_card) => {
             if d.phrase_chars.unwrap_or(0) < 20 {
