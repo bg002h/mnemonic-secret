@@ -765,7 +765,7 @@ can never be mistaken for BIP-48.
   `--hashlock-phrase-stdin` from a pipe or a redirected file echoes nothing.
   The sibling channels (`ms derive --passphrase-stdin`) have the same shape, so
   a fix should be considered CLI-wide rather than verb-local.
-- **Status:** RESOLVED 2026-11-19 (commit GREEN_SHA, branch fix/hashlock-echo). `read_phrase_stdin` and `parse::read_stdin` (ms1/hex/phrase `-` reads, `combine -`) now turn echo off while reading at a terminal, via the passphrase prompt's `EchoOff` guard; pty tests in `tests/echo_off_at_terminal.rs`. **Tier:** `secret-handling`.
+- **Status:** RESOLVED 2026-11-19 (commit 050384c, branch fix/hashlock-echo). `read_phrase_stdin` and `parse::read_stdin` (ms1/hex/phrase `-` reads, `combine -`) now turn echo off while reading at a terminal, via the passphrase prompt's `EchoOff` guard; pty tests in `tests/echo_off_at_terminal.rs`. **Tier:** `secret-handling`.
 
 ### `release-process-real-publish-step` — RELEASE_PROCESS.md stops at the publish DRY RUN; the real `cargo publish -p ms-codec` is undocumented (tier: process; owning phase: the next ms-codec release)
 
