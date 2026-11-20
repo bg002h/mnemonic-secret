@@ -1307,3 +1307,39 @@ deferred-minor. From the toolkit-side review report `agent-reports/whole-diff-ar
 - **Why deferred:** Minor and Nit; the review stops at 0 C / 0 I.
 - **Status:** `deferred-minor`
 - **Tier:** `v1+`
+
+### `hashlock-echo-pty-sleep-flake` — echo_off_at_terminal pty helper types after a fixed 700 ms sleep (repo: **mnemonic-secret**; owning phase: **none — end batch**)
+
+- **Surfaced:** 2026-11-19, coordinator `agent-reports/review-directfix-ms-hashlock-echo.md` (Minor, M).
+- **Where:** `crates/ms-cli/tests/echo_off_at_terminal.rs` `on_pty`, the 700 ms sleep before typing.
+- **What:** fixed 700 ms sleep before typing; on a loaded runner the child may not have set the mode yet, so the pty echoes and the test fails spuriously (flaky red, never a false green). Poll the slave termios (or wait for the stderr prompt) instead.
+- **Why deferred:** Minor; flaky red only, never a false green.
+- **Status:** `deferred-minor`
+- **Tier:** `v1+`
+
+### `hashlock-echo-restore-and-notty-untested` — no pty row covers restore-after-exit or the non-tty path (repo: **mnemonic-secret**; owning phase: **none — end batch**)
+
+- **Surfaced:** 2026-11-19, coordinator `agent-reports/review-directfix-ms-hashlock-echo.md` (Minor, M).
+- **Where:** `crates/ms-cli/tests/echo_off_at_terminal.rs`.
+- **What:** no test covers restore-after-exit (error path, e.g. a bad ms1 via `decode -`), `combine -`, or the non-tty no-change path; only the two happy paths are pinned. Add a pty row that reads a bad ms1, then checks the pty termios ECHO bit is back on before the slave closes.
+- **Why deferred:** Minor; the happy paths are pinned and the review stops at 0 C / 1 I.
+- **Status:** `deferred-minor`
+- **Tier:** `v1+`
+
+### `hashlock-echo-bool-ignored` — the `bool` from EchoOff::new is ignored at the echo guards (repo: **mnemonic-secret**; owning phase: **none — end batch**)
+
+- **Surfaced:** 2026-11-19, coordinator `agent-reports/review-directfix-ms-hashlock-echo.md` (Nit, N).
+- **Where:** `crates/ms-cli/src/hashlock_phrase.rs` (`is_tty.then(crate::passphrase_input::EchoOff::new)`) and `crates/ms-cli/src/parse.rs` `read_in_file`.
+- **What:** `is_tty.then(EchoOff::new)` and the parse.rs variant bind a `(EchoOff, bool)` tuple option; the `bool` (echo actually disabled) is ignored, so if tcsetattr fails the read proceeds silently visible. Matches "no prompt" behaviour of the sibling but is worth a line in the comment.
+- **Why deferred:** Nit; matches the sibling's behaviour.
+- **Status:** `deferred-minor`
+- **Tier:** `v1+`
+
+### `in-dev-tty-echoes` — `--in /dev/tty` echoes a typed secret at a terminal (repo: **mnemonic-secret**; owning phase: **none — end batch**)
+
+- **Surfaced:** 2026-11-19, coordinator `agent-reports/review-directfix-ms-hashlock-echo.md` (Nit, from I1).
+- **Where:** `crates/ms-cli/src/parse.rs` `read_in_file`.
+- **What:** `--in /dev/tty` echoes as well. It is a different fd from stdin, so it is out of the `/dev/stdin` fix's shape.
+- **Why deferred:** Nit; a separate fd and not part of the `/dev/stdin` fix.
+- **Status:** `deferred-minor`
+- **Tier:** `v1+`
