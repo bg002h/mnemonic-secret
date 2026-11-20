@@ -99,6 +99,7 @@ impl<'a> Source<'a> {
 /// one that quietly read the previous stage of a pipeline would engrave the
 /// wrong card at exit 0.
 pub(crate) fn read_in_file(path: &Path) -> Result<Zeroizing<String>> {
+    let _echo = (crate::passphrase_input::path_is_stdin(path) && io::stdin().is_terminal()).then(crate::passphrase_input::EchoOff::new);
     let buf: Zeroizing<String> = Zeroizing::new(std::fs::read_to_string(path).map_err(|e| {
         CliError::BadInput(format!("failed to read --in {}: {}", path.display(), e))
     })?);
