@@ -132,11 +132,8 @@ fn ms1_read_from_stdin_does_not_echo_at_a_terminal() {
 /// displayed and this fails.
 #[test]
 fn ms1_read_in_dev_stdin_does_not_echo_at_a_terminal() {
-    let (shown, stdout, code) = on_pty(
-        &["decode", "--in", "/dev/stdin"],
-        &format!("{MS1}\n"),
-        true,
-    );
+    let (shown, stdout, code) =
+        on_pty(&["decode", "--in", "/dev/stdin"], &format!("{MS1}\n"), true);
     assert_eq!(code, Some(0), "shown:\n{shown}");
     assert!(!stdout.is_empty());
     assert!(
