@@ -107,6 +107,9 @@ pub fn read_phrase_stdin() -> Result<Zeroizing<Vec<u8>>> {
     use std::io::IsTerminal;
     let stdin = std::io::stdin();
     let is_tty = stdin.is_terminal();
+    // Echo off for the whole read at a terminal, restored on every exit path
+    // by the guard's drop (the same guard the passphrase prompt uses).
+    let _echo = is_tty.then(crate::passphrase_input::EchoOff::new);
     prompt_if_terminal(is_tty, &mut std::io::stderr().lock());
     read_phrase_from(is_tty, &mut stdin.lock())
 }

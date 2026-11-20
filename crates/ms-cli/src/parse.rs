@@ -4,7 +4,7 @@
 //! handling three workflows with one mechanism: pipe round-trip,
 //! engraver-typed-back chunked form, and terminal copy-paste artifacts.
 
-use std::io::{self, Read};
+use std::io::{self, IsTerminal, Read};
 use std::path::Path;
 
 use zeroize::Zeroizing;
@@ -143,6 +143,10 @@ pub(crate) fn read_stdin() -> Result<Zeroizing<String>> {
     // sequence scrubs on drop. The trimmed copy emitted by callers is
     // their responsibility to wrap.
     let mut buf: Zeroizing<String> = Zeroizing::new(String::new());
+    // At a terminal, echo off for the read (restored by the guard's drop).
+    let _echo = io::stdin()
+        .is_terminal()
+        .then(crate::passphrase_input::EchoOff::new);
     io::stdin()
         .read_to_string(&mut buf)
         .map_err(|e| CliError::BadInput(format!("failed to read stdin: {}", e)))?;
