@@ -162,7 +162,7 @@ pub(crate) fn stdin_is_terminal() -> bool {
 /// restores the mode, resets the signal to its default and re-raises it, so
 /// Ctrl-C at the prompt exits with the conventional signal status and a
 /// working terminal. A signal the process inherited as IGNORED stays ignored.
-struct EchoOff {
+pub(crate) struct EchoOff {
     #[cfg(unix)]
     saved: Option<libc::termios>,
     #[cfg(unix)]
@@ -230,7 +230,7 @@ mod echo_signal {
 
 impl EchoOff {
     /// `(guard, echo_disabled)`.
-    fn new() -> (Self, bool) {
+    pub(crate) fn new() -> (Self, bool) {
         #[cfg(unix)]
         {
             // SAFETY: tcgetattr/tcsetattr on fd 0 with a zeroed, then
