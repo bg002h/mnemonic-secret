@@ -126,3 +126,21 @@ fn ms1_read_from_stdin_does_not_echo_at_a_terminal() {
         "the terminal displayed the ms1 string:\n{shown}"
     );
 }
+
+/// MUTATION: drop the echo-off guard `let _echo = (crate::passphrase_input::path_is_stdin(path) && io::stdin().is_terminal()).then(crate::passphrase_input::EchoOff::new);`
+/// in `parse::read_in_file` -> the ms1 string typed into `--in /dev/stdin` is
+/// displayed and this fails.
+#[test]
+fn ms1_read_in_dev_stdin_does_not_echo_at_a_terminal() {
+    let (shown, stdout, code) = on_pty(
+        &["decode", "--in", "/dev/stdin"],
+        &format!("{MS1}\n"),
+        true,
+    );
+    assert_eq!(code, Some(0), "shown:\n{shown}");
+    assert!(!stdout.is_empty());
+    assert!(
+        !shown.contains(MS1),
+        "the terminal displayed the ms1 string:\n{shown}"
+    );
+}
