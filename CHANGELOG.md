@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## ms-cli [Unreleased]
 
+## ms-cli [0.20.5] — 2026-11-20
+
 ### Fixed
 - **A secret read from stdin at a terminal is no longer echoed.** `ms hashlock
   --hashlock-phrase-stdin`, every `-` read of an ms1, hex or phrase (including
