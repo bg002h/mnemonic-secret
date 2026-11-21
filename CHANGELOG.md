@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## ms-cli [Unreleased]
 
+### Fixed
+- **A secret read from stdin at a terminal is no longer echoed.** `ms hashlock
+  --hashlock-phrase-stdin`, every `-` read of an ms1, hex or phrase (including
+  `ms combine -`) and `--in /dev/stdin` now turn terminal echo off for the
+  read, with the same guard the passphrase prompt uses; the terminal mode is
+  restored on every exit path. They used to show the typed text on screen.
+  Piped stdin is unchanged, and no flag or printed text changed.
+
 ## ms-cli [0.20.4] — 2026-11-13
 
 ### Changed
