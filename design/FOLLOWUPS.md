@@ -1343,3 +1343,5 @@ deferred-minor. From the toolkit-side review report `agent-reports/whole-diff-ar
 - **Why deferred:** Nit; a separate fd and not part of the `/dev/stdin` fix.
 - **Status:** `deferred-minor`
 - **Tier:** `v1+`
+- [ms-changelog-restore-wording] status=open grade=M kind=docs owner=none filed=2026-11-21 src=coordinator/agent-reports/review-ms30-changelog.md#m1 repo=mnemonic-secret :: CHANGELOG (echo-off bullet) and hashlock_phrase.rs:110 say the terminal mode is "restored on every exit path"; not true for SIGKILL or abort and no test asserts restoration. Proposed text: "the terminal mode is restored when the read ends, on an error, and on Ctrl-C or other termination signals;".
+- [ms-changelog-stdin-path-wording] status=open grade=N kind=docs owner=none filed=2026-11-21 src=coordinator/agent-reports/review-ms30-changelog.md#n1 repo=mnemonic-secret :: CHANGELOG names only `--in /dev/stdin`; path_is_stdin also matches /dev/fd/0, /proc/self/fd/0 and any path resolving to fd 0. Proposed text: "`--in /dev/stdin` (or any path naming stdin)".
