@@ -60,7 +60,11 @@ fn bh1119_ms_i12_combine_oracle() {
     let entr = format!("{}\n{}\n", share(17, Fe::A), share(17, Fe::C));
     let c = ms(&["combine", "--to", "entropy", "-"], &entr);
     assert_eq!(c.status.code(), Some(0), "{}", err_s(&c));
-    assert!(out_s(&c).starts_with(&format!("{}\n", "00".repeat(16))), "{}", out_s(&c));
+    assert!(
+        out_s(&c).starts_with(&format!("{}\n", "00".repeat(16))),
+        "{}",
+        out_s(&c)
+    );
     // Mnem control: [0x02, 0x00 (English), 16 zero bytes] (length 51).
     let mut d = vec![0x02u8, 0x00];
     d.extend_from_slice(&[0u8; 16]);
@@ -69,7 +73,11 @@ fn bh1119_ms_i12_combine_oracle() {
     let mnem = format!("{}\n{}\n", s, share_data(&d, Fe::C));
     let c = ms(&["combine", "--to", "entropy", "-"], &mnem);
     assert_eq!(c.status.code(), Some(0), "{}", err_s(&c));
-    assert!(out_s(&c).starts_with(&format!("{}\n", "00".repeat(16))), "{}", out_s(&c));
+    assert!(
+        out_s(&c).starts_with(&format!("{}\n", "00".repeat(16))),
+        "{}",
+        out_s(&c)
+    );
 }
 
 #[test]
@@ -110,15 +118,24 @@ fn bh1119_ms_i12_inspect_share_verdict_tracks_length() {
         let want = SECRET_LENGTHS.contains(&s.len());
         let jo = ms(&["inspect", "--json", "-"], &s);
         let to = ms(&["inspect", "-"], &s);
-        assert_eq!((jo.status.code(), to.status.code()), (Some(0), Some(0)), "n={n} len={}", s.len());
+        assert_eq!(
+            (jo.status.code(), to.status.code()),
+            (Some(0), Some(0)),
+            "n={n} len={}",
+            s.len()
+        );
         let j: Value = serde_json::from_slice(&jo.stdout).unwrap();
         let t = out_s(&to);
-        let json_ok = j["would_combine"] == Value::Bool(want) && j["would_decode"] == Value::Bool(want);
+        let json_ok =
+            j["would_combine"] == Value::Bool(want) && j["would_decode"] == Value::Bool(want);
         let text_ok = t.starts_with("OK: K-of-N share (would combine: needs 2 shares)\n") == want
-            && t.starts_with("FAIL: would NOT combine\n") == !want;
+            && t.starts_with("FAIL: would NOT combine\n") != want;
         if !(json_ok && text_ok) {
             wrong.push((n, s.len()));
         }
     }
-    assert!(wrong.is_empty(), "(data bytes, string length) with a wrong verdict: {wrong:?}");
+    assert!(
+        wrong.is_empty(),
+        "(data bytes, string length) with a wrong verdict: {wrong:?}"
+    );
 }
