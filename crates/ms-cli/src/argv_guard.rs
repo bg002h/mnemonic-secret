@@ -629,6 +629,43 @@ mod tests {
             .collect()
     }
 
+    const PN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const PN64: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    #[test]
+    fn substitute_keeps_path_values() {
+        let got = substitute(&argv(&[
+            "encode",
+            ALLOW_FLAG,
+            "--in",
+            PN,
+            "--out",
+            PN64,
+        ]))
+        .unwrap();
+        assert_eq!(got, argv(&["encode", "--in", PN, "--out", PN64]));
+    }
+
+    #[test]
+    fn substitute_keeps_path_values_equals() {
+        let in_eq = format!("--in={PN}");
+        let out_eq = format!("--out={PN64}");
+        let got = substitute(&argv(&["encode", ALLOW_FLAG, &in_eq, &out_eq])).unwrap();
+        assert_eq!(got, argv(&["encode", &in_eq, &out_eq]));
+    }
+
+    #[test]
+    fn substitute_path_rule_stops_at_dashdash() {
+        let got = substitute(&argv(&["decode", ALLOW_FLAG, "--", "--in", PN])).unwrap();
+        assert_eq!(got, argv(&["decode", "--", "--in", "-"]));
+    }
+
+    #[test]
+    fn substitute_in_before_allow_flag_takes_no_value() {
+        let got = substitute(&argv(&["encode", "--in", ALLOW_FLAG])).unwrap();
+        assert_eq!(got, argv(&["encode", "--in"]));
+    }
+
     /// Driven through `looks_like_ms1` -- the ONE predicate, the one production
     /// calls (H6 R0 round 0, fidelity M-3). These four rows used to drive a
     /// crate-local copy that answered differently for the uppercase spelling.
