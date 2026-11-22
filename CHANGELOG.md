@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## ms-cli [Unreleased]
 
+## ms-cli [0.21.0] — 2026-11-22
+
 ### Changed
 - **`ms encode` prints the ms1 once.** The stderr `engraving card: <grouped ms1>` line is gone (Brian
   2026-11-22, reversing D4 of the constellation uniformity spec). `--group-size N` now groups stdout, on
