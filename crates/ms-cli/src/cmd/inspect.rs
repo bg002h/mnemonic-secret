@@ -59,16 +59,17 @@ pub fn run(args: InspectArgs) -> Result<u8> {
     )?);
     let report = ms_codec::inspect(&ms1)?; // §2.3.1: failures return CliError::Codex32 here.
 
-    // A threshold ∈ 2..=9 string is one share of a K-of-N share-set — a
+    // A threshold ∈ 2..=9 string is one share of a K-of-N share-set (checked
+    // for index `s` and for a string length no ms1 secret has) — a
     // first-class read, NOT a malformed v0.1 single-string. Report it as such
     // (kind: share, threshold/id/index) and SKIP the v0.1 rule-walk: a
     // distributed share's data()[0] is an interpolated value, not a payload
     // prefix, so prefix_byte / payload_bytes / the entr/mnem kind are garbage.
     if is_share(&report) {
         if args.json {
-            emit_share_json(&report)?;
+            emit_share_json(&report, ms1.len())?;
         } else {
-            emit_share_text(&report);
+            emit_share_text(&report, ms1.len());
         }
         return Ok(0);
     }
@@ -97,17 +98,36 @@ fn is_secret_share(report: &InspectReport) -> bool {
     report.share_index == 's'
 }
 
-/// Text report for a lone K-of-N share. Reports kind/threshold/id/index +
-/// "would combine (needs k)". Suppresses prefix_byte / payload_bytes / the
-/// entr/mnem kind — a distributed share's data()[0] is interpolated, not a
-/// payload-kind prefix.
-fn emit_share_text(report: &InspectReport) {
+/// Failure reasons for a lone K-of-N share, in the order `ms combine` checks
+/// them: the index-`s` refusal first, then the string length (a share's data
+/// length equals the secret's, so a length outside the union of every ms1
+/// secret length cannot be recombined into a valid payload).
+fn share_reasons(report: &InspectReport, str_len: usize) -> Vec<&'static str> {
+    let mut reasons: Vec<&'static str> = Vec::new();
     if is_secret_share(report) {
+        reasons.push("share-index-secret");
+    }
+    if !VALID_STR_LENGTHS.contains(&str_len)
+        && !VALID_MNEM_STR_LENGTHS.contains(&str_len)
+        && !VALID_PREIMAGE_STR_LENGTHS.contains(&str_len)
+    {
+        reasons.push("unexpected-string-length");
+    }
+    reasons
+}
+
+/// Text report for a lone K-of-N share. Reports kind/threshold/id/index +
+/// "would combine (needs k)", or `FAIL: would NOT combine` when the share is
+/// at index `s` or its string length is not that of any ms1 secret. Suppresses
+/// prefix_byte / payload_bytes / the entr/mnem kind — a distributed share's
+/// data()[0] is interpolated, not a payload-kind prefix.
+fn emit_share_text(report: &InspectReport, str_len: usize) {
+    let reasons = share_reasons(report, str_len);
+    if !reasons.is_empty() {
         println!("FAIL: would NOT combine");
-        println!(
-            "    reason: share-index-secret ({})",
-            reason_text("share-index-secret")
-        );
+        for r in &reasons {
+            println!("    reason: {} ({})", r, reason_text(r));
+        }
     } else {
         println!(
             "OK: K-of-N share (would combine: needs {} shares)",
@@ -128,10 +148,12 @@ fn emit_share_text(report: &InspectReport) {
 
 /// JSON report for a lone K-of-N share. `would_decode` carries the "would
 /// combine" semantics: true for a distributed share, false for the secret at
-/// index `s` (reason `share-index-secret`). The garbage
+/// index `s` (reason `share-index-secret`) or a share whose string length is
+/// not that of any ms1 secret (reason `unexpected-string-length`). The garbage
 /// prefix_byte / payload_bytes_hex / entr-mnem kind are omitted.
-fn emit_share_json(report: &InspectReport) -> Result<()> {
-    let secret = is_secret_share(report);
+fn emit_share_json(report: &InspectReport, str_len: usize) -> Result<()> {
+    let reasons = share_reasons(report, str_len);
+    let ok = reasons.is_empty();
     let json = serde_json::json!({
         "schema_version": "1",
         "report": {
@@ -142,9 +164,9 @@ fn emit_share_json(report: &InspectReport) -> Result<()> {
             "checksum_valid": report.checksum_valid,
             "kind": "share",
         },
-        "would_decode": !secret,
-        "would_combine": !secret,
-        "failure_reasons": if secret { vec!["share-index-secret"] } else { Vec::<&str>::new() },
+        "would_decode": ok,
+        "would_combine": ok,
+        "failure_reasons": reasons,
     });
     println!(
         "{}",
