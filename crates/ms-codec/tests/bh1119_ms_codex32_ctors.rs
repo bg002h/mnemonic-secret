@@ -36,7 +36,10 @@ fn i2_completed_length_below_short_bracket_is_refused() {
     let body = format!("ms10entrs{}", "q".repeat(21));
     assert_eq!(body.len(), 30);
     let r = C::from_unchecksummed_string(body);
-    assert!(matches!(r, Err(Error::InvalidLength(43))), "30-char body: {r:?}");
+    assert!(
+        matches!(r, Err(Error::InvalidLength(43))),
+        "30-char body: {r:?}"
+    );
 }
 
 #[test]
@@ -45,27 +48,45 @@ fn i2_completed_length_between_brackets_is_refused() {
     let body = format!("ms10entrs{}", "q".repeat(82));
     assert_eq!(body.len(), 91);
     let r = C::from_unchecksummed_string(body);
-    assert!(matches!(r, Err(Error::InvalidLength(106))), "91-char body: {r:?}");
+    assert!(
+        matches!(r, Err(Error::InvalidLength(106))),
+        "91-char body: {r:?}"
+    );
 }
 
 #[test]
 fn i2_controls_unchanged_refusals() {
     let mixed = format!("ms10entrS{}", "q".repeat(28));
-    assert!(matches!(C::from_unchecksummed_string(mixed), Err(Error::InvalidCase(..))));
+    assert!(matches!(
+        C::from_unchecksummed_string(mixed),
+        Err(Error::InvalidCase(..))
+    ));
     let badchar = format!("ms10entrsb{}", "q".repeat(27));
     assert!(C::from_unchecksummed_string(badchar).is_err());
     let idx = format!("ms10entra{}", "q".repeat(28));
-    assert!(matches!(C::from_unchecksummed_string(idx), Err(Error::InvalidShareIndex(Fe::A))));
+    assert!(matches!(
+        C::from_unchecksummed_string(idx),
+        Err(Error::InvalidShareIndex(Fe::A))
+    ));
 }
 
 #[test]
 fn i3_from_seed_unchecked_builder_contract() {
     let a = C::from_seed("ms", 0, "test", Fe::A, &[0x42; 16]).unwrap();
-    assert!(matches!(C::from_string(a.to_string()), Err(Error::InvalidShareIndex(Fe::A))));
+    assert!(matches!(
+        C::from_string(a.to_string()),
+        Err(Error::InvalidShareIndex(Fe::A))
+    ));
     let b = C::from_seed("ms", 0, "test", Fe::S, &[0x42; 45]).unwrap();
-    assert!(matches!(C::from_string(b.to_string()), Err(Error::InvalidLength(94))));
+    assert!(matches!(
+        C::from_string(b.to_string()),
+        Err(Error::InvalidLength(94))
+    ));
     let c = C::from_seed("MS", 0, "TEST", Fe::S, &[0x42; 16]);
-    assert!(matches!(c, Err(Error::InvalidCase(..))), "uppercase hrp: {c:?}");
+    assert!(
+        matches!(c, Err(Error::InvalidCase(..))),
+        "uppercase hrp: {c:?}"
+    );
     for n in [16usize, 20, 24, 28, 32, 64] {
         let ok = C::from_seed("ms", 0, "test", Fe::S, &vec![0x42; n]).unwrap();
         assert!(C::from_string(ok.to_string()).is_ok(), "{n}");
@@ -77,10 +98,16 @@ fn i2_bracket_edges() {
     let body = |n: usize| format!("ms10entrs{}", "q".repeat(n - 9));
     for (n, ok) in [(35, true), (80, true), (110, true), (112, true)] {
         let r = C::from_unchecksummed_string(body(n)).map(|c| c.to_string());
-        assert!(ok && r.as_ref().is_ok_and(|s| C::from_string(s.clone()).is_ok()), "{n}: {r:?}");
+        assert!(
+            ok && r.as_ref().is_ok_and(|s| C::from_string(s.clone()).is_ok()),
+            "{n}: {r:?}"
+        );
     }
     for (n, len) in [(34usize, 47usize), (81, 96), (109, 124), (113, 128)] {
         let r = C::from_unchecksummed_string(body(n));
-        assert!(matches!(r, Err(Error::InvalidLength(l)) if l == len), "{n}: {r:?}");
+        assert!(
+            matches!(r, Err(Error::InvalidLength(l)) if l == len),
+            "{n}: {r:?}"
+        );
     }
 }

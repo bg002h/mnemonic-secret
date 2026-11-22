@@ -4,6 +4,16 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-codec [Unreleased]
+
+### Fixed
+- **`codex32::Codex32String::from_unchecksummed_string` returns a readable card.** It used to append the raw
+  checksum residue instead of the checksum, always in lower case, so the string it returned was refused by
+  `from_string` (bh-ms-I2). It now appends the checksum in the input's case, and refuses with
+  `InvalidLength` a completed string of a length `from_string` would refuse. No ms-cli command used it.
+- **`codex32::Codex32String::from_seed` is documented as an unchecked builder** (bh-ms-I3): it does not
+  check the share index against a zero threshold, nor the finished length. Its behaviour is unchanged.
+
 ## ms-cli [Unreleased]
 
 ## ms-cli [0.21.0] — 2026-11-22
