@@ -255,7 +255,7 @@ fn full_stdout_after_an_out_file_exits_1_and_keeps_the_file() {
     let o = on_full(&a);
     let err = String::from_utf8_lossy(&o.stderr);
     assert!(
-        err.contains("THIS CARD CARRIES THE PREIMAGE"),
+        err.contains("THE PREIMAGE -- the secret -- is in "),
         "the stderr card is still printed: {err}"
     );
     full_case(&a, 1);

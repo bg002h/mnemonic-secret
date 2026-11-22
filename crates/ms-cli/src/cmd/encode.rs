@@ -76,16 +76,15 @@ pub struct EncodeArgs {
     #[arg(long, default_value = "english")]
     pub language: CliLanguage,
 
-    /// Suppress the stderr engraving card (for tooling).
+    /// Suppress the stderr engraving card: the word count, language and
+    /// passphrase lines (for tooling). The ms1 itself is on stdout either way.
     #[arg(long)]
     pub no_engraving_card: bool,
 
-    /// Group the engraving card's ms1 every N characters (0 = unbroken).
-    ///
-    /// Shapes the stderr `engraving card:` line and nothing else: stdout,
-    /// `--out` and `--json` always carry the canonical, unbroken ms1, and under
-    /// `--no-engraving-card` this flag has no effect. SPEC §3.
-    #[arg(long, default_value_t = 5)]
+    /// Group the ms1 on stdout every N characters, for hand engraving
+    /// (0 = unbroken, the default). `--out` receives the same bytes, also
+    /// under `--json`; the `--json` report stays unbroken.
+    #[arg(long, default_value_t = 0)]
     pub group_size: u16,
 
     /// Separator between groups: `space` (or the literal " "). SPEC §5.
@@ -266,20 +265,22 @@ pub fn run(mut args: EncodeArgs) -> Result<u8> {
     // a stream that is usually redirected into a 0644 one. The stderr engraving
     // card is unaffected, and `--json` (a REPORT, not the artifact) still goes to
     // stdout.
+    let artifact = format!(
+        "{}\n",
+        render_grouped(&ms1, args.group_size as usize, args.separator)
+    );
     if let Some(path) = args.out.as_deref() {
-        crate::out::write_artifact(path, &format!("{ms1}\n"))?;
+        crate::out::write_artifact(path, &artifact)?;
     }
 
     if args.json {
         emit_json(&ms1, language_for_card, word_count, &entropy[..])?;
     } else {
         emit_text(
-            &ms1,
+            &artifact,
             language_for_card,
             word_count,
             args.no_engraving_card,
-            args.group_size as usize,
-            args.separator,
             args.out.is_some(),
         )?;
     }
@@ -385,39 +386,22 @@ fn emit_json(ms1: &str, language: Option<&str>, word_count: usize, entropy: &[u8
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn emit_text(
-    ms1: &str,
+    artifact: &str,
     language: Option<&str>,
     word_count: usize,
     no_engraving_card: bool,
-    group_size: usize,
-    separator: char,
     artifact_went_to_a_file: bool,
 ) -> Result<()> {
-    // **stdout carries the CANONICAL ms1 and nothing else, always ungrouped**
-    // (§6a, §6b). Grouping is a display property of a card a human reads off
-    // metal; it is not a property of the artifact, and putting it on stdout made
-    // `ms encode | me sysw pack` unclassifiable. Measured before this change:
-    // the grouped default exits 4 -- "record 0 ... is not a form this container
-    // can place" -- and writes no payload, while the same pipeline with
-    // `--group-size 0` exits 0 and writes 102 bytes at 0600.
+    // The ms1 is printed ONCE, on stdout (Brian 2026-11-22, reversing D4):
+    // grouped only when `--group-size` asks, so the default is the canonical
+    // artifact `ms encode | me sysw pack` reads. There is no stderr copy.
     if !artifact_went_to_a_file {
-        println!("{ms1}");
+        print!("{artifact}");
     }
 
     if !no_engraving_card {
         let mut stderr = std::io::stderr().lock();
-        // `--group-size` and `--separator` now bind HERE, and nowhere else. The
-        // card gains the grouped string, which after this is the only place it
-        // exists -- so `--no-engraving-card`, and any `2>/dev/null`, now throws
-        // away the form an engraver actually reads (§6c).
-        writeln!(
-            stderr,
-            "engraving card: {}",
-            render_grouped(ms1, group_size, separator)
-        )
-        .ok();
         writeln!(stderr, "word count: {}", word_count).ok();
         if let Some(lang) = language {
             writeln!(stderr, "language: {} (BIP-39 checksum valid)", lang).ok();
