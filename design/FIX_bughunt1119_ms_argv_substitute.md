@@ -215,7 +215,7 @@ mirror change (no flag change).
 | R2 | argv_sub_in_equals_reads_named_file, argv_sub_out_equals_creates_named_file; unit substitute_keeps_path_values_equals |
 | R3 | argv_sub_after_dashdash_still_substituted; unit substitute_path_rule_stops_at_dashdash |
 | R4 | argv_sub_non_path_value_still_substituted |
-| R5 | argv_sub_flag_match_is_exact |
+| R5 | argv_sub_flag_match_is_exact; unit substitute_path_rule_is_exact_bytes |
 | R6 | argv_sub_hashlock_phrase_equals_keeps_trailing_space, argv_sub_hashlock_phrase_equals_keeps_leading_space, argv_sub_equals_matches_space (3 flags); `--passphrase=` exactness stays pinned by the existing `f687_passphrase_channels.rs` |
 | R7 | argv_sub_without_override_still_refuses |
 | R8 | none (PROPOSED; a row is added if the architect confirms: `encode --allow-argv-secret --in "<12 words>"` rc 1, stderr `error: failed to read --in <12 words>: No such file or directory (os error 2)`) |

@@ -679,6 +679,19 @@ mod tests {
     }
 
     #[test]
+    fn substitute_path_rule_is_exact_bytes() {
+        for flag in ["--IN", "--In", "--OUT", " --in", "--in ", "--input"] {
+            let got = substitute(&argv(&["decode", ALLOW_FLAG, flag, PN])).unwrap();
+            assert_eq!(got, argv(&["decode", flag, "-"]), "{flag:?}");
+        }
+        for flag in ["--IN=", "--In=", " --in="] {
+            let tok = format!("{flag}{PN}");
+            let got = substitute(&argv(&["decode", ALLOW_FLAG, &tok])).unwrap();
+            assert_eq!(got, argv(&["decode", "-"]), "{flag:?}");
+        }
+    }
+
+    #[test]
     fn substitute_in_before_allow_flag_takes_no_value() {
         let got = substitute(&argv(&["encode", "--in", ALLOW_FLAG])).unwrap();
         assert_eq!(got, argv(&["encode", "--in"]));
