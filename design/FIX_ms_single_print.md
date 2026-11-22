@@ -1001,6 +1001,7 @@ Worked example (after line 118, inside the same `sh` block), append:
     # Grouped in fives, for hand engraving:
     ms encode --in phrase.txt --group-size 5
     # ms10e ntrsq qqqqq qqqqq qqqqq qqqqq qqqqq qqcj9 sxraq 34v7f
+Hashlock card (architect-hashlock-stderr-preimage.md section 6a), same file: line 414 (`--json` row) appends "; the stderr card then names the JSON fields instead of printing the preimage"; line 441 becomes "- stderr: the engraving card. Without `--out` or `--json` it carries the preimage (grouped ms1 and hex); under `--out FILE` or `--json` it prints no form of it, names the file or the JSON field instead, and its first line says where the preimage is."; lines 720-726 "It prints one on the card beside the preimage, built from" becomes "It prints one on the card, built from", and "The record carries the phrase, so it goes on the card and never on stdout, which still carries only the public digest." becomes "The record carries the phrase, so it goes on the card and never in the stdout `hash:` line; under `--json` it is in the object (`phrase_record`) and the card names it there."
 
 ### 8b. Toolkit GUI manual (`docs/manual-gui/`), lands in step 4 (the toolkit's one commit)
 
@@ -1024,13 +1025,14 @@ Worked example (after line 118, inside the same `sh` block), append:
     only the word count, language and passphrase lines on stderr):".
 - Lines 5-9 of the same page still describe the pre-0.17 "single string + blank line + 5-char chunked form" stdout;
   stale before this change (proposed line in section 9), not part of this lockstep.
+- `ms hashlock` card (architect-hashlock-stderr-preimage.md section 6b), `docs/manual-gui/src/60-ms/6c-hashlock.md` @cdedd8a2: lines 19-21 "the engraving card on stderr carries the preimage. `--json` changes that (see [`--json`](#ms-hashlock-json))." become "the engraving card on stderr carries the preimage unless [`--out`](#ms-hashlock-out) or [`--json`](#ms-hashlock-json) does; then the card says where it is and prints no form of it. `--json` also puts the secret on stdout."; lines 164-165 "(which carries the preimage)." becomes "(which carries the preimage when neither `--out` nor `--json` does)."; lines 171-172 "so it goes on the card, never on stdout." becomes "so it goes on the card, never in the `hash:` line; under `--json` it is in the object (`phrase_record`) instead."
 
 ### 8c. mnemonic-gui (`src/schema/ms.rs`, `ENCODE_FLAGS`), lands in step 3 (the gui release, AHEAD of the toolkit)
 
 - `--group-size`: `default_value: Some("0")` (the 5 -> 0 change is what makes the step order matter, section 8.0); `help: "Group the ms1 on stdout every N characters, for hand
   engraving (default 0 = unbroken). Cosmetic — intake strips separators, so any grouping re-ingests."`
 - `--no-engraving-card`: `help: "Suppress the word count, language and passphrase lines on stderr."`
-- `--separator`, the split and hashlock flag tables: unchanged.
+- `--separator` and the split flag table: unchanged. The hashlock table: `--emit-record` help (`ms.rs:874-875` @336e544) becomes "Also print a `phrase:` record on the card (under --json, in the object instead), for `me sysw pack --pack-preimage`. Phrase source only." (architect-hashlock-stderr-preimage.md section 6c).
 - `pinned-upstream.toml` `[ms] tag` moves from `ms-cli-v0.20.1` to the release carrying this change; the gui builder
   runs `schema-mirror` (its defaults-drift gate catches the 5 -> 0 default) and folds any other drift.
 - The gui tests that pass `--group-size 0` and `--no-engraving-card` to the real `ms encode`
