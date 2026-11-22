@@ -18,6 +18,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 - **`ms inspect` no longer says a share of an impossible length would combine.** A share whose string length is not one an ms1 secret can have (50, 51, 56, 58, 62, 64, 69, 70, 75 or 77 characters) now prints `FAIL: would NOT combine` with reason `unexpected-string-length` (`--json`: `would_decode` and `would_combine` false), exit 0 as before; `ms combine` refuses such a set (bh-ms-I12).
+- **`ms hashlock --emit-record --no-engraving-card` is refused in text mode** (exit 64, bh-ms-I4). It exited 0
+  with the `phrase:` record on neither stream while the stderr notice said THIS RECORD CARRIES THE PHRASE. The
+  refusal names `--json` (the record in `phrase_record`) and the card; nothing is read or written before it.
 
 ## ms-cli [0.21.0] — 2026-11-22
 

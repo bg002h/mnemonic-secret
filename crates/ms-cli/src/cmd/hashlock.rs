@@ -87,7 +87,9 @@ pub struct HashlockArgs {
     /// record, and asking for one there is a usage error rather than a silent
     /// omission. THE RECORD CARRIES THE PHRASE, so it goes on the card and
     /// never in the stdout record; under --json it is in the object
-    /// (`phrase_record`) instead of on the card.
+    /// (`phrase_record`) instead of on the card. Text mode without the card
+    /// has nowhere to put it: --emit-record --no-engraving-card without --json
+    /// is refused (exit 64).
     #[arg(long)]
     pub emit_record: bool,
     /// Group the ms1 on the card every N characters (0 = no grouping).
@@ -396,6 +398,15 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
             "--emit-record needs a phrase: the `phrase:` record carries the phrase and the \
              method that derives its preimage, and --hex, --random and an ms1 input have no \
              phrase to record. Cut a PREIMAGE plate from the ms1 string instead."
+                .into(),
+        ));
+    }
+    // bh-ms-I4 (architect T26): in text mode the record is printed only on the
+    // card, so without the card it has no stream. Refused before the phrase is
+    // read and before `--out` is written.
+    if args.emit_record && args.no_engraving_card && !args.json {
+        return Err(CliError::Usage(
+            "--emit-record has nowhere to print the `phrase:` record under --no-engraving-card: in text mode the record goes on the card, and stdout carries only the public digest. Add --json to get it in the JSON object (phrase_record), or drop --no-engraving-card to get it on the card."
                 .into(),
         ));
     }
