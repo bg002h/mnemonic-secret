@@ -547,6 +547,16 @@ Joining it is a **six-part edit**, and each part has a symptom if skipped
    Same gate. Three material channels, three bindings, three gates (R0 r0
    adversarial I-1).
 
+**Two substitution rules (bh-ms-C1, bh-ms-C2).**
+
+- **Path values are never rewritten (bh-ms-C1).** Under `--allow-argv-secret` the substitution pass leaves the
+  value of `--in` and `--out` exactly as typed, in both spellings (`--in FILE`, `--in=FILE`), matched on the exact
+  flag bytes and only before a literal `--`. A file name shaped like hex entropy or an ms1 string is a file name.
+  Every other flag value keeps the shape test: none of them is a path, and a material-shaped value is never a
+  legal value for any of them.
+- **The `=` spelling admits what the space spelling admits (bh-ms-C2).** For every secret flag the admitted value
+  is the bytes after the first `=`, untrimmed; §4.3's "exactly as typed" holds for `--hashlock-phrase=` too.
+
 ---
 
 ## §7. Copy that carries weight
