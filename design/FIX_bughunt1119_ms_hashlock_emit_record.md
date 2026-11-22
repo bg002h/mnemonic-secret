@@ -89,6 +89,7 @@ below is what was run on the base (`M` = the built `ms`).
 | row (= test fn) | command | measured on base `423f1734` | expected after the fix |
 |---|---|---|---|
 | `bh1119_ms_i4_emit_record_no_card_text_refused` | `printf %s trail \| $M hashlock --hashlock-phrase-stdin --emit-record --no-engraving-card` | exit 0; stdout `hash:8d429098f143fb65ac17e10380ad2e53ccb1677bc514cd10335ba38cc1eea23c`; stderr (8 lines) starts `THIS RECORD CARRIES THE PHRASE.`; `REC` on neither stream | exit 64; stdout empty; stderr exactly `error: <MSG>\n` |
+| `bh1119_ms_i4_emit_record_no_card_argv_phrase_refused` | `$M hashlock --hashlock-phrase trail --allow-argv-secret --emit-record --no-engraving-card` | exit 0; stdout `hash:8d429098f143fb65ac17e10380ad2e53ccb1677bc514cd10335ba38cc1eea23c`; `REC` on neither stream | exit 64; stdout empty; stderr exactly `error: <MSG>\n` |
 | `bh1119_ms_i4_emit_record_no_card_kind_refused` | as above plus `--kind ripemd160` | exit 0; stdout `hash:ripemd160:17492aea148ed4d95834293cf2ad875b7def4f45`; stderr includes the F-535 `NOTE: the phrase: record above carries the METHOD` about a record not printed; `REC` on neither stream | exit 64; stdout empty; stderr exactly `error: <MSG>\n` |
 | `bh1119_ms_i4_emit_record_no_card_out_refused_before_write` | as the first row plus `--out p.ms1` | exit 0; `p.ms1` created (mode 0600, the preimage ms1); `REC` in neither stream nor the file | exit 64; stdout empty; stderr exactly `error: <MSG>\n`; `p.ms1` does not exist |
 | `bh1119_ms_i4_emit_record_no_card_refused_before_reading_phrase` | `printf '' \| $M hashlock --hashlock-phrase-stdin --emit-record --no-engraving-card` | exit 1; stderr `error: the hashlock phrase is empty` | exit 64; stdout empty; stderr exactly `error: <MSG>\n` |
@@ -103,7 +104,7 @@ Controls (pass on both builds; they pin R3 and R4):
 | `bh1119_ms_i4_control_no_phrase_source_refusal_first` | `$M hashlock --random --out r.ms1 --emit-record --no-engraving-card` | exit 64; stderr one line starting `error: --emit-record needs a phrase:`; `r.ms1` does not exist |
 | `bh1119_ms_i4_control_no_card_without_flag_unchanged` | `printf %s trail \| $M hashlock --hashlock-phrase-stdin --no-engraving-card` | exit 0; stdout exactly the `hash:8d42...a23c` line; `phrase:` nowhere on stderr |
 
-The builder runs the new file on the base first and records `9 tests run: 5 passed, 4 failed` (the four RED rows
+The builder runs the new file on the base first and records `10 tests run: 5 passed, 5 failed` (the five RED rows
 fail) before writing the code.
 
 ## 5. Tests that change
@@ -133,7 +134,7 @@ proposed gui FOLLOWUPS line in the report for greying the pair in the form.
 
 | rule | rows |
 |---|---|
-| R1 | bh1119_ms_i4_emit_record_no_card_text_refused, bh1119_ms_i4_emit_record_no_card_kind_refused |
+| R1 | bh1119_ms_i4_emit_record_no_card_text_refused, bh1119_ms_i4_emit_record_no_card_argv_phrase_refused, bh1119_ms_i4_emit_record_no_card_kind_refused |
 | R2 | bh1119_ms_i4_emit_record_no_card_out_refused_before_write, bh1119_ms_i4_emit_record_no_card_refused_before_reading_phrase |
 | R3 | bh1119_ms_i4_control_no_phrase_source_refusal_first |
 | R4 | bh1119_ms_i4_control_card_carries_record, bh1119_ms_i4_control_json_no_card_carries_record, bh1119_ms_i4_control_json_with_card_carries_record, bh1119_ms_i4_control_no_card_without_flag_unchanged; the existing seven tests of hashlock_emit_record.rs (one changed per section 5) |
@@ -148,8 +149,10 @@ Rust pin `cargo 1.85.0`, `$HOME/.cargo/bin` first in PATH, `--locked`, no `--rel
     cargo +1.95.0 fmt --all -- --check
     bash ci/code-docs-check.sh && bash ci/code-docs-check.test.sh && bash ci/docs-only.test.sh
 
-Expected: `767 tests run: 767 passed, 23 skipped` (base 758 plus the 9 rows). Not covered: the macOS, musl,
-release, miri, FreeBSD and fuzz CI legs (CI on the PR head), the toolkit manual's own CI, review.
+Expected: `768 tests run: 768 passed, 23 skipped` (base 758 plus the 10 rows). Not covered: the macOS, musl,
+release, test-release-mlock-einval, miri, FreeBSD, fuzz, history-purge, g6-invariant and vendor-freshness CI jobs, the
+test job's G2 mlock fault-injection steps and the display-grouping sha256 step (all CI on the PR head), the toolkit
+manual's own CI, review.
 
 ## 9. FOLLOWUPS
 
