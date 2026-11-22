@@ -5,6 +5,8 @@
 //! stdout carries the PUBLIC digest record (`me sysw pack` reads it), stderr
 //! carries the SECRET preimage on the card, `--out` carries it to a 0600
 //! file, `--json` carries it in one object on stdout in place of the record.
+//! The preimage is printed once: under `--out` or `--json` the card prints no
+//! form of it and its first line says where it is instead.
 //!
 //! EXACTLY ONE SOURCE. Zero and two-or-more both exit 64 -- zero must not
 //! default to stdin, or a bare `ms hashlock` at a terminal blocks with no
@@ -83,12 +85,13 @@ pub struct HashlockArgs {
     /// PHRASE-form plate can be cut from this phrase without hand-encoding the
     /// hex. Requires a phrase source: `--hex` and `--random` have no phrase to
     /// record, and asking for one there is a usage error rather than a silent
-    /// omission. THE RECORD CARRIES THE PHRASE, so it goes on the card beside
-    /// the preimage and never on stdout, which carries only the public digest.
+    /// omission. THE RECORD CARRIES THE PHRASE, so it goes on the card and
+    /// never in the stdout record; under --json it is in the object
+    /// (`phrase_record`) instead of on the card.
     #[arg(long)]
     pub emit_record: bool,
     /// Group the ms1 on the card every N characters (0 = no grouping).
-    /// `u16` and the same default as `ms encode` / `ms split`, so the same
+    /// `u16` and the same default as `ms split`, so the same
     /// value is accepted by every verb that renders a grouped ms1 (review N-1).
     #[arg(long, default_value_t = 5)]
     pub group_size: u16,
@@ -510,11 +513,34 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
     let mut stderr = std::io::stderr().lock();
     if !args.no_engraving_card {
         let grouped = crate::format::render_grouped(&ms1, args.group_size as usize, args.separator);
-        writeln!(
-            stderr,
-            "THIS CARD CARRIES THE PREIMAGE -- the secret. stdout carries only the public digest."
-        )
-        .ok();
+        // Single-print ruling (Brian 2026-11-22; architect 2026-11-22): when
+        // `--out` or `--json` carries the preimage, the card prints no form of
+        // it (ms1, hex, or a phrase record the JSON holds), and this line says
+        // where it is. Text mode without `--out` keeps all three: the card is
+        // then the only copy.
+        let out = args.out.as_deref().map(|p| p.display().to_string());
+        let line1 = match (out.as_deref(), args.json) {
+            (None, false) => "THIS CARD CARRIES THE PREIMAGE -- the secret. \
+                              stdout carries only the public digest."
+                .to_string(),
+            (Some(p), false) if phrase_record.is_some() => format!(
+                "THE PREIMAGE -- the secret -- is in {p}. THIS CARD CARRIES THE PHRASE RECORD \
+                 -- also secret. stdout carries only the public digest."
+            ),
+            (Some(p), false) => format!(
+                "THE PREIMAGE -- the secret -- is in {p}, not on this card. \
+                 stdout carries only the public digest."
+            ),
+            (None, true) => {
+                "THE PREIMAGE -- the secret -- is in the JSON on stdout, not on this card."
+                    .to_string()
+            }
+            (Some(p), true) => format!(
+                "THE PREIMAGE -- the secret -- is in {p} and in the JSON on stdout, \
+                 not on this card."
+            ),
+        };
+        writeln!(stderr, "{line1}").ok();
         writeln!(stderr, "digest:          {}", hex(h)).ok();
         // SPEC §11: the ONLY line keeping the digest function and `md compose`'s
         // option name in agreement. It shipped once saying `sha256=` under every
@@ -555,11 +581,29 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
             )
             .ok();
         }
-        writeln!(stderr, "preimage (ms1):  {grouped}").ok();
-        writeln!(stderr, "preimage (hex):  {}", hex(&d.x[..])).ok();
+        // Single-print ruling (Brian 2026-11-22): the preimage ms1 is printed
+        // once. When the file or the JSON carries it, the card names where it
+        // went instead of repeating it.
+        let ms1_line = match (args.out.as_deref(), args.json) {
+            (Some(p), true) => format!("written to {} and in the JSON (preimage_ms1)", p.display()),
+            (Some(p), false) => format!("written to {}", p.display()),
+            (None, true) => "in the JSON (preimage_ms1)".to_string(),
+            (None, false) => grouped,
+        };
+        writeln!(stderr, "preimage (ms1):  {ms1_line}").ok();
+        let hex_line = match (args.out.is_some(), args.json) {
+            (_, true) => "in the JSON (preimage_hex)".to_string(),
+            (true, false) => "not printed; `ms decode --in` on that file prints it".to_string(),
+            (false, false) => hex(&d.x[..]),
+        };
+        writeln!(stderr, "preimage (hex):  {hex_line}").ok();
         writeln!(stderr, "method:          {}", method_line(&d)).ok();
         if let Some(r) = phrase_record.as_deref() {
-            writeln!(stderr, "record (phrase): {r}").ok();
+            if args.json {
+                writeln!(stderr, "record (phrase): in the JSON (phrase_record)").ok();
+            } else {
+                writeln!(stderr, "record (phrase): {r}").ok();
+            }
         }
         if let Some(n) = d.phrase_chars {
             writeln!(stderr, "phrase:          {n} characters -- write the method line AND the hash line ({}) next to your phrase unless the phrase is cut on a HASHLOCK PHRASE plate, which carries both; if the method line is lost, try each method that shipped with the version named on this card (ms-cli {}), and if the hash line is lost, re-run with no --kind and match the digest against your descriptor", kind.token(), env!("CARGO_PKG_VERSION")).ok();

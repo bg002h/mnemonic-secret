@@ -4,8 +4,7 @@ use assert_cmd::Command;
 
 #[test]
 fn encode_12_word_abandon_about() {
-    // mstring-grouping P2: encode text is now print-once, default space/5
-    // (was `<ms1>\n\n<chunked>` print-twice). stderr engraving card unchanged.
+    // Print-once: the ms1 appears once, on stdout.
     let out = Command::cargo_bin("ms")
         .unwrap()
         .args([
@@ -20,8 +19,8 @@ fn encode_12_word_abandon_about() {
         !stdout.contains("\n\n"),
         "print-once: no blank line; got {stdout:?}"
     );
-    // §6a/§6b: stdout is the CANONICAL ms1, always ungrouped. The default
-    // space/5 grouping moved to the stderr engraving card.
+    // Single print (2026-11-22): stdout is the CANONICAL ms1, ungrouped by
+    // default, and stderr carries no copy of it.
     let line = stdout.lines().next().unwrap();
     assert_eq!(
         line, "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f",
@@ -29,8 +28,8 @@ fn encode_12_word_abandon_about() {
     );
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(
-        stderr.contains("engraving card: ms10e ntrsq"),
-        "the default space/5 grouping is on the card now; got {stderr:?}"
+        !stderr.contains("ms10e") && !stderr.contains("engraving card:"),
+        "single print: no copy of the ms1 on stderr; got {stderr:?}"
     );
     assert!(stderr.contains("language: english"));
     assert!(stderr.contains("word count: 12"));

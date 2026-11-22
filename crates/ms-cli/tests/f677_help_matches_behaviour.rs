@@ -35,11 +35,11 @@ fn long_help(verb: &str) -> String {
 // encode --group-size
 // ---------------------------------------------------------------------------
 
-/// The help names what the flag shapes (the card) and what it does not
-/// (stdout, --out, --json). The behaviour half is pinned by
-/// `encode_grouping_flags.rs`; this pins the words to it.
+/// The help names what the flag shapes (stdout, on request) and what it does
+/// not (`--json`). The behaviour half is pinned by `encode_grouping_flags.rs`
+/// and `single_print.rs`; this pins the words to it.
 #[test]
-fn encode_group_size_help_describes_the_card_not_stdout() {
+fn encode_group_size_help_describes_stdout() {
     let h = long_help("encode");
     let para: String = h
         .split("--group-size")
@@ -49,19 +49,17 @@ fn encode_group_size_help_describes_the_card_not_stdout() {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
-    assert!(
-        !para.contains("in the emitted ms1 string"),
-        "the old wording is back: {para}"
-    );
+    for gone in ["engraving card", "in the emitted ms1 string"] {
+        assert!(!para.contains(gone), "old wording {gone:?} is back: {para}");
+    }
     for want in [
-        "engraving card",
-        "stdout, `--out` and `--json` always carry the canonical, unbroken ms1",
-        "`--no-engraving-card` this flag has no effect",
+        "Group the ms1 on stdout every N characters",
+        "`--out` receives the same bytes, also under `--json`; the `--json` report stays unbroken",
     ] {
         assert!(para.contains(want), "missing {want:?} in: {para}");
     }
 
-    // And the claim is true: a non-default group size leaves stdout unbroken.
+    // And the claim is true: a non-default group size groups stdout.
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("p.txt"), Z12).unwrap();
     let out = ms()
@@ -70,7 +68,14 @@ fn encode_group_size_help_describes_the_card_not_stdout() {
         .output()
         .unwrap();
     assert!(out.status.success());
-    assert_eq!(String::from_utf8_lossy(&out.stdout), format!("{CANON}\n"));
+    let want: String = CANON
+        .chars()
+        .collect::<Vec<_>>()
+        .chunks(3)
+        .map(|c| c.iter().collect::<String>())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert_eq!(String::from_utf8_lossy(&out.stdout), format!("{want}\n"));
 }
 
 // ---------------------------------------------------------------------------

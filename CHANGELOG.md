@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## ms-cli [Unreleased]
 
+### Changed
+- **`ms encode` prints the ms1 once.** The stderr `engraving card: <grouped ms1>` line is gone (Brian
+  2026-11-22, reversing D4 of the constellation uniformity spec). `--group-size N` now groups stdout, on
+  request; its default is `0`, so a plain `ms encode` prints on stdout exactly what it printed before.
+  `--out FILE` receives the same bytes stdout would have carried. `--no-engraving-card` still suppresses the
+  word count, language and passphrase lines. `--json` and `ms split` are unchanged.
+- **`ms hashlock` prints the preimage once.** Under `--out FILE` or `--json` the stderr card prints no form of the preimage: the `preimage (ms1):` and `preimage (hex):` lines (and, under `--json`, `record (phrase):`) say where it is, and the card's first line says where the preimage is instead of "THIS CARD CARRIES THE PREIMAGE". The JSON object is unchanged. Text mode without `--out` is unchanged.
+
 ## ms-cli [0.20.6] — 2026-11-22
 
 ### Fixed

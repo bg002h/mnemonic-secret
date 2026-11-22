@@ -80,7 +80,7 @@ enum Command {
 
     /// Encode a BIP-39 mnemonic (or hex entropy) as an ms1 string for engraving.
     #[command(
-        after_long_help = "EXAMPLES:\n  ms encode --in phrase.txt                     # ms1 on stdout, engraving card on stderr\n  ms encode --phrase - < phrase.txt             # the phrase on stdin\n  ms encode --hex - --no-engraving-card < entropy.hex\n  ms encode --in phrase.txt --out card.ms1      # the ms1 to an owner-only file\n  ms encode --in phrase.txt --json | jq .ms1\n\nThe secret never goes on the command line: ms refuses it there unless\n--allow-argv-secret is given (argv is visible to `ps` and lands in shell\nhistory). Use --in FILE, or `-` for stdin."
+        after_long_help = "EXAMPLES:\n  ms encode --in phrase.txt                     # ms1 on stdout; word count etc. on stderr\n  ms encode --in phrase.txt --group-size 5      # the ms1 in groups of 5, for hand engraving\n  ms encode --phrase - < phrase.txt             # the phrase on stdin\n  ms encode --hex - --no-engraving-card < entropy.hex\n  ms encode --in phrase.txt --out card.ms1      # the ms1 to an owner-only file\n  ms encode --in phrase.txt --json | jq .ms1\n\nThe secret never goes on the command line: ms refuses it there unless\n--allow-argv-secret is given (argv is visible to `ps` and lands in shell\nhistory). Use --in FILE, or `-` for stdin."
     )]
     Encode(cmd::encode::EncodeArgs),
 
