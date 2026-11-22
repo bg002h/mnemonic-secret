@@ -5,7 +5,7 @@
 // codex32-upstream-dormant-vendor-vs-accept-decision).
 //
 // Copied from the upstream runtime modules (lib.rs / field.rs / checksum.rs).
-// The ONLY substantive edits are: (1) Zeroize/ZeroizeOnDrop + a redacting Debug
+// The ONLY substantive edits are (4) below and: (1) Zeroize/ZeroizeOnDrop + a redacting Debug
 // on `Codex32String` (Phase 2); (2) module-routing of `use` paths to fit the
 // inlined submodule (`crate::field` -> `super::field` in checksum.rs, since the
 // codex32 crate root is now the `codex32` submodule); (3) crate-local lint
@@ -16,6 +16,11 @@
 // behaviorally UNCHANGED; the wire-byte-identity invariant is proven by
 // tests/codex32_vendor_parity.rs. The upstream CC0 LICENSE is retained verbatim
 // alongside as src/codex32/LICENSE.
+//
+// (4) `from_unchecksummed_string` appends a correct checksum in the input's
+// case and refuses a completed length `from_string` would refuse (bh-ms-I2,
+// design/FIX_bughunt1119_ms_codex32_ctors.md; upstream appended the raw
+// residue in lower case). It is not an encoding path: no ms-codec code calls it.
 //
 // Rust Codex32 Library and Reference Implementation
 // Written in 2023 by
@@ -168,6 +173,14 @@ impl Codex32String {
     }
 
     /// Construct a codex32 string from a not-yet-checksummed string
+    ///
+    /// Appends the checksum: the 13-character short code when `s` is shorter
+    /// than 81 bytes, otherwise the 15-character long code, in the case of `s`.
+    /// Every `Ok` result is accepted by [`Codex32String::from_string`]. A
+    /// completed string of a length [`Codex32String::from_string`] refuses (it
+    /// accepts 48 to 93 bytes with the short code and 125 to 127 with the long
+    /// code; these are this parser's lengths, not BIP-93's) is refused with
+    /// [`Error::InvalidLength`] carrying the completed length.
     pub fn from_unchecksummed_string(mut s: String) -> Result<Self, Error> {
         // Determine what checksum to use and extend the string
         let (len, mut checksum) = if s.len() < 81 {
@@ -185,11 +198,18 @@ impl Codex32String {
         // Compute the checksum
         checksum.input_hrp(hrp)?;
         checksum.input_data_str(real_string)?;
+        checksum.input_own_target();
+        let upper = s.chars().any(|c| c.is_ascii_uppercase());
         for ch in checksum.into_residue() {
-            s.push(ch.to_char());
+            let c = ch.to_char();
+            s.push(if upper { c.to_ascii_uppercase() } else { c });
         }
 
         let ret = Codex32String(s);
+        let n = ret.0.len();
+        if !((48..94).contains(&n) || (125..128).contains(&n)) {
+            return Err(Error::InvalidLength(n));
+        }
         ret.sanity_check()?;
         Ok(ret)
     }
@@ -356,6 +376,19 @@ impl Codex32String {
     }
 
     /// Creates a S share from bare seed data
+    ///
+    /// This is an unchecked builder. It refuses a threshold other than 0 or 2
+    /// to 9, an identifier that is not 4 characters, an identifier character
+    /// outside the bech32 alphabet, and an upper-case HRP or identifier (it
+    /// builds lower case only). It does NOT check that the share index is `s`
+    /// when the threshold is 0, nor that the finished string has a length
+    /// `from_string` accepts (with HRP `ms`: 16 to 44 or 63 to 64 bytes of
+    /// `data`). Such a result is `Ok`, but [`Codex32String::from_string`]
+    /// refuses its string; validate the inputs before calling it (threshold 0
+    /// needs share index `s`; with HRP `ms`, `data` must be 16 to 44 or 63 to
+    /// 64 bytes); re-parsing the result with `from_string` needs a plain
+    /// `String` copy of the secret, which is not scrubbed. The crate's
+    /// negative tests rely on this to build unreadable fixtures.
     pub fn from_seed(
         hrp: &str,
         threshold: usize,

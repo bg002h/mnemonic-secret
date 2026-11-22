@@ -4,9 +4,20 @@ All notable changes to `ms-codec` and `ms-cli` are documented in this file. Each
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [SemVer](https://semver.org/spec/v2.0.0.html) with the pre-1.0 convention that the second component (`0.X`) is the breaking-change axis.
 
+## ms-codec [Unreleased]
+
+### Fixed
+- **`codex32::Codex32String::from_unchecksummed_string` returns a readable card.** It used to append the raw
+  checksum residue instead of the checksum, always in lower case, so the string it returned was refused by
+  `from_string` (bh-ms-I2). It now appends the checksum in the input's case, and refuses with
+  `InvalidLength` a completed string of a length `from_string` would refuse. No ms-cli command used it.
+- **`codex32::Codex32String::from_seed` is documented as an unchecked builder** (bh-ms-I3): it does not
+  check the share index against a zero threshold, nor the finished length. Its behaviour is unchanged.
+
 ## ms-cli [Unreleased]
 
 ### Fixed
+- **`ms inspect` no longer says a share of an impossible length would combine.** A share whose string length is not one an ms1 secret can have (50, 51, 56, 58, 62, 64, 69, 70, 75 or 77 characters) now prints `FAIL: would NOT combine` with reason `unexpected-string-length` (`--json`: `would_decode` and `would_combine` false), exit 0 as before; `ms combine` refuses such a set (bh-ms-I12).
 - **`ms hashlock --emit-record --no-engraving-card` is refused in text mode** (exit 64, bh-ms-I4). It exited 0
   with the `phrase:` record on neither stream while the stderr notice said THIS RECORD CARRIES THE PHRASE. The
   refusal names `--json` (the record in `phrase_record`) and the card; nothing is read or written before it.
