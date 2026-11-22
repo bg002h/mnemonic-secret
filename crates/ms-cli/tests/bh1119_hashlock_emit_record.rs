@@ -28,7 +28,12 @@ fn refused(args: &[&str], stdin: &str, dir: &std::path::Path) {
 fn bh1119_ms_i4_emit_record_no_card_text_refused() {
     let d = tempfile::tempdir().unwrap();
     refused(
-        &["hashlock", "--hashlock-phrase-stdin", "--emit-record", "--no-engraving-card"],
+        &[
+            "hashlock",
+            "--hashlock-phrase-stdin",
+            "--emit-record",
+            "--no-engraving-card",
+        ],
         "trail",
         d.path(),
     );
@@ -83,14 +88,22 @@ fn bh1119_ms_i4_emit_record_no_card_out_refused_before_write() {
         "trail",
         d.path(),
     );
-    assert!(!d.path().join("p.ms1").exists(), "--out must not be created");
+    assert!(
+        !d.path().join("p.ms1").exists(),
+        "--out must not be created"
+    );
 }
 
 #[test]
 fn bh1119_ms_i4_emit_record_no_card_refused_before_reading_phrase() {
     let d = tempfile::tempdir().unwrap();
     refused(
-        &["hashlock", "--hashlock-phrase-stdin", "--emit-record", "--no-engraving-card"],
+        &[
+            "hashlock",
+            "--hashlock-phrase-stdin",
+            "--emit-record",
+            "--no-engraving-card",
+        ],
         "",
         d.path(),
     );
@@ -140,7 +153,12 @@ fn bh1119_ms_i4_control_json_no_card_carries_record() {
 fn bh1119_ms_i4_control_json_with_card_carries_record() {
     let d = tempfile::tempdir().unwrap();
     let r = ms(d.path())
-        .args(["hashlock", "--hashlock-phrase-stdin", "--emit-record", "--json"])
+        .args([
+            "hashlock",
+            "--hashlock-phrase-stdin",
+            "--emit-record",
+            "--json",
+        ])
         .write_stdin("trail")
         .assert()
         .success();
@@ -156,12 +174,22 @@ fn bh1119_ms_i4_control_json_with_card_carries_record() {
 fn bh1119_ms_i4_control_no_phrase_source_refusal_first() {
     let d = tempfile::tempdir().unwrap();
     let r = ms(d.path())
-        .args(["hashlock", "--random", "--out", "r.ms1", "--emit-record", "--no-engraving-card"])
+        .args([
+            "hashlock",
+            "--random",
+            "--out",
+            "r.ms1",
+            "--emit-record",
+            "--no-engraving-card",
+        ])
         .assert()
         .code(64);
     let err = String::from_utf8_lossy(&r.get_output().stderr).to_string();
     assert_eq!(err.lines().count(), 1, "{err}");
-    assert!(err.starts_with("error: --emit-record needs a phrase:"), "{err}");
+    assert!(
+        err.starts_with("error: --emit-record needs a phrase:"),
+        "{err}"
+    );
     assert!(!d.path().join("r.ms1").exists());
 }
 

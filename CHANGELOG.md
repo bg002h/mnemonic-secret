@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## ms-cli [Unreleased]
 
+### Fixed
+- **`ms hashlock --emit-record --no-engraving-card` is refused in text mode** (exit 64, bh-ms-I4). It exited 0
+  with the `phrase:` record on neither stream while the stderr notice said THIS RECORD CARRIES THE PHRASE. The
+  refusal names `--json` (the record in `phrase_record`) and the card; nothing is read or written before it.
+
 ## ms-cli [0.21.0] — 2026-11-22
 
 ### Changed
