@@ -74,11 +74,27 @@ remedy_row printed_cmd_encode_remedy_path_with_quote_runs "it's.hex" \
 EXPECT_SHARES=3 remedy_row printed_cmd_split_remedy_path_with_space_runs "two words.hex" \
   "ms split -k 2 -n 3 --hex - < 'two words.hex'" split -k 2 -n 3 --in "two words.hex"
 
+# Q2 (b): K/N out of range are refused before the secret is read: exit 1, stderr is only
+# the range error (no `note:` line), nothing on stdout.
+# range_row <row> <expected stderr> <ms args...>
+range_row() {
+  local row=$1 want=$2; shift 2
+  local d; d=$(fresh "$row"); echo "$ZERO" >"$d/entropy.hex"
+  (cd "$d" && PATH="$SPATH" "$M" "$@" </dev/null >out.txt 2>err.txt); local rc=$?
+  local err; err=$(cat "$d/err.txt")
+  [ "$rc" = 1 ] && [ "$err" = "$want" ] && [ ! -s "$d/out.txt" ]
+  verdict "$row" red $((1 - $?)) "rc=$rc stderr=[$(head -1 "$d/err.txt")] lines=$(wc -l <"$d/err.txt")"
+}
+range_row printed_cmd_split_bad_threshold_refused_before_read \
+  "error: invalid threshold 1; K-of-N shares require k in 2..=9" split -k 1 -n 3 --in entropy.hex
+range_row printed_cmd_split_bad_share_count_refused_before_read \
+  "error: invalid share count n=3 for threshold k=5; require k <= n <= 31" split -k 5 -n 3 --in entropy.hex
+
 # R3: `--out` as given is carried, quoted, before the hex channel.
 OUTFILE="my card.ms1" remedy_row printed_cmd_encode_remedy_keeps_out entropy.hex \
-  "ms encode --out 'my card.ms1' --hex - < 'entropy.hex'" encode --in entropy.hex --out "my card.ms1"
+  "ms encode --out='my card.ms1' --hex - < 'entropy.hex'" encode --in entropy.hex --out "my card.ms1"
 OUTFILE=shares.txt EXPECT_SHARES=3 remedy_row printed_cmd_split_remedy_keeps_out_and_recombines "two words.hex" \
-  "ms split -k 2 -n 3 --out 'shares.txt' --hex - < 'two words.hex'" split -k 2 -n 3 --in "two words.hex" --out shares.txt
+  "ms split -k 2 -n 3 --out='shares.txt' --hex - < 'two words.hex'" split -k 2 -n 3 --in "two words.hex" --out shares.txt
 
 # R4: the user-manpath example of `ms gen-man --help` runs with XDG_DATA_HOME unset or empty.
 EX=$("$M" gen-man --help | sed -e 's/^[[:space:]]*//' | grep -m1 '^ms gen-man --out "\$' | sed -e 's/[[:space:]]*#.*$//')

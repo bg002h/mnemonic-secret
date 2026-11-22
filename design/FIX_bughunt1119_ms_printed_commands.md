@@ -42,8 +42,8 @@ PROPOSED (architect confirms): the short spelling, the same one the argv-guard r
 the holder gave (`Path::display()`, unchanged from today; relative stays relative). The prose sentence before it
 (`If <path> holds hex entropy`) is unchanged and unquoted.
 
-**R3 (I6, output destination).** When the holder gave `--out FILE`, the note's command carries `--out '<FILE>'`
-(quoted per R2) after the verb (and after `-k`/`-n` on split), before `--hex -`. This is the consultant's "retain K/N
+**R3 (I6, output destination).** When the holder gave `--out FILE`, the note's command carries `--out='<FILE>'`
+(quoted per R2; the `=` form, so a name that starts with `-` still reads as the value of `--out`) after the verb (and after `-k`/`-n` on split), before `--hex -`. This is the consultant's "retain K/N
 and any requested output destination" (bug report L150). No other flag is carried (see Q1).
 
 **R4 (I9).** The second `ms gen-man --help` EXAMPLES line becomes
@@ -60,10 +60,10 @@ Exit codes: unchanged (the note's verb still exits 1 with `error: BIP-39 ...`; `
 | `encode --in entropy.hex` | `ms encode --hex - < entropy.hex` | `ms encode --hex - < 'entropy.hex'` |
 | `encode --in "two words.hex"` | `ms encode --hex - < two words.hex` | `ms encode --hex - < 'two words.hex'` |
 | `encode --in "it's.hex"` | `ms encode --hex - < it's.hex` | `ms encode --hex - < 'it'\''s.hex'` |
-| `encode --in entropy.hex --out "my card.ms1"` | `ms encode --hex - < entropy.hex` | `ms encode --out 'my card.ms1' --hex - < 'entropy.hex'` |
+| `encode --in entropy.hex --out "my card.ms1"` | `ms encode --hex - < entropy.hex` | `ms encode --out='my card.ms1' --hex - < 'entropy.hex'` |
 | `split -k 2 -n 3 --in entropy.hex` | `ms split --hex - < entropy.hex` | `ms split -k 2 -n 3 --hex - < 'entropy.hex'` |
 | `split --in entropy.hex --shares 5 --threshold 3` | `ms split --hex - < entropy.hex` | `ms split -k 3 -n 5 --hex - < 'entropy.hex'` |
-| `split -k 2 -n 3 --in "two words.hex" --out shares.txt` | `ms split --hex - < two words.hex` | `ms split -k 2 -n 3 --out 'shares.txt' --hex - < 'two words.hex'` |
+| `split -k 2 -n 3 --in "two words.hex" --out shares.txt` | `ms split --hex - < two words.hex` | `ms split -k 2 -n 3 --out='shares.txt' --hex - < 'two words.hex'` |
 
 The note's first line is unchanged: `note: --in reads a PHRASE and never sniffs the file's contents. If <path> holds
 hex entropy, use the hex channel:`.
@@ -73,10 +73,14 @@ hex entropy, use the hex channel:`.
 - `crates/ms-cli/src/cmd/encode.rs`: `resolve_secret_payload` (L119-125) and `phrase_parse_error` (L329-345) take the
   verb as `&str` instead of `&'static str` (it is now built per call). `phrase_parse_error` writes the path in the
   command line through a new private-to-crate helper that applies R2; the prose `{path}` stays `p.display()`. A second
-  crate helper builds the note's verb part: the verb, then ` --out '<FILE>'` when `--out` was given (R3). `run`
+  crate helper builds the note's verb part: the verb, then ` --out='<FILE>'` when `--out` was given (R3). `run`
   (L246-252) passes that helper's result for `encode` with `args.out` instead of the literal `"encode"`.
 - `crates/ms-cli/src/cmd/split.rs` L115-121: passes the same helper's result for `split -k {k} -n {n}` with `args.out`,
   instead of the literal `"split"`.
+- `crates/ms-cli/src/cmd/split.rs`: directly after the `--out` refusal (L107-110) and before
+  `resolve_secret_payload`, add `let threshold = Threshold::new(args.k)?;` (moved from L125) and
+  `if !((args.k as usize) <= args.n && args.n <= 31) { return Err(ms_codec::Error::InvalidShareCount { k: args.k, n:
+  args.n }.into()); }`. This is the same error variant, so the text and exit 1 are unchanged. No ms-codec change.
 - `crates/ms-cli/src/main.rs` L139: the `after_long_help` string per R4.
 - `CHANGELOG.md` under `## ms-cli [Unreleased]`, a `### Fixed` entry, PROPOSED (architect confirms):
   `- **The \`--in\` hex note prints a command that runs.** On \`ms split\` it carries \`-k\`/\`-n\`; a given \`--out\`
@@ -93,9 +97,12 @@ commands as run:
     scripts/ms-printed-commands-fix-gate.sh red   <ms built at 423f1734> /scratch/cache/ms-printed-commands-red/gate-red
     scripts/ms-printed-commands-fix-gate.sh green <ms built with section 3> /scratch/cache/ms-printed-commands-red/gate-green
 
-Results: red on `423f1734`: `rows failed: 0`, rc 0 (10 RED rows showed their defect, 2 controls held); green on the
-scratch build: `rows failed: 0`, rc 0 (12 rows held). Self-test: green mode on `423f1734` gives `rows failed: 10`,
-rc 1; red mode on the scratch build gives `rows failed: 10`, rc 1.
+Results (fold of review r1, with the `--out=` form and the two Q2 rows): red on `423f1734`: `rows failed: 0`, rc 0
+(12 RED rows showed their defect, 2 controls held). The two Q2 rows were run green on `423f1734` plus the section 3
+`split.rs` K/N-check bullet alone (a throwaway scratch patch, never committed): both PASS, stderr only the range error;
+the other 10 rows stay RED there (`rows failed: 10`) as they need the rest of section 3. The full section 3 build was
+measured before the `--out=` change (12 rows held) and is not re-measured here; the builder runs the green mode on its
+own build.
 
 | row (test function) | command (after `ms`) | observed at `423f1734` (RED) | expected after the fix |
 |---|---|---|---|
@@ -105,10 +112,13 @@ rc 1; red mode on the scratch build gives `rows failed: 10`, rc 1.
 | printed_cmd_encode_remedy_path_with_space_runs | `encode --in "two words.hex"`, then the printed line | `sh: line 1: two: No such file or directory`, exit 1 | printed `ms encode --hex - < 'two words.hex'`; exits 0, the card |
 | printed_cmd_encode_remedy_path_with_quote_runs | `encode --in "it's.hex"`, then the printed line | `sh: -c: line 1: unexpected EOF while looking for matching` `` ` ``, exit 2 | printed `ms encode --hex - < 'it'\''s.hex'`; exits 0, the card |
 | printed_cmd_split_remedy_path_with_space_runs | `split -k 2 -n 3 --in "two words.hex"`, then the printed line | `sh: line 1: two: No such file or directory`, exit 1 | printed `ms split -k 2 -n 3 --hex - < 'two words.hex'`; exits 0, 3 shares |
-| printed_cmd_encode_remedy_keeps_out | `encode --in entropy.hex --out "my card.ms1"`, then the printed line | printed `ms encode --hex - < entropy.hex`; exits 0 but the card goes to stdout and `my card.ms1` is never written | printed `ms encode --out 'my card.ms1' --hex - < 'entropy.hex'`; exits 0, stdout of the first run empty, `my card.ms1` holds the card and a newline |
-| printed_cmd_split_remedy_keeps_out_and_recombines | `split -k 2 -n 3 --in "two words.hex" --out shares.txt`, then the printed line, then `combine --in two.txt --json` on its first two shares | `sh: line 1: two: No such file or directory`, exit 1 | printed `ms split -k 2 -n 3 --out 'shares.txt' --hex - < 'two words.hex'`; exits 0; `shares.txt` holds 3 shares; combine of two gives `"entropy_hex":"00000000000000000000000000000000"` |
+| printed_cmd_encode_remedy_keeps_out | `encode --in entropy.hex --out "my card.ms1"`, then the printed line | printed `ms encode --hex - < entropy.hex`; exits 0 but the card goes to stdout and `my card.ms1` is never written | printed `ms encode --out='my card.ms1' --hex - < 'entropy.hex'`; exits 0, stdout of the first run empty, `my card.ms1` holds the card and a newline |
+| printed_cmd_split_remedy_keeps_out_and_recombines | `split -k 2 -n 3 --in "two words.hex" --out shares.txt`, then the printed line, then `combine --in two.txt --json` on its first two shares | `sh: line 1: two: No such file or directory`, exit 1 | printed `ms split -k 2 -n 3 --out='shares.txt' --hex - < 'two words.hex'`; exits 0; `shares.txt` holds 3 shares; combine of two gives `"entropy_hex":"00000000000000000000000000000000"` |
 | printed_cmd_gen_man_example_runs_without_xdg | the user-manpath line of `gen-man --help`, in `sh -c` with an empty environment but PATH and HOME | `error: cannot create --out dir: Permission denied (os error 13)`, exit 1 | exits 0; `$HOME/.local/share/man/man1/ms.1` exists |
 | printed_cmd_gen_man_example_runs_with_empty_xdg | the same with `XDG_DATA_HOME=` | as above, exit 1 | exits 0; `$HOME/.local/share/man/man1/ms.1` exists |
+
+| printed_cmd_split_bad_threshold_refused_before_read | `split -k 1 -n 3 --in entropy.hex` | prints the `note:` line and the BIP-39 error (the threshold is checked after the secret is read); exit 1 | exit 1; stderr is only `error: invalid threshold 1; K-of-N shares require k in 2..=9`, no `note:` line; nothing on stdout |
+| printed_cmd_split_bad_share_count_refused_before_read | `split -k 5 -n 3 --in entropy.hex` | prints the `note:` line and the BIP-39 error; exit 1 | exit 1; stderr is only `error: invalid share count n=3 for threshold k=5; require k <= n <= 31`, no `note:` line; nothing on stdout |
 
 Control rows (hold before and after):
 
@@ -129,12 +139,12 @@ Control rows (hold before and after):
   No other test pins the note's text or the gen-man help line (`git grep` on `never sniffs`, `hex - <`,
   `XDG_DATA_HOME` under `crates/`).
 - **New integration test file** `crates/ms-cli/tests/bh1119_printed_commands.rs`: one `#[test]` per row of section 4
-  (both tables), named exactly as the row (12 functions). Each I6 row runs the built `ms` (`assert_cmd`) in its own
+  (both tables), named exactly as the row (14 functions). Each I6 row runs the built `ms` (`assert_cmd`) in its own
   `tempfile::tempdir()`, asserts exit 1, takes the trimmed stderr line starting with `ms `, asserts it equals the
   "after the fix" text, runs it with `sh -c` in the same directory with the built `ms` first on PATH, and asserts the
   "expected after the fix" result. The gen-man rows run the help's line (the trimmed help line starting with
   `ms gen-man --out "$`, cut at `   #`) in `sh -c` with `env_clear()` plus PATH and HOME (and `XDG_DATA_HOME` as the
-  row says). The builder runs the file on the base first and records that exactly the 10 RED functions fail and the
+  row says). The builder runs the file on the base first and records that exactly the 12 RED functions fail and the
   2 controls pass before writing the code. (Measured on the scratch file: the 11 functions it held pass on the scratch
   build; 8 of them, the first version, were seen RED on the base; the hex-channel control is new here.)
 
@@ -149,7 +159,7 @@ None. No flag or exit code changes, and the manual quotes neither changed text: 
 
 | rule | rows |
 |---|---|
-| R1 | printed_cmd_split_remedy_runs, printed_cmd_split_remedy_long_flags_runs, printed_cmd_split_remedy_path_with_space_runs, printed_cmd_split_remedy_keeps_out_and_recombines |
+| R1 | printed_cmd_split_bad_threshold_refused_before_read, printed_cmd_split_bad_share_count_refused_before_read, printed_cmd_split_remedy_runs, printed_cmd_split_remedy_long_flags_runs, printed_cmd_split_remedy_path_with_space_runs, printed_cmd_split_remedy_keeps_out_and_recombines |
 | R2 | printed_cmd_encode_remedy_text, printed_cmd_encode_remedy_path_with_space_runs, printed_cmd_encode_remedy_path_with_quote_runs, printed_cmd_split_remedy_path_with_space_runs (and every row's exact text) |
 | R3 | printed_cmd_encode_remedy_keeps_out, printed_cmd_split_remedy_keeps_out_and_recombines |
 | R4 | printed_cmd_gen_man_example_runs_without_xdg, printed_cmd_gen_man_example_runs_with_empty_xdg, printed_cmd_gen_man_example_honours_xdg (control); f677 `every_help_example_runs_and_none_puts_material_on_argv` (changed) |
@@ -166,18 +176,21 @@ Rust pin `cargo 1.85.0`, `$HOME/.cargo/bin` first in PATH, `--locked`, no `--rel
     bash ci/code-docs-check.sh && bash ci/docs-only.test.sh
     scripts/ms-printed-commands-fix-gate.sh green target/debug/ms /scratch/cache/ms-printed-commands-gate-green
 
-Expected: the suite is the base's 758 plus the 12 new functions, all passing; the gate script prints
-`rows failed: 0`. Not covered by this gate: the macOS, musl, release, miri, FreeBSD and fuzz CI legs (CI on the PR
+Expected: the suite is the base's 758 plus the 14 new functions, all passing; the gate script prints
+`rows failed: 0`. Not covered by this gate: the macOS, musl, release, miri, FreeBSD and fuzz CI legs and the history-purge,
+g6-invariant, test-release-mlock-einval, vendor-freshness, smoke and man-release man-tarball jobs (all CI on the PR
 head), shells other than `sh`/`bash` (fish and csh do not expand `${VAR:-default}`; see Q3), and review.
 
-## 9. Open questions (not decided here; the architect rules)
+## 9. Questions (Q1-Q3 RULED; no question is open)
 
-- **Q1. Other flags in the note's command.** The holder may also have given `--json`, `--language`,
+Ruled 2026-11-22: Q1 (a), Q2 (b), Q3 (a), the author's recommendations, confirmed by review r1.
+
+- **Q1 (RULED: a). Other flags in the note's command.** The holder may also have given `--json`, `--language`,
   `--group-size`, `--separator`, `--no-engraving-card` (encode) or `--allow-argv-secret`. Options: (a) carry only
   `-k`/`-n` and `--out` (this document, the consultant's list); (b) carry every flag given except `--in`, in a fixed
   order; (c) as (a) plus `--json`. Recommend (a): none of the others changes which secret is encoded or where it is
   stored, and the shorter line is easier to read; file a Minor FOLLOWUPS line if (b) is wanted later.
-- **Q2. K or N out of range.** `ms split -k 1 -n 3 --in entropy.hex` prints the note before the threshold is checked
+- **Q2 (RULED: b; the code is in section 3, the rows in section 4). K or N out of range.** `ms split -k 1 -n 3 --in entropy.hex` prints the note before the threshold is checked
   (`split.rs:125` runs after `resolve_secret_payload`), so after R1 the printed line `ms split -k 1 -n 3 --hex - <
   'entropy.hex'` exits 1 `error: invalid threshold 1; K-of-N shares require k in 2..=9` (also `-k 5 -n 3`:
   `error: invalid share count n=3 for threshold k=5; require k <= n <= 31`). Options: (a) carry K and N as given and
@@ -188,7 +201,7 @@ head), shells other than `sh`/`bash` (fish and csh do not expand `${VAR:-default
   doubly wrong invocation sees the range error first. It changes the error order (not any text or exit code); rows
   would be `printed_cmd_split_bad_threshold_refused_before_read` (`split -k 1 -n 3 --in entropy.hex`: exit 1, stderr
   `error: invalid threshold 1; K-of-N shares require k in 2..=9`, no `note:` line) and the same for `-k 5 -n 3`.
-- **Q3. Shell dialect.** R4's `${XDG_DATA_HOME:-$HOME/.local/share}` is POSIX (sh, bash, zsh, dash) and is the
+- **Q3 (RULED: a). Shell dialect.** R4's `${XDG_DATA_HOME:-$HOME/.local/share}` is POSIX (sh, bash, zsh, dash) and is the
   grader's and consultant's shape; fish does not expand it (today's `$XDG_DATA_HOME` form does expand in fish but
   fails when unset). R2's `'it'\''s'` quoting also reads correctly in fish. Options: (a) POSIX shells only, as every
   other ms help example is run under bash (this document); (b) a second example line for fish. Recommend (a).
