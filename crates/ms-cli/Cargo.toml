@@ -28,7 +28,7 @@ ms-codec = { path = "../ms-codec", version = "=0.10.1" }
 # carry the four items P2 adopts: `fd::mode_of`, `remedy::history_purge_block`,
 # `remedy::history_purge_recipes`, `write::write_private`. The pin's gate is
 # `tests/crate_items_resolve.rs`, which goes RED if a rev predates any of them.
-mnemonic-io-lib = { git = "https://github.com/bg002h/mnemonic-engrave", rev = "6c24e62823e6c1ac02aa3862cd6020674bf58544" }
+mnemonic-io-lib = { git = "https://github.com/bg002h/mnemonic-engrave", rev = "d8fec6786bd5a8325f52dacc18cedc23d9edbd3a" }
 bip39 = { version = "2", features = ["all-languages"] }
 bitcoin = "0.32"
 clap = { version = "4", features = ["derive"] }

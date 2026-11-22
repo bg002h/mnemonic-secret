@@ -34,10 +34,12 @@
 
 /// Write `bytes` to `path`, creating or truncating it owner-only.
 ///
-/// `truncate(true)` is load-bearing and not a stylistic echo of
-/// `std::fs::write`: without it a **shrinking** overwrite — a smaller manifest
-/// written over a larger one — leaves the tail of the old file in place, which
-/// for a JSON artifact means trailing bytes after the closing brace.
+/// Truncation is load-bearing and not a stylistic echo of `std::fs::write`:
+/// without it a **shrinking** overwrite — a smaller manifest written over a
+/// larger one — leaves the tail of the old file in place, which for a JSON
+/// artifact means trailing bytes after the closing brace. It is done by
+/// `set_len(0)` after `set_permissions`, not by `truncate(true)` at open, so a
+/// refused chmod leaves the existing file unchanged.
 ///
 /// On non-Unix the mode calls compile out and the create/truncate semantics
 /// remain. The threat model is POSIX: mode bits do not mean the same thing
@@ -46,7 +48,7 @@ pub fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()
     use std::fs::OpenOptions;
     use std::io::Write;
     let mut opts = OpenOptions::new();
-    opts.write(true).create(true).truncate(true);
+    opts.write(true).create(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -60,6 +62,9 @@ pub fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()
     {
         use std::os::unix::fs::PermissionsExt;
         f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+    if f.metadata()?.is_file() {
+        f.set_len(0)?;
     }
     f.write_all(bytes)
 }
@@ -121,7 +126,7 @@ mod tests {
 
     /// A **shrinking** overwrite leaves no tail of the previous file.
     ///
-    /// Dropping `truncate(true)` is the tidy-up that looks harmless: the mode
+    /// Dropping the `set_len(0)` is the tidy-up that looks harmless: the mode
     /// assertions above all still pass, and a smaller JSON manifest written over
     /// a larger one silently acquires trailing bytes after its closing brace.
     #[test]
@@ -133,7 +138,7 @@ mod tests {
         assert_eq!(
             std::fs::read(&p).unwrap(),
             b"{\"a\":1}",
-            "without truncate(true) the tail of the longer write survives"
+            "without set_len(0) the tail of the longer write survives"
         );
     }
 }
