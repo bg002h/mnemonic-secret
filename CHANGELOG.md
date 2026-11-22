@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## ms-cli [Unreleased]
 
+## ms-cli [0.20.6] — 2026-11-22
+
+### Fixed
+- **`--allow-argv-secret` no longer rewrites `--in` and `--out` file names.** A file name of 32 to 64 hex
+  characters, or one shaped like an ms1 string, was taken for a secret on the command line and replaced by `-`:
+  `--in` then read a file named `-` in the current directory (a backup of a different seed, or `OK` from
+  `ms verify` for a file that does not exist), and `--out` wrote the card to `./-` instead of the named file,
+  exit 0. `--in=FILE` and `--out=FILE` exited 64. The named file is now read or written; a missing one fails
+  with `failed to read --in FILE` (exit 1). Without `--allow-argv-secret` such a name is still refused.
+- **`--hashlock-phrase=TEXT` keeps leading and trailing spaces**, as `--hashlock-phrase TEXT` does
+  (`SPEC_ms_hashlock.md` §4.3, "no trimming"). The `=` spelling used to drop trailing spaces, so the committed
+  hash was for a different phrase than the one written down.
+
 ## ms-cli [0.20.5] — 2026-11-20
 
 ### Fixed
