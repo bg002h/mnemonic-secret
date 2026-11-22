@@ -469,12 +469,11 @@ Refusals name the rule and **never echo the phrase**.
   empty stream.
 - **`--out FILE`**: the preimage as an ms1 string, mode `0600`, overwriting.
   `--out` is the preimage's channel; stdout is the digest's.
-- **stderr card** (suppressed by `--no-engraving-card`), whose **first line
-  names it as carrying the preimage** (r2 review M-1). This verb inverts `ms`'s
+- **stderr card** (suppressed by `--no-engraving-card`), whose **first line names where the preimage is (on the card in text mode without `--out`)** (r2 review M-1). This verb inverts `ms`'s
   usual polarity — stdout public, stderr secret — so `2>>log` or `2>&1 | tee`
   lands a preimage in a `0644` file and nothing else on the stream would say so.
   Then: the digest; the `sha256=` operand for `md compose --path`; the preimage
-  as grouped ms1 (`--group-size`/`--separator` apply) and as hex; the **method
+  as grouped ms1 (`--group-size`/`--separator` apply) and as hex; (under `--out FILE` or `--json` neither: the card names where the preimage is, and its first line says so -- single-print ruling 2026-11-22); the **method
   line**, verbatim and copyable — for the two phrase sources; for `--hex`, `--random`
   and `<ms1>` the line reads `preimage supplied` and carries no write-it-down
   instruction, there being no phrase to write it beside (correctness N-2) —

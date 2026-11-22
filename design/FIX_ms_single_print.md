@@ -23,7 +23,7 @@ In scope: `ms encode` (its stderr `engraving card: <grouped ms1>` line is the se
   is printed ONCE (review r1 I-1, coordinator ruling applying Brian's "print once"; section 2b): under `--out FILE`
   the card line reads `preimage (ms1):  written to FILE`, under `--json` it reads `preimage (ms1):  in the JSON
   (preimage_ms1)`, and in text mode without `--out` the card keeps the grouped string, which is then the only copy
-  (stdout never carries it). `--out` together with `--json` is OPEN (Q1, section 10). `--no-engraving-card`,
+  (stdout never carries it). With both `--out FILE` and `--json` it reads `preimage (ms1):  written to FILE and in the JSON (preimage_ms1)`, and the JSON object keeps `preimage_ms1` and `preimage_hex` (Q1, ruled). When `--out` or `--json` carries the preimage, the card prints no form of it: `preimage (hex):` reads ``not printed; `ms decode --in` on that file prints it`` under `--out` and `in the JSON (preimage_hex)` under `--json`; under `--json` the `--emit-record` line reads `record (phrase): in the JSON (phrase_record)`; and line 1 says where the preimage is (section 2b). Text mode without `--out` is unchanged (architect ruling 2026-11-22, Q2 and the line-1 question). `--no-engraving-card`,
   `--group-size` (default 5) and `--separator` stay as they are.
 - `ms combine`, `ms repair`, `ms derive`, `ms decode`: print no copy on stderr.
 
@@ -47,9 +47,8 @@ In scope: `ms encode` (its stderr `engraving card: <grouped ms1>` line is the se
   is a lockstep edit (drop the flag); none parses the card. Its help text changes (section 1).
 - P5. The `encode` help EXAMPLES gain one grouped example and the first example's comment changes (section 1).
 - P6. `ms hashlock` prints the preimage ms1 once (section 2b): its card line names where the string went
-  (`written to FILE` / `in the JSON (preimage_ms1)`) instead of repeating it; text mode without `--out` is
-  unchanged. The `FILE` shown is the path as given on the command line. The card's `preimage (hex):` line is not
-  an ms1 string and stays (Q2, section 10).
+  (`written to FILE` / `in the JSON (preimage_ms1)` / with both flags `written to FILE and in the JSON (preimage_ms1)`) instead of repeating it; text mode without `--out` is
+  unchanged. The `FILE` shown is the path as given on the command line. Under `--out`/`--json` the card prints no form of the preimage: the `preimage (hex):` line and, under `--json`, the `record (phrase):` line name where it is, and line 1 is reworded per mode (section 2b; Q2 ruled 2026-11-22).
 
 ## 1. Spec delta (ms-local texts)
 
@@ -75,6 +74,8 @@ EXAMPLES block, first two lines (the second is new; the rest is unchanged):
 false once `ms encode` defaults to 0): the doc comment reads "`u16` and the same default as `ms split`, so the same
 value is accepted by every verb that renders a grouped ms1 (review N-1)."
 
+`ms hashlock --help`, `--emit-record`: its last sentence becomes "THE RECORD CARRIES THE PHRASE, so it goes on the card and never in the stdout record; under --json it is in the object (`phrase_record`) instead of on the card." (was: "... so it goes on the card beside the preimage and never on stdout, which carries only the public digest.", false under `--json`, whose object has always carried `phrase_record`).
+
 `CHANGELOG.md`, under `## ms-cli [Unreleased]`:
 
     ### Changed
@@ -83,8 +84,7 @@ value is accepted by every verb that renders a grouped ms1 (review N-1)."
       request; its default is `0`, so a plain `ms encode` prints on stdout exactly what it printed before.
       `--out FILE` receives the same bytes stdout would have carried. `--no-engraving-card` still suppresses the
       word count, language and passphrase lines. `--json` and `ms split` are unchanged.
-    - **`ms hashlock` prints the preimage ms1 once.** Under `--out FILE` or `--json` the stderr card line
-      `preimage (ms1):` says where the string went instead of repeating it; text mode without `--out` is unchanged.
+    - **`ms hashlock` prints the preimage once.** Under `--out FILE` or `--json` the stderr card prints no form of the preimage: the `preimage (ms1):` and `preimage (hex):` lines (and, under `--json`, `record (phrase):`) say where it is, and the card's first line says where the preimage is instead of "THIS CARD CARRIES THE PREIMAGE". The JSON object is unchanged. Text mode without `--out` is unchanged.
 
 ## 2. Behaviour: exact bytes per case
 
@@ -123,10 +123,18 @@ other card line, the notices, exit codes and refusals are unchanged. Measured on
 | `ms hashlock --hex - --out F` | `written to F` (`F` as given on the command line) | F (0600, `U\n`, unbroken, unchanged) | `GU` |
 | `ms hashlock --hex - --json` | `in the JSON (preimage_ms1)` | the JSON object's `preimage_ms1` | `GU` |
 | `ms hashlock --hex - --no-engraving-card` (with or without `--out`/`--json`) | no card | as above | identical |
-| `ms hashlock --hex - --out F --json` | OPEN: Q1 (section 10) | F and the JSON | `GU` |
+| `ms hashlock --hex - --out F --json` | `written to F and in the JSON (preimage_ms1)` | F (unchanged) and the JSON object's `preimage_ms1` (unchanged) | `GU` |
 
 `--group-size` and `--separator` shape the card line only in the first row (they have nothing to shape in the
-others). The card's `preimage (hex):` line is untouched (Q2, section 10).
+others). The card's line 1, `preimage (hex):` and `record (phrase):` lines per mode:
+
+| mode | line 1 | `preimage (ms1):` (Q1 of the earlier report) | `preimage (hex):` | `record (phrase):` (only with `--emit-record`) |
+|---|---|---|---|---|
+| neither (text, no `--out`) | `THIS CARD CARRIES THE PREIMAGE -- the secret. stdout carries only the public digest.` (unchanged) | grouped ms1 (unchanged) | `<64 hex>` (unchanged) | `phrase:<hex>` (unchanged) |
+| `--out F` | `THE PREIMAGE -- the secret -- is in F, not on this card. stdout carries only the public digest.` | `written to F` | ``not printed; `ms decode --in` on that file prints it`` | n/a (see next row) |
+| `--out F --emit-record` | `THE PREIMAGE -- the secret -- is in F. THIS CARD CARRIES THE PHRASE RECORD -- also secret. stdout carries only the public digest.` | `written to F` | as above | `phrase:<hex>` (kept: F holds only the ms1, so the card is the record's only copy) |
+| `--json` | `THE PREIMAGE -- the secret -- is in the JSON on stdout, not on this card.` | `in the JSON (preimage_ms1)` | `in the JSON (preimage_hex)` | `in the JSON (phrase_record)` |
+| `--out F --json` | `THE PREIMAGE -- the secret -- is in F and in the JSON on stdout, not on this card.` | `written to F and in the JSON (preimage_ms1)` | `in the JSON (preimage_hex)` | `in the JSON (phrase_record)` |
 
 ## 3. Production changes (exact; the GREEN build measured in section 6)
 
@@ -491,7 +499,7 @@ fn hashlock_text_keeps_the_grouped_preimage() {
 
 Measured: the full suite with the section-3 production change and the base tests failed exactly 5 rows
 (`/scratch/cache/sp-ms-basetests.log`, `725 tests run: 720 passed, 5 failed`). Their change, plus one deletion.
-The `ms hashlock` card line (section 3b, blocked on Q1) breaks no existing test: with the candidate applied the
+The `ms hashlock` card line (section 3b) breaks one existing test, the row above: with the candidate applied the
 whole workspace passes (section 6), so no `hashlock_*` row changes:
 
 | test | change |
@@ -503,6 +511,7 @@ whole workspace passes (section 6), so no `hashlock_*` row changes:
 | `encode_canonical_12_word::encode_12_word_abandon_about` | the stderr assertion flips: no `ms10e`, no `engraving card:` |
 | `f677_help_matches_behaviour::encode_group_size_help_describes_the_card_not_stdout` | renamed `encode_group_size_help_describes_stdout`; asserts the new help wording and that `--group-size 3` groups stdout in threes |
 | `encode_grouping_flags` module doc | rewritten (no behaviour) |
+| `output_errors::full_stdout_after_an_out_file_exits_1_and_keeps_the_file` | the `--out` card's line 1 pin `THIS CARD CARRIES THE PREIMAGE` becomes `THE PREIMAGE -- the secret -- is in ` (in the section 3b diff) |
 
 Every other `--group-size` / `--no-engraving-card` use in the suite (`argv_*`, `hashlock_*`, `cli_split`,
 `decode_grouped`, `encode_no_engraving_card`, ...) passes unchanged.
@@ -741,7 +750,7 @@ index c0eb9fe..cd5f0c4 100644
 
 | CI step | command | result |
 |---|---|---|
-| test | `cargo nextest run --locked --workspace --no-fail-fast` (`--build-jobs 6 -j 6`, own target dir) | 750 passed, 23 skipped on origin/master 2450ede + section 3 + section 5 + `single_print.rs` + the section 3b candidate (`/scratch/cache/fold-sp-ms-green2.log`; the first round's 727 passed + 23 skipped was on 9c0f5f3, so the counts differ because master moved) |
+| test | `cargo nextest run --locked --workspace --no-fail-fast` (`--build-jobs 6 -j 6`, own target dir) | 758 passed, 23 skipped on origin/master 2450ede + section 3 + section 5 + `single_print.rs` + the section 3b candidate (`/scratch/cache/fold-sp-ms-green2.log`; the first round's 727 passed + 23 skipped was on 9c0f5f3, so the counts differ because master moved) |
 | ignored decline/purge rows | `cargo nextest run -p ms-cli --test the_decline --test history_purge --run-ignored all` | 13 passed |
 | doc tests | `cargo test --locked --workspace --doc` | ok |
 | clippy | `cargo clippy --locked --workspace --all-targets -- -D warnings` | clean |
@@ -755,7 +764,7 @@ The build re-runs the whole gate on its own commits; this table is the author's 
 ## 7. Build order
 
 1. RED commit: add `crates/ms-cli/tests/single_print.rs`; run the row command; see 5 FAIL + 2 PASS (the two controls).
-2. GREEN commit: section 3, section 3b (once Q1 is ruled), section 5, the CHANGELOG entry (section 1); full gate.
+2. GREEN commit: section 3, section 3b, section 5, the CHANGELOG entry (section 1); full gate.
 3. Release (PROPOSED next: ms-cli 0.21.0, a CLI-output change).
 
 ## 8. Lockstep
@@ -865,10 +874,10 @@ chose nothing):
   text) is not decided. The existing test `random_json_with_out_succeeds` shows the combination is supported. Until
   ruled, section 3b has no production diff; the measured candidate for the two decided cases is in
   `/scratch/cache/fold-sp-ms-hashlock-candidate.diff` (it prints `written to F` when `--out` is given, which is a
-  tie-break the candidate needed to compile, NOT a ruling).
+  tie-break the candidate needed to compile, NOT a ruling). Ruled 2026-11-22: see `coordinator/agent-reports/architect-single-print-r1-fold-qs.md` item 1.
 - Q2: the card's `preimage (hex): <64 hex>` line carries the same secret as the ms1 and stays on stderr under
   `--out` and `--json` (the review and the fold brief name only the ms1 line). Whether it also becomes
-  `written to F` / `in the JSON (preimage_hex)` is not decided.
+  `written to F` / `in the JSON (preimage_hex)` is not decided. Ruled 2026-11-22: under `--out`/`--json` the card prints no form of the preimage; see `coordinator/agent-reports/architect-hashlock-stderr-preimage.md`.
 - Q3: the review's RED-row wording "stderr contains no `ms1` substring" cannot hold literally (the new line itself
   reads `preimage (ms1):  written to F`). The rows assert no `ms10` and no `U` with spaces removed (section 4).
   Confirm that reading.
