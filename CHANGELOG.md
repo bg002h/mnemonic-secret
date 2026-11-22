@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## ms-cli [Unreleased]
 
+## ms-cli [0.20.6] — 2026-11-22
+
 ### Fixed
 - **`--allow-argv-secret` no longer rewrites `--in` and `--out` file names.** A file name of 32 to 64 hex
   characters, or one shaped like an ms1 string, was taken for a secret on the command line and replaced by `-`:
