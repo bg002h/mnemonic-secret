@@ -269,32 +269,40 @@ index a4f5373..d8ed7bd 100644
      pub group_size: u16,
 ```
 
-Section 3b (the `ms hashlock` card line, review r1 I-1) is NOT in the diff above: it is blocked on Q1 (section 10),
-which decides the `--out` together with `--json` case that the code must handle. The candidate for the two decided
-cases is measured (section 6) but is added to this section only after Q1 is ruled.
+Section 3b (the `ms hashlock` card, review r1 I-1; Q1 and Q2 ruled, section 10): the exact diff is the committed file
+`design/fix-single-print/arch-sp-ms-hashlock-2.diff` (four `crates/ms-cli/src/cmd/hashlock.rs` hunks and the one
+`crates/ms-cli/tests/output_errors.rs` hunk of section 5). Apply it after the diff above: `patch -p1 < design/fix-single-print/arch-sp-ms-hashlock-2.diff`.
 
 ## 4. RED rows
 
 New file `crates/ms-cli/tests/single_print.rs` (verbatim below; rustfmt-clean). Row = test function name.
 
-| row | expected after GREEN | measured on base (9c0f5f3 for the encode rows; 2450ede for the hashlock rows) |
+| row | expected after GREEN | measured on base (9c0f5f3 for the encode rows; 2450ede for the first three hashlock rows; a0e57bfa and 3ec5df3 for the last eight, whose `encode.rs` and `hashlock.rs` equal those bases) |
 |---|---|---|
 | `encode_prints_the_ms1_once` | stdout `C\n`; stderr exactly `L\nW\n` | FAIL: stderr starts `engraving card: G` (the second copy) |
 | `encode_group_size_groups_stdout` | `--group-size 5`: stdout `G\n`; stderr `L\nW\n` | FAIL: stdout `C\n` |
 | `encode_out_writes_the_stdout_bytes` | `--group-size 5 --out F`: stdout empty, F = `G\n`, stderr `L\n` | FAIL: F = `C\n` |
 | `encode_no_engraving_card_leaves_only_the_warning` | control: stdout `C\n`, stderr `W\n` | PASS (a guard on P4, not a RED row) |
-| `hashlock_out_prints_the_preimage_once` | `ms hashlock --hex - --out F`: F holds the unbroken `U`; stderr has no `ms10` and, spaces removed, no `U`; stderr has the line `preimage (ms1):  written to F` | FAIL: stderr carries `preimage (ms1):  GU` (the second copy) |
-| `hashlock_json_prints_the_preimage_once` | `--json`: `preimage_ms1` is `U`; stderr has no `ms10` and no `U`; stderr has the line `preimage (ms1):  in the JSON (preimage_ms1)` | FAIL: stderr carries `preimage (ms1):  GU` |
+| `hashlock_out_prints_the_preimage_once` | `ms hashlock --hex - --out F`: F holds the unbroken `U`; stderr carries no copy of the preimage ms1: no `ms10` substring and, with every space removed, no `U` (the label `preimage (ms1):` is not a copy); stderr has the line `preimage (ms1):  written to F` | FAIL: stderr carries `preimage (ms1):  GU` (the second copy) |
+| `hashlock_json_prints_the_preimage_once` | `--json`: `preimage_ms1` is `U`; stderr carries no copy of the preimage ms1: no `ms10` substring and, with every space removed, no `U` (the label `preimage (ms1):` is not a copy); stderr has the line `preimage (ms1):  in the JSON (preimage_ms1)` | FAIL: stderr carries `preimage (ms1):  GU` |
 | `hashlock_text_keeps_the_grouped_preimage` | control: text mode, no `--out`: the card line is `GU` | PASS (a guard on the only-copy case, not a RED row) |
+| `hashlock_out_and_json_print_the_preimage_once` | `--out F --json`: F = the JSON's `preimage_ms1` + `\n`; stderr carries no copy of the preimage ms1: no `ms10` substring and, with every space removed, no `U` (the label `preimage (ms1):` is not a copy); stderr has the line `preimage (ms1):  written to F and in the JSON (preimage_ms1)` | FAIL: stderr carries `preimage (ms1):  GU` |
+| `hashlock_out_card_carries_no_form_of_the_preimage` | `--hex - --out F`: no 64-hex preimage on stderr; line 1 = the `--out F` text; hex line = the `--out` text | FAIL: stderr carries the hex preimage `K` |
+| `hashlock_json_card_carries_no_form_of_the_preimage` | `--json`: JSON `preimage_hex` = `K`; no `K` on stderr; line 1 = the `--json` text; hex line `in the JSON (preimage_hex)` | FAIL: stderr carries the hex preimage `K` |
+| `hashlock_out_and_json_card_carries_no_form_of_the_preimage` | both flags: as above with the `--out F --json` line 1 | FAIL: stderr carries the hex preimage `K` |
+| `hashlock_json_moves_the_phrase_record_to_the_json` | phrase `--emit-record --json`: stderr lacks the JSON's `phrase_record`; has `record (phrase): in the JSON (phrase_record)` | FAIL: the phrase record is on stderr |
+| `hashlock_out_keeps_the_phrase_record_and_says_so` | phrase `--emit-record --out F`: line 1 = the `--out F --emit-record` text; `record (phrase): phrase:` kept | FAIL: line 1 is `THIS CARD CARRIES THE PREIMAGE -- ...` |
+| `hashlock_text_keeps_line_one_the_hex_and_the_record` | control: text mode keeps line 1, `preimage (hex):  K`, the record | PASS (a guard on the only-copy case, not a RED row) |
+| `hashlock_out_hex_remedy_runs` | control: `ms decode --in F` stdout has `preimage:  K` | PASS (a guard on the named remedy, not a RED row) |
 
 The stderr assertion is "no `ms10` and no `U` once spaces are removed", not the review's literal "no `ms1`
 substring": the card's own label `preimage (ms1):` (and the new `written to` line) contain `ms1`, so the literal
 reading fails after GREEN too (Q3, section 10).
 
 Command (run, not pinned): `CARGO_TARGET_DIR=<own> cargo nextest run --locked --build-jobs 6 -j 6 -p ms-cli --test
-single_print`. Base result: `7 tests run: 2 passed, 5 failed` (log `/scratch/cache/fold-sp-ms-red.log`; the three
-encode rows measured on 9c0f5f3 in the first round, re-run on 2450ede in the fold round with the same result;
-`nextest` rc 100). Assertion excerpts from that run:
+single_print --no-fail-fast`. Base result: `15 tests run: 4 passed, 11 failed` (`nextest` rc 100; the four PASS are the
+controls; measured 2026-11-22 on a0e57bfa and on 3ec5df3, logs `/scratch/cache/arch-sp-r2-red.log` and `-red-3ec5df3.log`).
+Assertion excerpts from the first seven rows' run (2450ede, `7 tests run: 2 passed, 5 failed`, `/scratch/cache/fold-sp-ms-red.log`):
 
 ```text
     thread 'encode_prints_the_ms1_once' panicked at crates/ms-cli/tests/single_print.rs:47:5:
@@ -493,14 +501,192 @@ fn hashlock_text_keeps_the_grouped_preimage() {
         "stdout is the digest record"
     );
 }
+
+#[test]
+fn hashlock_out_and_json_print_the_preimage_once() {
+    let d = tempfile::tempdir().unwrap();
+    let f = d.path().join("preimage.ms1");
+    let fs = f.to_str().unwrap();
+    let o = hashlock(&["--out", fs, "--json"]);
+    assert_eq!(o.status.code(), Some(0));
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    let ms1 = v["preimage_ms1"].as_str().unwrap().to_string();
+    assert!(ms1.starts_with("ms10h"), "{ms1}");
+    assert_eq!(
+        std::fs::read_to_string(&f).unwrap(),
+        format!("{ms1}\n"),
+        "F holds the same unbroken ms1 as the JSON"
+    );
+    let se = text(&o.stderr);
+    assert_no_ms1_on(&se, &ms1);
+    assert!(
+        se.contains(&format!(
+            "preimage (ms1):  written to {fs} and in the JSON (preimage_ms1)\n"
+        )),
+        "{se}"
+    );
+}
+
+// ---- `ms hashlock`: no form of the preimage on the card when `--out` or
+// `--json` carries it (architect ruling 2026-11-22,
+// coordinator/agent-reports/architect-hashlock-stderr-preimage.md) ----
+
+const LINE1_TEXT: &str =
+    "THIS CARD CARRIES THE PREIMAGE -- the secret. stdout carries only the public digest.";
+
+fn first_line(se: &str) -> &str {
+    se.lines().next().unwrap_or("")
+}
+
+/// The phrase-source runs: `--hashlock-phrase-stdin --emit-record`.
+fn hashlock_phrase(extra: &[&str]) -> std::process::Output {
+    Command::cargo_bin("ms")
+        .unwrap()
+        .args(["hashlock", "--hashlock-phrase-stdin", "--emit-record"])
+        .args(extra)
+        .write_stdin("correct horse battery staple")
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn hashlock_out_card_carries_no_form_of_the_preimage() {
+    let d = tempfile::tempdir().unwrap();
+    let f = d.path().join("preimage.ms1");
+    let fs = f.to_str().unwrap();
+    let o = hashlock(&["--out", fs]);
+    assert_eq!(o.status.code(), Some(0));
+    let se = text(&o.stderr);
+    assert!(!se.contains(HEX32), "the hex preimage is on stderr:\n{se}");
+    assert_eq!(
+        first_line(&se),
+        format!(
+            "THE PREIMAGE -- the secret -- is in {fs}, not on this card. \
+             stdout carries only the public digest."
+        )
+    );
+    assert!(
+        se.contains("preimage (hex):  not printed; `ms decode --in` on that file prints it\n"),
+        "{se}"
+    );
+}
+
+#[test]
+fn hashlock_json_card_carries_no_form_of_the_preimage() {
+    let o = hashlock(&["--json"]);
+    assert_eq!(o.status.code(), Some(0));
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["preimage_hex"], HEX32, "the JSON keeps preimage_hex");
+    let se = text(&o.stderr);
+    assert!(!se.contains(HEX32), "the hex preimage is on stderr:\n{se}");
+    assert_eq!(
+        first_line(&se),
+        "THE PREIMAGE -- the secret -- is in the JSON on stdout, not on this card."
+    );
+    assert!(
+        se.contains("preimage (hex):  in the JSON (preimage_hex)\n"),
+        "{se}"
+    );
+}
+
+#[test]
+fn hashlock_out_and_json_card_carries_no_form_of_the_preimage() {
+    let d = tempfile::tempdir().unwrap();
+    let f = d.path().join("preimage.ms1");
+    let fs = f.to_str().unwrap();
+    let o = hashlock(&["--out", fs, "--json"]);
+    assert_eq!(o.status.code(), Some(0));
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["preimage_hex"], HEX32, "the JSON keeps preimage_hex");
+    let se = text(&o.stderr);
+    assert!(!se.contains(HEX32), "the hex preimage is on stderr:\n{se}");
+    assert_eq!(
+        first_line(&se),
+        format!(
+            "THE PREIMAGE -- the secret -- is in {fs} and in the JSON on stdout, \
+             not on this card."
+        )
+    );
+    assert!(
+        se.contains("preimage (hex):  in the JSON (preimage_hex)\n"),
+        "{se}"
+    );
+}
+
+#[test]
+fn hashlock_json_moves_the_phrase_record_to_the_json() {
+    let o = hashlock_phrase(&["--json"]);
+    assert_eq!(o.status.code(), Some(0));
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    let rec = v["phrase_record"].as_str().unwrap().to_string();
+    assert!(rec.starts_with("phrase:"), "{rec}");
+    let se = text(&o.stderr);
+    assert!(!se.contains(&rec), "the phrase record is on stderr:\n{se}");
+    assert!(
+        se.contains("record (phrase): in the JSON (phrase_record)\n"),
+        "{se}"
+    );
+}
+
+/// `--out` without `--json`: F holds only the ms1, so the card keeps the
+/// phrase record (its only copy) and line 1 says the card carries it.
+#[test]
+fn hashlock_out_keeps_the_phrase_record_and_says_so() {
+    let d = tempfile::tempdir().unwrap();
+    let f = d.path().join("preimage.ms1");
+    let fs = f.to_str().unwrap();
+    let o = hashlock_phrase(&["--out", fs]);
+    assert_eq!(o.status.code(), Some(0));
+    let se = text(&o.stderr);
+    assert_eq!(
+        first_line(&se),
+        format!(
+            "THE PREIMAGE -- the secret -- is in {fs}. THIS CARD CARRIES THE PHRASE RECORD \
+             -- also secret. stdout carries only the public digest."
+        )
+    );
+    assert!(se.contains("\nrecord (phrase): phrase:"), "{se}");
+}
+
+/// Control (passes on the base too): text mode without `--out` is the only
+/// copy, so line 1, the hex and the phrase record stay on the card.
+#[test]
+fn hashlock_text_keeps_line_one_the_hex_and_the_record() {
+    let o = hashlock(&[]);
+    assert_eq!(o.status.code(), Some(0));
+    let se = text(&o.stderr);
+    assert_eq!(first_line(&se), LINE1_TEXT);
+    assert!(se.contains(&format!("preimage (hex):  {HEX32}\n")), "{se}");
+    let p = hashlock_phrase(&[]);
+    let pe = text(&p.stderr);
+    assert_eq!(first_line(&pe), LINE1_TEXT);
+    assert!(pe.contains("\nrecord (phrase): phrase:"), "{pe}");
+}
+
+/// Control (passes on the base too): the remedy the `--out` card names runs,
+/// and prints the hex.
+#[test]
+fn hashlock_out_hex_remedy_runs() {
+    let d = tempfile::tempdir().unwrap();
+    let f = d.path().join("preimage.ms1");
+    let fs = f.to_str().unwrap();
+    assert_eq!(hashlock(&["--out", fs]).status.code(), Some(0));
+    let o = ms(&["decode", "--in", fs]);
+    assert_eq!(o.status.code(), Some(0));
+    assert!(
+        text(&o.stdout).contains(&format!("preimage:  {HEX32}\n")),
+        "{}",
+        text(&o.stdout)
+    );
+}
 ```
 
 ## 5. Tests that change
 
 Measured: the full suite with the section-3 production change and the base tests failed exactly 5 rows
 (`/scratch/cache/sp-ms-basetests.log`, `725 tests run: 720 passed, 5 failed`). Their change, plus one deletion.
-The `ms hashlock` card line (section 3b) breaks one existing test, the row above: with the candidate applied the
-whole workspace passes (section 6), so no `hashlock_*` row changes:
+The `ms hashlock` card (section 3b) breaks one existing test, the last row of the table below (its pin moves in the
+section 3b diff); with section 3b applied the whole workspace passes (section 6), so no `hashlock_*` row changes:
 
 | test | change |
 |---|---|
@@ -750,7 +936,7 @@ index c0eb9fe..cd5f0c4 100644
 
 | CI step | command | result |
 |---|---|---|
-| test | `cargo nextest run --locked --workspace --no-fail-fast` (`--build-jobs 6 -j 6`, own target dir) | 758 passed, 23 skipped on origin/master 2450ede + section 3 + section 5 + `single_print.rs` + the section 3b candidate (`/scratch/cache/fold-sp-ms-green2.log`; the first round's 727 passed + 23 skipped was on 9c0f5f3, so the counts differ because master moved) |
+| test | `cargo nextest run --locked --workspace --no-fail-fast` (`--build-jobs 6 -j 6`, own target dir) | 758 passed, 23 skipped on origin/master 3ec5df3 (2450ede + the 0.20.6 release) + section 3 + section 3b + section 5 + `single_print.rs` (`/scratch/cache/arch-sp-r2-green-3ec5df3.log`); 738 passed, 23 skipped with the same changes on a0e57bfa, whose `crates/` equal 9c0f5f3's (`/scratch/cache/arch-sp-r2-green.log`) |
 | ignored decline/purge rows | `cargo nextest run -p ms-cli --test the_decline --test history_purge --run-ignored all` | 13 passed |
 | doc tests | `cargo test --locked --workspace --doc` | ok |
 | clippy | `cargo clippy --locked --workspace --all-targets -- -D warnings` | clean |
@@ -763,7 +949,7 @@ The build re-runs the whole gate on its own commits; this table is the author's 
 
 ## 7. Build order
 
-1. RED commit: add `crates/ms-cli/tests/single_print.rs`; run the row command; see 5 FAIL + 2 PASS (the two controls).
+1. RED commit: add `crates/ms-cli/tests/single_print.rs`; run the row command; see 11 FAIL + 4 PASS (the four controls).
 2. GREEN commit: section 3, section 3b, section 5, the CHANGELOG entry (section 1); full gate.
 3. Release (PROPOSED next: ms-cli 0.21.0, a CLI-output change).
 
@@ -880,4 +1066,4 @@ chose nothing):
   `written to F` / `in the JSON (preimage_hex)` is not decided. Ruled 2026-11-22: under `--out`/`--json` the card prints no form of the preimage; see `coordinator/agent-reports/architect-hashlock-stderr-preimage.md`.
 - Q3: the review's RED-row wording "stderr contains no `ms1` substring" cannot hold literally (the new line itself
   reads `preimage (ms1):  written to F`). The rows assert no `ms10` and no `U` with spaces removed (section 4).
-  Confirm that reading.
+  Confirm that reading. Ruled 2026-11-22: confirmed; the clause is in the expected cells of the three `*_prints_the_preimage_once` rows (section 4), not the text-mode control; see `coordinator/agent-reports/architect-single-print-r1-fold-qs.md` item 3.
