@@ -312,8 +312,9 @@ fn override_applies(argv: &[String]) -> bool {
         )
 }
 
-/// Drop the override token, replace each material token with `-`, and seed the
-/// material into [`ADMITTED`].
+/// Drop the override token, replace each material token with `-` (except the
+/// value of `--in`/`--out`, which is a path, bh-ms-C1), and seed the material
+/// into [`ADMITTED`].
 ///
 /// `Err` is a USAGE error (exit 64), not a secret refusal: see the flag-shaped
 /// value check below.
@@ -321,11 +322,37 @@ fn substitute(argv: &[String]) -> std::result::Result<Vec<String>, String> {
     let mut map: std::collections::HashMap<String, Vec<String>> = Default::default();
     let mut out: Vec<String> = Vec::with_capacity(argv.len());
     let mut i = 0;
+    // bh-ms-C1: set once a literal `--` is reached; clap reads everything after
+    // it as a positional, so `--in`/`--out` are no longer flags there.
+    let mut after_dashdash = false;
     while i < argv.len() {
         let token = argv[i].clone();
         if token == ALLOW_FLAG {
             i += 1;
             continue;
+        }
+        if i > 0 && token == "--" {
+            after_dashdash = true;
+        }
+        if i > 0 && !after_dashdash {
+            // bh-ms-C1: the value of `--in`/`--out` is a path, never material.
+            // Exact flag bytes only; nothing goes into the admitted map.
+            if token == "--in" || token == "--out" {
+                out.push(token);
+                match argv.get(i + 1) {
+                    Some(next) if next != ALLOW_FLAG => {
+                        out.push(next.clone());
+                        i += 2;
+                    }
+                    _ => i += 1,
+                }
+                continue;
+            }
+            if token.starts_with("--in=") || token.starts_with("--out=") {
+                out.push(token);
+                i += 1;
+                continue;
+            }
         }
         let whole = token.trim().to_ascii_lowercase();
         if i > 0 && SECRET_FLAGS.contains(&whole.as_str()) {
@@ -389,15 +416,14 @@ fn substitute(argv: &[String]) -> std::result::Result<Vec<String>, String> {
         if i > 0 {
             if let Some((lhs, _)) = whole.split_once('=') {
                 if SECRET_FLAGS.contains(&lhs) {
-                    let raw = token.trim().split_once('=').map(|(_, r)| r).unwrap_or("");
                     // The value exactly as clap sees it (no trim): what the
-                    // resolver will classify, and what a literal passphrase is.
+                    // resolver will classify, and what the space spelling admits
+                    // (bh-ms-C2: the exact value is admitted for every flag).
                     let exact = token.split_once('=').map(|(_, r)| r).unwrap_or("");
                     if !is_channel(lhs, exact) {
-                        let admitted = if lhs == "--passphrase" { exact } else { raw };
                         map.entry(lhs.to_string())
                             .or_default()
-                            .push(admitted.to_string());
+                            .push(exact.to_string());
                         out.push(format!("{lhs} -"));
                         // Two tokens, not one: `--phrase=-` also parses, but
                         // emitting the split form keeps the substituted argv in
@@ -634,15 +660,7 @@ mod tests {
 
     #[test]
     fn substitute_keeps_path_values() {
-        let got = substitute(&argv(&[
-            "encode",
-            ALLOW_FLAG,
-            "--in",
-            PN,
-            "--out",
-            PN64,
-        ]))
-        .unwrap();
+        let got = substitute(&argv(&["encode", ALLOW_FLAG, "--in", PN, "--out", PN64])).unwrap();
         assert_eq!(got, argv(&["encode", "--in", PN, "--out", PN64]));
     }
 

@@ -69,7 +69,10 @@ fn argv_sub_in_space_reads_named_file() {
     let d = tempfile::tempdir().unwrap();
     put(d.path(), N, P15);
     put(d.path(), "-", P12);
-    let o = run(d.path(), &["encode", "--allow-argv-secret", "--in", N, "--json"]);
+    let o = run(
+        d.path(),
+        &["encode", "--allow-argv-secret", "--in", N, "--json"],
+    );
     assert_eq!(o.rc, 0, "{}", o.err);
     assert_eq!(word_count(&o), "15", "{}", o.out);
 }
@@ -172,7 +175,14 @@ fn argv_sub_out_space_creates_named_file() {
         put(d.path(), "seed.txt", P12);
         put(d.path(), "card.ms1", C12);
         let args: Vec<&str> = match v {
-            "encode" => vec!["encode", "--allow-argv-secret", "--in", "seed.txt", "--out", N],
+            "encode" => vec![
+                "encode",
+                "--allow-argv-secret",
+                "--in",
+                "seed.txt",
+                "--out",
+                N,
+            ],
             "hashlock" => vec![
                 "hashlock",
                 "--allow-argv-secret",
@@ -183,7 +193,14 @@ fn argv_sub_out_space_creates_named_file() {
                 "--out",
                 N,
             ],
-            "repair" => vec!["repair", "--allow-argv-secret", "--in", "card.ms1", "--out", N],
+            "repair" => vec![
+                "repair",
+                "--allow-argv-secret",
+                "--in",
+                "card.ms1",
+                "--out",
+                N,
+            ],
             _ => vec![
                 "split",
                 "--allow-argv-secret",
@@ -217,7 +234,14 @@ fn argv_sub_out_space_card_bytes() {
     put(d.path(), "seed.txt", P12);
     let o = run(
         d.path(),
-        &["encode", "--allow-argv-secret", "--in", "seed.txt", "--out", N],
+        &[
+            "encode",
+            "--allow-argv-secret",
+            "--in",
+            "seed.txt",
+            "--out",
+            N,
+        ],
     );
     assert_eq!(o.rc, 0, "{}", o.err);
     let c = std::fs::read_to_string(d.path().join(N)).unwrap_or_default();
@@ -276,7 +300,10 @@ fn argv_sub_hashlock_phrase_equals_keeps_trailing_space() {
 #[test]
 fn argv_sub_after_dashdash_still_substituted() {
     let d = tempfile::tempdir().unwrap();
-    let o = run(d.path(), &["decode", "--allow-argv-secret", "--", "--in", N]);
+    let o = run(
+        d.path(),
+        &["decode", "--allow-argv-secret", "--", "--in", N],
+    );
     assert_eq!(o.rc, 64, "{}", o.err);
     assert!(o.err.contains("unexpected argument '-' found"), "{}", o.err);
     assert!(!o.err.contains(N), "{}", o.err);
@@ -313,7 +340,8 @@ fn argv_sub_non_path_value_still_substituted() {
     );
     assert_eq!(o.rc, 64, "{}", o.err);
     assert!(
-        o.err.contains("invalid value '-' for '--account <ACCOUNT>'"),
+        o.err
+            .contains("invalid value '-' for '--account <ACCOUNT>'"),
         "{}",
         o.err
     );
