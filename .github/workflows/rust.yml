@@ -386,6 +386,9 @@ jobs:
           sha256sum --check --strict ci/shared-ci.sha256
           bash ci/code-docs-check.test.sh
           bash ci/code-docs-check.sh
+      - name: Printed commands in the docs run as printed (bh1119 doc lint)
+        shell: bash
+        run: bash ci/bh1119-doc-lint.test.sh
       - name: Docs-only change? (skips the steps below when every changed file is documentation)
         id: docs
         shell: bash

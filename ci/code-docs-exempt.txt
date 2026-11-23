@@ -15,3 +15,8 @@
 # hand before the build and its reviews. It reads that document and the
 # FOLLOWUPS file to check them.
 ^scripts/ms-output-sink-fix-gate\.sh$
+
+# Runs in the rust.yml clippy job before its docs-only guard step (and, with
+# --run-recipe, in man-release.yml), so no step the skip can skip runs it. It
+# reads the docs it lints.
+^ci/bh1119-doc-lint\.test\.sh$
