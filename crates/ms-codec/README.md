@@ -67,10 +67,13 @@ wrapper. The vendoring is intentional per the v0.22.x follow-ups cycle
 plan §1 D22: each sibling codec carries its own BCH primitives so
 ms-codec / md-codec / mk-codec stay free of sideways dependencies.
 
-When the input exceeds the `t=4` correction capacity, the call returns
-`Error::TooManyErrors { bound: 8 }` (singleton-bound diagnostic — the
-caller cannot uniquely correct beyond `t=4` because the `BCH(93,80,8)`
-code does not localize > 4 errors).
+Up to 4 substitutions are corrected back to the original string. Beyond
+`t=4` the call either returns `Error::TooManyErrors { bound: 8 }` or
+corrects to a *different* valid string, the nearest codeword: the
+`BCH(93,80,8)` code cannot tell which original was meant. Treat every
+corrected result (a non-empty `CorrectionDetail` vector) as an unverified
+candidate and confirm it independently before use, as `ms repair` does
+(exit 4).
 
 ## Documentation
 

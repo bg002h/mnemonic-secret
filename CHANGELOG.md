@@ -13,6 +13,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `InvalidLength` a completed string of a length `from_string` would refuse. No ms-cli command used it.
 - **`codex32::Codex32String::from_seed` is documented as an unchecked builder** (bh-ms-I3): it does not
   check the share index against a zero threshold, nor the finished length. Its behaviour is unchanged.
+- **The README no longer promises `TooManyErrors` beyond t=4** (bh-ms-I8): a correction there can land on a
+  different valid string, so every corrected result is an unverified candidate.
 
 ## ms-cli [Unreleased]
 
@@ -21,6 +23,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`ms hashlock --emit-record --no-engraving-card` is refused in text mode** (exit 64, bh-ms-I4). It exited 0
   with the `phrase:` record on neither stream while the stderr notice said THIS RECORD CARRIES THE PHRASE. The
   refusal names `--json` (the record in `phrase_record`) and the card; nothing is read or written before it.
+- **Printed docs that installed a stale `ms` or failed as printed** (bh-ms-I7, I8, I10, I11). The README
+  install line now names the release tag (`cargo install --locked --git ... --tag ms-cli-v<ver> ms-cli`; the
+  crates.io copy is 0.14.0). The `ms repair` README gives exit 4 (VERIFY-ME candidate), not 5, and its full
+  stderr. `docs/verify-reproducibility.md` section 8 is now a runnable two-path recipe from the pinned toolkit
+  workflow (CI runs it) and section 9.3 sets the epoch once and fails on any packaging error.
 
 ## ms-cli [0.21.0] — 2026-11-22
 

@@ -262,33 +262,65 @@ runs the `repro` caller job (the toolkit gate) against the current branch — th
 man-pages build + the release-upload steps and the whole `musl-binaries` job are
 `if:`-guarded off for a manual dispatch, so only the gate runs.
 
-**F-324 — that gate is KNOWN-RED as of P2, and the fix is not in this repo.**
-The `repro` caller job hands the toolkit's reusable workflow an empty
-`miniscript_rev`, which selects the two-block form. The reusable workflow was read at its
-pinned SHA: its only git-source knob is `miniscript_rev`, and the three
-`--config` lines it builds hard-code
-`https://github.com/rust-bitcoin/rust-miniscript` as the source URL — there is
-no input by which a caller can declare a different git source. So it cannot
-resolve `mnemonic-io-lib` offline. Measured with an empty `CARGO_HOME`: the
-two-block form exits **101**. The job is left CALLED rather than disabled,
-because a skipped gate prints ok and exit 0. The `musl-binaries` legs below,
-which live in THIS repo, are already on the three-block form. Owned before the
-next `ms-cli-v*` tag, and it must be exercised once by `workflow_dispatch` after
-the toolkit change is re-pinned — an edited gate that has never run is a
-hypothesis.
+**F-324 — fixed 2026-09-02.** Since P2, `ms` pins `mnemonic-io-lib` by git
+rev, so the gate needs a git-source `[source]` stanza beside the crates-io one.
+The `repro` caller job passes the reusable workflow's `git_source_url` /
+`git_source_rev` inputs (the rev derived from `Cargo.lock` by the `pins` job) and
+an empty `miniscript_rev`, at toolkit revision
+`4120af853ec68dc515cb4ac0eb7245a018a50c78` (the `uses:` pin and `toolkit_ref`,
+which must match). Before the toolkit gained those inputs the gate could not
+resolve `mnemonic-io-lib` offline and failed at the `ms-cli-v0.17.0` tag (run
+33621228397).
 
-To reproduce the two-distinct-path proof yourself, inside the container:
+To reproduce the two-distinct-path proof yourself, run this block in bash from
+the root of a clean checkout of the commit you are verifying (§2), with `git`
+and `docker` installed. It is the toolkit workflow's `repro-x86_64-musl` job,
+step for step: it checks out the toolkit at the pinned revision, builds its
+`Dockerfile.repro`, copies the committed source to two distinct paths and runs
+the toolkit's gate scripts with the inputs this repo's `repro` job passes. CI
+runs this block as printed (`man-release.yml` job `repro-doc-recipe`).
 
-```sh
-# materialize the source at two distinct paths, then run the toolkit gate scripts:
-ci/repro/double-build.sh /build-a/src /build-b/src   # binary + tar + libsecp .o identical
-ci/repro/cc-validate.sh  /build-a/src                # epoch load-bearing + zero __DATE__/path residue
-ci/repro/gzip-residue.sh ms-<VER>-x86_64-linux-musl.tar.gz 03
+```bash
+set -euo pipefail
+umask 022
+# The toolkit revision man-release.yml's `repro` job pins (`uses:` and `toolkit_ref`):
+TOOLKIT_REF=4120af853ec68dc515cb4ac0eb7245a018a50c78
+IO_LIB_REV="$(grep -oE 'mnemonic-engrave\?rev=[0-9a-f]{40}' Cargo.lock | head -1 | grep -oE '[0-9a-f]{40}')"
+EPOCH="$(git show -s --format=%ct HEAD)"
+WORK="$(mktemp -d)"
+git clone --quiet https://github.com/bg002h/mnemonic-toolkit "$WORK/toolkit"
+git -C "$WORK/toolkit" checkout --quiet --detach "$TOOLKIT_REF"
+mkdir "$WORK/src"
+git archive HEAD | tar -x -C "$WORK/src"
+docker build --quiet -t ms-repro-gate -f "$WORK/toolkit/Dockerfile.repro" "$WORK/toolkit"
+docker run --rm --network=none \
+  -v "$WORK/src":/src:ro -v "$WORK/toolkit":/toolkit:ro \
+  -e CRATE=ms-cli -e BIN=ms -e TARGET=x86_64-unknown-linux-musl -e ARCH=x86_64 \
+  -e MINISCRIPT_REV= \
+  -e GIT_SOURCE_URL=https://github.com/bg002h/mnemonic-engrave -e GIT_SOURCE_REV="$IO_LIB_REV" \
+  -e SOURCE_DATE_EPOCH="$EPOCH" -e REPRO_OUT_DIR=/build/canonical \
+  -e CARGO_HOME=/cargo -e RUSTUP_TOOLCHAIN=1.85.0 -e LC_ALL=C -e TZ=UTC \
+  ms-repro-gate bash -euo pipefail -c '
+    mkdir -p /build-a/src /build-b/src
+    cp -a /src/. /build-a/src
+    cp -a /src/. /build-b/src
+    bash /toolkit/ci/repro/double-build.sh /build-a/src /build-b/src
+    bash /toolkit/ci/repro/cc-validate.sh /build-a/src
+    bash /toolkit/ci/repro/remap-off-negative.sh /build-a/src /build-b/src
+    bash /toolkit/ci/repro/gzip-residue.sh /build/canonical/ms-0.0.0-repro-x86_64-linux-musl.tar.gz 03
+    /build/canonical/ms --version'
 ```
 
-(The `MINISCRIPT_REV` env the gate scripts read is **empty** for `ms` — that
-selects the two-block `--config` form, which is exactly the F-324 defect above:
-`ms` now needs a git-source stanza and that knob cannot express one.)
+The gate scripts default to the toolkit's own crate (`CRATE=mnemonic-toolkit`,
+`BIN=mnemonic`) and its miniscript fork; the `-e` lines select `ms-cli` / `ms`,
+clear `MINISCRIPT_REV` and add the `mnemonic-io-lib` source, as the `repro`
+job's `with:` block does. `RUSTUP_TOOLCHAIN=1.85.0` selects the image's
+installed toolchain, so rustup does not try to fetch the `rustfmt` and
+`clippy` components that `rust-toolchain.toml` lists (the container has no
+network). Each script exits non-zero on a failed check, and
+`set -e` stops the block there. Building the image from `Dockerfile.repro` is
+enough for this proof, which compares two builds made in one image; to match a
+published hash, use the pulled image of §3 and the command of §4.
 
 ## 9. aarch64-unknown-linux-musl — built via `cross` under QEMU
 
@@ -329,25 +361,40 @@ sets `CARGO_HOME=/cargo`. So the in-container compiler sees the source at
 
 ### 9.3 The exact aarch64 build command (release leg)
 
-Run from the repo root (where `Cross.toml` + `vendor/` are committed):
+Run this block in bash from the root of a checkout of the tagged commit (§2),
+with `cross` installed (`cargo install --locked cross`). It is the aarch64
+step of `man-release.yml` `musl-binaries`: the epoch is set once, from the
+commit, and reaches both the build and `tar`; the archive takes its final name
+only after `tar` and `gzip` both succeed, and the last line prints its SHA-256
+for comparison with the published `SHA256SUMS.aarch64`.
 
-```sh
-SOURCE_DATE_EPOCH=$(git show -s --format=%ct <tagged-commit-SHA>) \
-LC_ALL=C TZ=UTC \
-CARGO_BUILD_RUSTFLAGS="--remap-path-prefix=/project=/build --remap-path-prefix=/cargo=/cargo" \
-CFLAGS="-ffile-prefix-map=/project=/build -ffile-prefix-map=/cargo=/cargo" \
-CFLAGS_aarch64_unknown_linux_musl="-ffile-prefix-map=/project=/build -ffile-prefix-map=/cargo=/cargo" \
-cross build --locked --offline --release \
-  --target aarch64-unknown-linux-musl -p ms-cli --bin ms \
-  --config 'source.crates-io.replace-with="vendored-sources"' \
-  --config 'source."git+https://github.com/bg002h/mnemonic-engrave?rev=<IO_LIB_REV>".git="https://github.com/bg002h/mnemonic-engrave"' \
-  --config 'source."git+https://github.com/bg002h/mnemonic-engrave?rev=<IO_LIB_REV>".rev="<IO_LIB_REV>"' \
-  --config 'source."git+https://github.com/bg002h/mnemonic-engrave?rev=<IO_LIB_REV>".replace-with="vendored-sources"' \
-  --config 'source.vendored-sources.directory="vendor"'
-
-tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" \
+```bash
+set -euo pipefail
+umask 022
+EPOCH="$(git show -s --format=%ct HEAD)"
+VER="$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/ms-cli/Cargo.toml | head -1)"
+IO_LIB_REV="$(grep -oE 'mnemonic-engrave\?rev=[0-9a-f]{40}' Cargo.lock | head -1 | grep -oE '[0-9a-f]{40}')"
+IO_LIB_SRC="git+https://github.com/bg002h/mnemonic-engrave?rev=${IO_LIB_REV}"
+REMAP="--remap-path-prefix=/project=/build --remap-path-prefix=/cargo=/cargo"
+CFMAP="-ffile-prefix-map=/project=/build -ffile-prefix-map=/cargo=/cargo"
+env \
+  SOURCE_DATE_EPOCH="$EPOCH" \
+  LC_ALL=C TZ=UTC \
+  CARGO_BUILD_RUSTFLAGS="$REMAP" \
+  CFLAGS="$CFMAP" \
+  CFLAGS_aarch64_unknown_linux_musl="$CFMAP" \
+  cross build --locked --offline --release \
+    --target aarch64-unknown-linux-musl -p ms-cli --bin ms \
+    --config 'source.crates-io.replace-with="vendored-sources"' \
+    --config "source.\"${IO_LIB_SRC}\".git=\"https://github.com/bg002h/mnemonic-engrave\"" \
+    --config "source.\"${IO_LIB_SRC}\".rev=\"${IO_LIB_REV}\"" \
+    --config "source.\"${IO_LIB_SRC}\".replace-with=\"vendored-sources\"" \
+    --config 'source.vendored-sources.directory="vendor"'
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$EPOCH" \
   -cf - -C target/aarch64-unknown-linux-musl/release ms \
-  | gzip -n -9 > ms-<VER>-aarch64-linux-musl.tar.gz
+  | gzip -n -9 > "ms-${VER}-aarch64-linux-musl.tar.gz.partial"
+mv "ms-${VER}-aarch64-linux-musl.tar.gz.partial" "ms-${VER}-aarch64-linux-musl.tar.gz"
+sha256sum "ms-${VER}-aarch64-linux-musl.tar.gz"
 ```
 
 The same THREE-block `[source]` activation, the same `--locked

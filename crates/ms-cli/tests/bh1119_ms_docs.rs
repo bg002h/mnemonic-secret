@@ -18,7 +18,8 @@ fn repair(json: bool) -> (std::process::Output, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("broken.txt"), format!("{BROKEN}\n")).unwrap();
     let mut c = Command::cargo_bin("ms").unwrap();
-    c.current_dir(dir.path()).args(["repair", "--in", "broken.txt"]);
+    c.current_dir(dir.path())
+        .args(["repair", "--in", "broken.txt"]);
     if json {
         c.arg("--json");
     }
@@ -29,7 +30,8 @@ fn repair(json: bool) -> (std::process::Output, tempfile::TempDir) {
 fn bh1119_ms_i8_readme_exit_table_documents_candidate_exit_4() {
     let r = readme();
     assert!(
-        r.lines().any(|l| l.starts_with("| `4` | **`VERIFY-ME` Candidate**")),
+        r.lines()
+            .any(|l| l.starts_with("| `4` | **`VERIFY-ME` Candidate**")),
         "README exit table has no `4` VERIFY-ME Candidate row (the code a correction returns)"
     );
     assert!(
