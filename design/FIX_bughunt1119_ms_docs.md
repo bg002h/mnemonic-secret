@@ -134,7 +134,7 @@ L473-590, steps "Materialize source" through "binary runs", with the `with:` val
       -e MINISCRIPT_REV= \
       -e GIT_SOURCE_URL=https://github.com/bg002h/mnemonic-engrave -e GIT_SOURCE_REV="$IO_LIB_REV" \
       -e SOURCE_DATE_EPOCH="$EPOCH" -e REPRO_OUT_DIR=/build/canonical \
-      -e CARGO_HOME=/cargo -e LC_ALL=C -e TZ=UTC \
+      -e CARGO_HOME=/cargo -e RUSTUP_TOOLCHAIN=1.85.0 -e LC_ALL=C -e TZ=UTC \
       ms-repro-gate bash -euo pipefail -c '
         mkdir -p /build-a/src /build-b/src
         cp -a /src/. /build-a/src
@@ -149,7 +149,10 @@ L473-590, steps "Materialize source" through "binary runs", with the `with:` val
     The gate scripts default to the toolkit's own crate (`CRATE=mnemonic-toolkit`,
     `BIN=mnemonic`) and its miniscript fork; the `-e` lines select `ms-cli` / `ms`,
     clear `MINISCRIPT_REV` and add the `mnemonic-io-lib` source, as the `repro`
-    job's `with:` block does. Each script exits non-zero on a failed check, and
+    job's `with:` block does. `RUSTUP_TOOLCHAIN=1.85.0` selects the image's
+    installed toolchain, so rustup does not try to fetch the `rustfmt` and
+    `clippy` components that `rust-toolchain.toml` lists (the container has no
+    network). Each script exits non-zero on a failed check, and
     `set -e` stops the block there. Building the image from `Dockerfile.repro` is
     enough for this proof, which compares two builds made in one image; to match a
     published hash, use the pulled image of §3 and the command of §4.
@@ -159,7 +162,9 @@ the block's own indentation as shown.) Paragraphs L251-263 (two-distinct-path sh
 unchanged.
 
 Design notes (not doc text): the block copies `git archive HEAD` rather than the working tree so a local
-`target/` or untracked file never enters the build; `--network=none` holds the doc's "fully offline" claim;
+`target/` or untracked file never enters the build; `--network=none` holds the doc's "fully offline" claim; `RUSTUP_TOOLCHAIN=1.85.0` is the same setting
+man-release.yml's `--network=none` x86_64 leg uses (L337), without which rustup fetches the components
+`rust-toolchain.toml` lists (seen in run 45032095018) and fails offline;
 `remap-off-negative.sh` and `ms --version` are in because the workflow job runs them (the old block omitted them);
 the canonical tarball name `ms-0.0.0-repro-x86_64-linux-musl.tar.gz` is `double-build.sh`'s `VER` default
 `0.0.0-repro` (toolkit `ci/repro/double-build.sh:69`), as the workflow's gzip-residue step uses.
