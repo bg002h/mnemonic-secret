@@ -18,46 +18,19 @@ name: rust
 
 on:
   push:
-    branches: [main, master, 'ci/**']
-    # NO paths on push either, as of 2026-08-15 — this now MIRRORS the PR
-    # trigger below, and for the same reason one step further along.
-    #
-    # The filter's stated rationale was "docs-only direct pushes to master are
-    # covered by admin bypass (enforce_admins:false)". That is TRUE FOR THE
-    # MAINTAINER and remains so — the bypass is their deliberate escape hatch,
-    # ruled 2026-08-15: "You are not permitted to bypass, but I am."
-    #
-    # It is false for AUTOMATION, which may not bypass. A path-filtered push
-    # wedges an agent exactly as it would wedge a docs-only PR: the staged SHA
-    # never builds, never earns its four required contexts, and the agent has no
-    # compliant way to land the commit. The same argument the PR side already
-    # accepted therefore applies here, so the same answer is used. Running the
-    # full matrix on a docs-only push is green (unchanged code).
-    #
-    # WHY ci/** IS BUILT. A required status check binds to a COMMIT SHA, not to
-    # a branch, so a commit pushed straight to master carries no check when the
-    # protection rule is evaluated: it reports "expected" and the push is
-    # BYPASSED rather than satisfied. `strict: false` makes it fixable — GitHub
-    # asks only whether the commit carries a passing context, so the SHA earns
-    # one first:
-    #
-    #     git push origin master:refs/heads/ci/staging
-    #     gh run watch <id> --repo bg002h/mnemonic-secret
-    #     git push origin master        # no bypass message = satisfied
-    #     git push origin --delete ci/staging
-  pull_request:
-    # NO paths — this workflow's test/clippy contexts are REQUIRED status
-    # checks (branch protection), and a path-filtered required check wedges a
-    # docs-only PR forever at "Expected — waiting for status" (mirror the
-    # toolkit examples.yml/rust.yml ruling). Running the full matrix on a
-    # docs-only PR is green (unchanged code).
+    branches: [master]
+  schedule:
+    - cron: '30 7 * * *'
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "also run the nightly jobs"
+        type: boolean
+        default: false
 
-# Cancel a pull request's superseded run when a newer commit is pushed to it.
-# Every other event gets a group of its own (the run id), so pushes, tags,
-# schedules and dispatches are never cancelled.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref == 'refs/heads/master' }}
 
 permissions:
   contents: read
@@ -210,7 +183,108 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docs-only change? (skips the steps below when every changed file is documentation)
+        id: docs
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          CHECK_NAME: test (${{ matrix.os }})
+          GH_TOKEN: ${{ github.token }}
+        run: bash ci/docs-only.sh
+
+      - name: Show ulimit -l (diagnostic)
+        if: steps.docs.outputs.docs_only != 'true'
+        run: ulimit -l || true
+
+      # F-696: cargo nextest runs the test binaries CONCURRENTLY; `cargo test`
+      # runs them one at a time. Pinned by commit SHA; install-action checks the
+      # downloaded archive against the sha256 in its own manifest, and
+      # `fallback: none` refuses the unverified cargo-binstall path.
+      - name: Install cargo-nextest (pinned, checksum-verified)
+        if: steps.docs.outputs.docs_only != 'true'
+        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+        with:
+          tool: cargo-nextest@0.9.146
+          fallback: none
+      - name: cargo build --tests
+        if: steps.docs.outputs.docs_only != 'true'
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            ulimit -l 65536 || true
+          fi
+          cargo build --tests -p ms-cli
+
+      # ms-cli is bin-only, so there are no doc-tests to keep here. nextest
+      # skips #[ignore] exactly as `cargo test` does, so the env-gated g2_*
+      # legs below still run only in their own steps.
+      - name: cargo nextest run (default tests; G2.1 #[ignore]-gated)
+        if: steps.docs.outputs.docs_only != 'true'
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            ulimit -l 65536 || true
+          fi
+          cargo nextest run -p ms-cli --no-fail-fast
+
+      - name: G2.1 eperm fault injection (fresh subprocess; env set before cargo)
+        if: steps.docs.outputs.docs_only != 'true'
+        # Per Cycle B SPEC §4 P2 + toolkit Phase 2 plan: cfg(test) FAIL_MODE
+        # injection is only reachable from the bin's test build (cfg(test) is
+        # per-crate-not-per-build, RFC 1604). G2.1 is #[ignore]-gated and
+        # filtered to the specific test name so the OnceLock<FailMode>
+        # initializes fresh from MNEMONIC_TEST_MLOCK_FAIL_MODE in this step's
+        # env. ms-cli has no [[lib]] target — invoke via --bin ms.
+        env:
+          MNEMONIC_TEST_MLOCK_FAIL_MODE: "eperm"
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            ulimit -l 65536 || true
+          fi
+          cargo test -p ms-cli --bin ms mlock::tests::g2_1 -- --include-ignored
+
+      - name: G2.3-debug einval debug_assert (fresh subprocess)
+        if: steps.docs.outputs.docs_only != 'true'
+        # Per Cycle B SPEC §6 G2.3: debug builds trip debug_assert when
+        # mlock returns EINVAL under fault injection.
+        # #[should_panic(expected = "EINVAL")] asserts the panic message
+        # contains the substring.
+        env:
+          MNEMONIC_TEST_MLOCK_FAIL_MODE: "einval"
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            ulimit -l 65536 || true
+          fi
+          cargo test -p ms-cli --bin ms mlock::tests::g2_3 -- --include-ignored
+
+      - name: G2.4 off control (fresh subprocess)
+        if: steps.docs.outputs.docs_only != 'true'
+        # Per Cycle B SPEC §6 G2.4: control case — FAIL_MODE=off must not
+        # synthesize failures. Verifies the wrapper does not increment
+        # failure_count spuriously in a healthy ulimit environment.
+        # NOTE: bare 'off' in YAML 1.1 is a boolean false; quote to force
+        # string interpretation (toolkit workflow first observed this at
+        # run 25834458333 on 2026-05-14; mirror the defense here).
+        env:
+          MNEMONIC_TEST_MLOCK_FAIL_MODE: "off"
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            ulimit -l 65536 || true
+          fi
+          cargo test -p ms-cli --bin ms mlock::tests::g2_4 -- --include-ignored
+
+  test-nightly:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest]
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full == true)
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
