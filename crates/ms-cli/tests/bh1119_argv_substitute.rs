@@ -355,7 +355,7 @@ fn argv_sub_without_override_still_refuses() {
     let o = run(d.path(), &["encode", "--in", N, "--json"]);
     assert_eq!(o.rc, 1, "{}", o.err);
     assert!(
-        o.err.contains("is raw hex entropy, 32 characters long"),
+        o.err.contains("is raw hex entropy.\n") && !o.err.contains("characters long"),
         "{}",
         o.err
     );

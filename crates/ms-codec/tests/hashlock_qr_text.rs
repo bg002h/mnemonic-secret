@@ -190,3 +190,26 @@ fn the_worst_case_is_210_bytes() {
         148
     );
 }
+
+/// ms-qr-text-no-realloc-test: the buffer is sized exactly, so no `push_str`
+/// can reallocate and abandon an unwiped prefix of the phrase.
+#[test]
+fn ms_qr_text_no_realloc_test() {
+    for hardened in [true, false] {
+        for kind in [
+            HashKind::Sha256,
+            HashKind::Hash160,
+            HashKind::Ripemd160,
+            HashKind::Hash256,
+        ] {
+            for n in [0usize, 1, 7, 100] {
+                let t = qr_text(hardened, kind, &"0".repeat(n));
+                assert_eq!(
+                    t.capacity(),
+                    t.len(),
+                    "qr_text reallocated (hardened={hardened}, kind={kind:?}, n={n})"
+                );
+            }
+        }
+    }
+}

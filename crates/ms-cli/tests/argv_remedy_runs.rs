@@ -56,7 +56,7 @@ fn prescribed(args: &[&str]) -> Vec<String> {
 
 /// `derive` is the case the old text got wrong in both of its two lines.
 #[test]
-fn the_remedy_derive_prescribes_actually_derives() {
+fn ms_derive_phrase_no_one_liner_text() {
     let dir = tempfile::tempdir().unwrap();
     let seed = dir.path().join("seed.txt");
     let card = dir.path().join("card.ms1");
@@ -96,7 +96,12 @@ fn the_remedy_derive_prescribes_actually_derives() {
         if argv.iter().any(|a| a == "--passphrase-stdin") {
             continue;
         }
-        let out = ms().args(&argv).output().expect("ms runs");
+        let mut cmd = ms();
+        cmd.args(&argv);
+        if l.ends_with("< seed.txt") {
+            cmd.write_stdin(PHRASE);
+        }
+        let out = cmd.output().expect("ms runs");
         assert!(
             out.status.success(),
             "the guard prescribed `{l}`, which FAILED:\n{}",
@@ -105,8 +110,13 @@ fn the_remedy_derive_prescribes_actually_derives() {
         ran += 1;
     }
     assert!(
-        ran >= 2,
-        "expected the two-step recipe, ran {ran} command(s)"
+        ran >= 3,
+        "expected the one-liner and the two-step recipe, ran {ran} command(s)"
+    );
+    // ms-derive-phrase-no-one-liner-text: the one-liner is printed first.
+    assert_eq!(
+        lines[0], "ms derive --phrase - < seed.txt",
+        "the first prescribed line is the one-liner: {lines:?}"
     );
     assert!(
         card.exists(),

@@ -181,14 +181,17 @@ impl Codex32String {
     /// accepts 48 to 93 bytes with the short code and 125 to 127 with the long
     /// code; these are this parser's lengths, not BIP-93's) is refused with
     /// [`Error::InvalidLength`] carrying the completed length.
-    pub fn from_unchecksummed_string(mut s: String) -> Result<Self, Error> {
+    pub fn from_unchecksummed_string(s: String) -> Result<Self, Error> {
+        // The caller's body is secret: scrub it on every exit, and build the
+        // completed string in a fresh exact-size buffer so nothing grows (a
+        // `reserve_exact` realloc would free the old block unscrubbed).
+        let s = zeroize::Zeroizing::new(s);
         // Determine what checksum to use and extend the string
         let (len, mut checksum) = if s.len() < 81 {
             (13, checksum::Engine::new_codex32_short())
         } else {
             (15, checksum::Engine::new_codex32_long())
         };
-        s.reserve_exact(len);
 
         // Split out the HRP
         let (hrp, real_string) = match s.rsplit_once('1') {
@@ -200,12 +203,14 @@ impl Codex32String {
         checksum.input_data_str(real_string)?;
         checksum.input_own_target();
         let upper = s.chars().any(|c| c.is_ascii_uppercase());
+        let mut out = zeroize::Zeroizing::new(String::with_capacity(s.len() + len));
+        out.push_str(&s);
         for ch in checksum.into_residue() {
             let c = ch.to_char();
-            s.push(if upper { c.to_ascii_uppercase() } else { c });
+            out.push(if upper { c.to_ascii_uppercase() } else { c });
         }
 
-        let ret = Codex32String(s);
+        let ret = Codex32String(std::mem::take(&mut *out));
         let n = ret.0.len();
         if !((48..94).contains(&n) || (125..128).contains(&n)) {
             return Err(Error::InvalidLength(n));
