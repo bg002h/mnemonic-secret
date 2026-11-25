@@ -319,7 +319,7 @@ fn emit_error(e: &CliError, json_mode: bool, verify_mode: bool) {
         return;
     }
 
-    if json_mode {
+    if json_mode && !e.stderr_only() {
         // JSON-mode errors go to stdout (one stream) per SPEC §6.3.
         let envelope = ErrorEnvelopeJson {
             schema_version: "1",
@@ -333,7 +333,8 @@ fn emit_error(e: &CliError, json_mode: bool, verify_mode: bool) {
         let s = serde_json::to_string(&envelope).expect("error envelope serializes");
         println!("{}", s);
     } else {
-        // Text-mode errors go to stderr.
+        // Text-mode errors, and the two `stderr_only` errors in both modes (a failed
+        // `--out` write; `--out` being standard output), go to stderr.
         let mut stderr = std::io::stderr().lock();
         writeln!(stderr, "{}", e).ok();
     }

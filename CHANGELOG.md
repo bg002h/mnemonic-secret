@@ -22,6 +22,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## ms-cli [Unreleased]
 
 ### Fixed
+- **A failed `--out` write no longer destroys the existing file** (bh-ms-I13). `encode`, `repair` and `hashlock` write a temporary file beside FILE and rename it over FILE (mnemonic-io-lib 0.1.3), so a full disk or quota leaves the old file byte-identical; FILE's directory (its target's, for a symlink) must now be writable. `split` and `hashlock --random` remove the partial file they created, so a retry works. The error is now `ms: cannot write the output: <FILE>: <error>`, followed by `. <FILE> is unchanged.` or `. Nothing was written.` when that is so (was `error: failed to write --out <FILE>: <error>`; exit 1 as before).
+- **`--out` and standard output can no longer be one file** (bh-ms-I1). `ms encode --json --out F > F`, `ms hashlock --out P > P` and `ms repair --out C > C` (or a link to the file) exited 0 with the report where the card was promised; they are now refused before anything is read (exit 64). `ms hashlock --random --json --out R >> R` and `ms split --json --out SH >> SH` no longer append an error object to the file they refused to overwrite.
+- **`ms encode --out F 2> F` keeps the card in F.** The engraving card on stderr no longer overwrites it.
 - **`ms inspect` no longer says a share of an impossible length would combine.** A share whose string length is not one an ms1 secret can have (50, 51, 56, 58, 62, 64, 69, 70, 75 or 77 characters) now prints `FAIL: would NOT combine` with reason `unexpected-string-length` (`--json`: `would_decode` and `would_combine` false), exit 0 as before; `ms combine` refuses such a set (bh-ms-I12).
 - **`ms hashlock --emit-record --no-engraving-card` is refused in text mode** (exit 64, bh-ms-I4). It exited 0
   with the `phrase:` record on neither stream while the stderr notice said THIS RECORD CARRIES THE PHRASE. The
@@ -37,6 +40,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`ms decode` and `ms repair` no longer send an index-`s` string to `ms combine`.** A threshold 2-9
   string at share index `s` is the secret itself, which `ms combine` refuses; the error now says so. Other share
   indices keep the K-share advice; exit 2 unchanged (bh-ms-R11).
+
+### Changed
+- **ms-cli takes `mnemonic-io-lib` from crates.io** (was a git rev of mnemonic-engrave), so a rebuilder's `[source]` activation is the two-block form (`docs/verify-reproducibility.md`).
 
 ## ms-cli [0.21.0] — 2026-11-22
 

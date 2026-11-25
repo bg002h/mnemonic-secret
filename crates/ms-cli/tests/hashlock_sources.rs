@@ -303,7 +303,7 @@ fn random_twice_differs() {
 
 /// C-2 as folded: under `--random`, `--out` refuses to overwrite and leaves
 /// the file's bytes unchanged; the other sources overwrite. MUTATION: use
-/// the truncating writer for `--random` -> Monday's preimage is gone.
+/// the replacing writer (`write_artifact`) for `--random` -> Monday's preimage is gone.
 #[test]
 fn random_out_refuses_to_overwrite_but_other_sources_overwrite() {
     let dir = tempfile::tempdir().unwrap();

@@ -28,11 +28,13 @@ use crate::parse::{read_input, read_phrase_input, Source};
 pub struct EncodeArgs {
     /// Write the canonical artifact to FILE, **owner-only (0600)**.
     ///
-    /// Through the shared crate's `write::write_private`, which sets the mode on
-    /// the OPEN FILE as well as passing it to `OpenOptions` -- the latter binds
-    /// on CREATE only, so an existing 0644 target would otherwise stay 0644 and
-    /// the tool would report success. It OVERWRITES (§6b), and truncates, so a
-    /// shrinking rewrite leaves no tail of the old file.
+    /// Through the shared crate's `write::write_private`: the bytes go to a
+    /// temporary `FILE.<pid>.<n>.tmp` beside FILE, created 0600 and synced, which
+    /// then replaces FILE, so a failed write leaves an existing FILE unchanged.
+    /// FILE's directory (its target's, for a symlink) must be writable, and a run
+    /// killed mid-write can leave that owner-only temporary behind. It OVERWRITES
+    /// (§6b); a symlink is followed and its target replaced. If ms would also
+    /// print on stdout and stdout is FILE, the run is refused (exit 64).
     ///
     /// **Not to be confused with `ms gen-man --out <DIR>`**, which is shipped,
     /// exampled, driven by this repo's `man-release.yml` and by
@@ -241,6 +243,14 @@ pub fn run(mut args: EncodeArgs) -> Result<u8> {
     let phrase_arg: Option<Zeroizing<String>> =
         std::mem::take(&mut args.phrase).map(Zeroizing::new);
     let hex_arg: Option<Zeroizing<String>> = std::mem::take(&mut args.hex).map(Zeroizing::new);
+
+    // bh-ms-I1: `--out` and `--json` both print on stdout / write a file; if stdout
+    // is that file, refuse before anything is read (text mode prints nothing there).
+    if args.json {
+        if let Some(path) = args.out.as_deref() {
+            crate::out::refuse_stdout_alias(path)?;
+        }
+    }
 
     // Shared entropy-resolution + AUTO-route (also used by `ms split`).
     let (payload, language_for_card) = resolve_secret_payload(

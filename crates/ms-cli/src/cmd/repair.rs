@@ -63,11 +63,13 @@ use crate::parse::{read_input, Source};
 pub struct RepairArgs {
     /// Write the canonical artifact to FILE, **owner-only (0600)**.
     ///
-    /// Through the shared crate's `write::write_private`, which sets the mode on
-    /// the OPEN FILE as well as passing it to `OpenOptions` -- the latter binds
-    /// on CREATE only, so an existing 0644 target would otherwise stay 0644 and
-    /// the tool would report success. It OVERWRITES (§6b), and truncates, so a
-    /// shrinking rewrite leaves no tail of the old file.
+    /// Through the shared crate's `write::write_private`: the bytes go to a
+    /// temporary `FILE.<pid>.<n>.tmp` beside FILE, created 0600 and synced, which
+    /// then replaces FILE, so a failed write leaves an existing FILE unchanged.
+    /// FILE's directory (its target's, for a symlink) must be writable, and a run
+    /// killed mid-write can leave that owner-only temporary behind. It OVERWRITES
+    /// (§6b); a symlink is followed and its target replaced. If ms would also
+    /// print on stdout and stdout is FILE, the run is refused (exit 64).
     ///
     /// **Not to be confused with `ms gen-man --out <DIR>`**, which is shipped,
     /// exampled, driven by this repo's `man-release.yml` and by
@@ -128,6 +130,10 @@ struct RepairDetail {
 
 /// Run `ms repair`.
 pub fn run(args: RepairArgs) -> Result<u8> {
+    // bh-ms-I1: the report goes to stdout; stdout must not be the `--out` file.
+    if let Some(path) = args.out.as_deref() {
+        crate::out::refuse_stdout_alias(path)?;
+    }
     // `read_input` handles the `-` stdin sentinel (single line / trimmed).
     // cycle-15 Lane M (slug #6): the ms1 intake IS secret material — scrub on drop.
     let original: Zeroizing<String> = Zeroizing::new(read_input(

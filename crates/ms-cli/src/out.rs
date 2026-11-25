@@ -8,13 +8,89 @@
 //! whether `ms` should ever have one, as an operator ruling).
 //!
 //! The write itself is the shared crate's [`mnemonic_io_lib::write::write_private`],
-//! adopted rather than reimplemented because the half that is easy to leave out is
-//! already solved there: `OpenOptions::mode()` binds on CREATE only, so an
-//! existing `0644` target stays `0644` unless the mode is set a second time on
-//! the OPEN FILE — and re-running a command over an existing file is the case an
-//! operator actually hits.
+//! adopted rather than reimplemented. Since mnemonic-io-lib 0.1.3 it writes the new
+//! contents to a temporary file beside the target (0600, synced) and renames it over
+//! the target, so a failed write leaves an existing target byte-identical, and the
+//! mode is set on the temporary, not on a file the run is about to truncate.
 
 use crate::error::{CliError, Result};
+use std::path::Path;
+
+/// What ms saw at `--out` before a write (R2 of FIX_bughunt1119_ms_out_writes).
+#[derive(PartialEq, Eq)]
+enum Before {
+    /// A regular file (symlinks followed), by identity, length and mtime.
+    Regular(Stamp),
+    /// `NotFound`, a dangling symlink included.
+    Absent,
+    /// Anything else (a directory, a device, a FIFO, another lookup error).
+    Other,
+}
+
+#[derive(PartialEq, Eq)]
+struct Stamp {
+    /// (dev, ino) on Unix; `None` elsewhere, where only (len, mtime) are compared.
+    id: Option<(u64, u64)>,
+    len: u64,
+    mtime: Option<std::time::SystemTime>,
+}
+
+fn stamp(md: &std::fs::Metadata) -> Stamp {
+    #[cfg(unix)]
+    let id = {
+        use std::os::unix::fs::MetadataExt;
+        Some((md.dev(), md.ino()))
+    };
+    #[cfg(not(unix))]
+    let id = None;
+    Stamp {
+        id,
+        len: md.len(),
+        mtime: md.modified().ok(),
+    }
+}
+
+fn look_before(path: &Path) -> Before {
+    match std::fs::metadata(path) {
+        Ok(md) if md.is_file() => Before::Regular(stamp(&md)),
+        Ok(_) => Before::Other,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Before::Absent,
+        Err(_) => Before::Other,
+    }
+}
+
+/// R2: the one failure line for an `--out` write. A state sentence is added only
+/// when a second look at the file confirms it; otherwise nothing about the disk.
+fn write_failure(path: &Path, err: &std::io::Error, before: &Before) -> CliError {
+    let state = match (before, std::fs::metadata(path)) {
+        (Before::Regular(s), Ok(md)) if md.is_file() && stamp(&md) == *s => {
+            format!(". {} is unchanged.", path.display())
+        }
+        (Before::Absent, Err(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+            ". Nothing was written.".to_string()
+        }
+        _ => String::new(),
+    };
+    CliError::OutputWrite(format!(
+        "cannot write the output: {}: {}{}",
+        path.display(),
+        err,
+        state
+    ))
+}
+
+/// R3: `--out` is never the file standard output is on. Called by every verb that
+/// also prints on stdout, before anything is read, drawn or written.
+pub(crate) fn refuse_stdout_alias(path: &Path) -> Result<()> {
+    use mnemonic_io_lib::write::{same_file, Endpoint};
+    if same_file(Endpoint::Path(path), &[Endpoint::Stdout]).is_some() {
+        return Err(CliError::StdoutIsOut(format!(
+            "--out {} and standard output are the same file (the same path, a symlink or a hard link), so what ms prints on stdout would go into the file it writes. With >, the redirect empties that file before ms starts; with >>, the file is untouched. Check that it still holds what you expect. Write to a new name.",
+            path.display()
+        )));
+    }
+    Ok(())
+}
 
 /// The exit-64 refusal for an existing `--out` path. `what` names the artifact
 /// that cannot be re-made ("a --random preimage", "a new share set").
@@ -63,26 +139,34 @@ pub(crate) fn write_artifact_create_new(
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             return Err(exists_refusal(path, what));
         }
-        Err(e) => {
-            return Err(CliError::BadInput(format!(
-                "failed to write --out {}: {}",
-                path.display(),
-                e
-            )));
-        }
+        Err(e) => return Err(write_failure(path, &e, &Before::Absent)),
     };
-    f.write_all(body.as_bytes()).map_err(|e| {
-        CliError::BadInput(format!("failed to write --out {}: {}", path.display(), e))
-    })?;
+    if let Err(e) = f.write_all(body.as_bytes()) {
+        // R4: remove the partial file this run created (the same file the handle
+        // holds), so a retry is not refused as "already exists".
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if let (Ok(h), Ok(n)) = (f.metadata(), std::fs::symlink_metadata(path)) {
+                if (h.dev(), h.ino()) == (n.dev(), n.ino()) {
+                    let _ = std::fs::remove_file(path);
+                }
+            }
+        }
+        return Err(write_failure(path, &e, &Before::Absent));
+    }
     Ok(())
 }
 
-/// Write `body` to `path`, owner-only, naming the path on failure.
+/// Write `body` to `path`, owner-only, replacing an existing file through a
+/// temporary and a rename (a failed write leaves it unchanged), naming the path on
+/// failure.
 ///
 /// The refusal names the PATH and never the artifact: a message that echoed
 /// what it failed to write would put the material in a second place at exactly
 /// the moment the operator is looking at the screen.
 pub(crate) fn write_artifact(path: &std::path::Path, body: &str) -> Result<()> {
+    let before = look_before(path);
     mnemonic_io_lib::write::write_private(path, body.as_bytes())
-        .map_err(|e| CliError::BadInput(format!("failed to write --out {}: {}", path.display(), e)))
+        .map_err(|e| write_failure(path, &e, &before))
 }

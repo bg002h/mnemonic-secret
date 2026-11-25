@@ -68,7 +68,7 @@ limit with the signal ignored: the write returns EFBIG, standing in for a full d
 
 ## 3. Spec delta (behaviour)
 
-- **R1 Pin and writer (T5).** ms-cli takes mnemonic-io-lib **0.1.2** (pin form: Q1).
+- **R1 Pin and writer (T5).** ms-cli takes mnemonic-io-lib **0.1.2** from crates.io (the registry pin, Q1 (a), section 11).
   The version is V = the one the coordinator names at build (0.1.2 unless named otherwise, e.g. 0.1.3 after the
   stdio-append fix): every "0.1.2" in P1 (pin and comment), R6, C1, the SPEC_ms_hashlock row and gate step 0 and I6's
   gate lines reads V, and P1's "published from mnemonic-engrave e09d538d (the #41 merge)" names V's source commit as the
@@ -79,11 +79,11 @@ limit with the signal ignored: the write returns EFBIG, standing in for a full d
   - an existing regular FILE (or an absent one) is written to a temporary `FILE.<pid>.<n>.tmp` beside it, created
     0600, synced, and renamed over FILE; any error leaves an existing FILE byte-identical and removes the temporary;
   - a run killed mid-write can leave that temporary behind (0600);
-  - FILE's directory must be writable: an existing writable FILE in a read-only directory, written in place before, is
+  - FILE's directory (its target's, for a symlink) must be writable: an existing writable FILE in a read-only directory, written in place before, is
     now refused (R2 text) and left unchanged;
   - a symlink FILE is followed and its target replaced; the link stays a link. A hard-linked FILE is replaced at this
     name only;
-  - a FIFO, device or standard-stream name (`/dev/stdout`, `/dev/fd/N`, `/proc/...`) is written directly, as today. (how a regular file behind such a name is written is io-lib's; see section 9)
+  - a FIFO, device or standard-stream name (`/dev/stdout`, `/dev/fd/N`, `/proc/...`) is written directly, as today. (How a regular file behind such a name is written is io-lib's; see section 9)
   - Consequence, no code: a stderr or stdout that the shell opened on FILE keeps writing to the old, now unnamed file,
     so FILE holds the artifact (rows o16, o17).
 - **R2 Failure text (T6 + R5 + architect 1124 s2).** On any error writing the `--out` file, on every `--out` verb
@@ -105,7 +105,7 @@ limit with the signal ignored: the write returns EFBIG, standing in for a full d
   json_mode && !e.stderr_only(), else the Display line on stderr.
 - **R3 `--out` is never standard output (T5 `same_file`, Q2, architect 1124 s4).** New `out::refuse_stdout_alias(FILE)`:
   `mnemonic_io_lib::write::same_file(Endpoint::Path(FILE), &[Endpoint::Stdout])`; a match refuses with exit **64**
-  (`CliError::Usage`, the code ms's other `--out` refusal uses) and the R3 text (section 4), and nothing is read,
+  (the new `CliError::StdoutIsOut`: exit 64, kind `Usage`, the code ms's other `--out` refusal uses) and the R3 text (section 4), and nothing is read,
   drawn or written. Identity is io-lib's: dev+ino of the file a path resolves to (symlinks followed, hard links equal);
   an absent FILE by its canonical directory plus name; a pipe, terminal or device never matches; off Unix a redirected
   stdout is never detected (io-lib's documented limit).
@@ -131,12 +131,11 @@ limit with the signal ignored: the write returns EFBIG, standing in for a full d
 - **R6 Pin consequences.** `Cargo.lock` takes io-lib 0.1.2; `vendor/mnemonic-io-lib` is re-vendored (`cargo vendor`)
   and committed with the lock. Under the registry form (Q1 (a)) also: the `crates/ms-cli/Cargo.toml:21-31` comment
   becomes text P1 (section 4), the row `mnemonic-io-lib|https://github.com/bg002h/mnemonic-engrave|crates/mnemonic-io-lib`
-  leaves `ci/repro/vendor-git-sources.txt` (the file keeps its comments), and every git-source derivation listed in
-  section 11 is removed. `design/SPEC_ms_hashlock.md:912` (code-fact row `--out` is a truncating `write_private`)
+  leaves `ci/repro/vendor-git-sources.txt` (the file keeps its comments), and every git-source derivation in the files of R7 (appendix A) is removed. `design/SPEC_ms_hashlock.md:912` (code-fact row `--out` is a truncating `write_private`)
   becomes ``| `--out` replaces through a temp file and a rename (`write_private`, io-lib 0.1.2) | `crates/ms-cli/src/out.rs:85-88` |``.
   - `design/SPEC_ms_cli_v0_1.md` §6.3 gains, after "Process exit code matches `CliError::exit_code()`.", the paragraph:
     `Two errors are printed on stderr in both modes and never as an envelope. A failed `--out` write prints `ms: cannot
-    write the output: <FILE>: <error>`, followed by `. <FILE> is unchanged.` or `. Nothing was written.` when a second look
+    write the output: <FILE>: <error>`, followed by `. <FILE> is unchanged.` (its bytes; io-lib may have set its mode to 0600) or `. Nothing was written.` when a second look
     at FILE confirms it, and exits 1 (the constellation's failed-write contract, T6). `--out` naming the same file as
     standard output prints `error: --out <FILE> and standard output are the same file ...` and exits 64: stdout is FILE,
     so an envelope would be written into it.`
@@ -148,21 +147,22 @@ limit with the signal ignored: the write returns EFBIG, standing in for a full d
 ## 4. Texts (exact)
 
 - **E1 (ruled: T6 + architect 1124 s2, not new):** the three R2 lines.
-- **E2, the R3 refusal, PROPOSED** (printed by `Usage`'s Display, so text mode reads `error: ...`):
-  `error: --out <FILE> and standard output are the same file (the same path, a symlink or a hard link), so what ms prints on stdout would go into the file it writes. A > redirect empties that file before ms starts, so check that it still holds what you expect. Write to a new name.`
+- **E2, the R3 refusal, PROPOSED** (printed by `StdoutIsOut`'s Display (`error: {message}`), so text mode reads `error: ...`):
+  `error: --out <FILE> and standard output are the same file (the same path, a symlink or a hard link), so what ms prints on stdout would go into the file it writes. With >, the redirect empties that file before ms starts; with >>, the file is untouched. Check that it still holds what you expect. Write to a new name.`
 - **H1, `--out` help of `encode` (`encode.rs:31-35`) and `repair` (`repair.rs:66-70`), PROPOSED:** the paragraph
   "Through the shared crate's ... leaves no tail of the old file." becomes
-  `Through the shared crate's `write::write_private`: the bytes go to a temporary `FILE.<pid>.<n>.tmp` beside FILE, created 0600 and synced, which then replaces FILE, so a failed write leaves an existing FILE unchanged. FILE's directory must be writable, and a run killed mid-write can leave that owner-only temporary behind. It OVERWRITES (§6b); a symlink is followed and its target replaced. If ms would also print on stdout and stdout is FILE, the run is refused (exit 64).`
+  `Through the shared crate's `write::write_private`: the bytes go to a temporary `FILE.<pid>.<n>.tmp` beside FILE, created 0600 and synced, which then replaces FILE, so a failed write leaves an existing FILE unchanged. FILE's directory (its target's, for a symlink) must be writable, and a run killed mid-write can leave that owner-only temporary behind. It OVERWRITES (§6b); a symlink is followed and its target replaced. If ms would also print on stdout and stdout is FILE, the run is refused (exit 64).`
   (the first and last paragraphs are unchanged; the doc comment wraps at the file's width).
 - **H2, `hashlock --out` help (`hashlock.rs:75`), PROPOSED:** `Write the preimage ms1 string here, owner-only; a failed write leaves an existing file unchanged. Never suppresses stdout, so stdout must not be this file (refused, exit 64).`
 - **M1, toolkit manual `43-ms.md:42-48` (the "Output can go to a file" paragraph), PROPOSED, whole paragraph:**
-  ``Output can go to a file as well: **`--out FILE`** on `encode`, `split`, `repair` and `hashlock` writes the canonical artifact owner-only (mode `0600`, so an existing world-readable file is tightened too). The new contents go to a temporary `FILE.<pid>.<n>.tmp` beside FILE, which then replaces it, so a failed write leaves an existing FILE unchanged; FILE's directory must be writable, and a run killed mid-write can leave that owner-only temporary behind. A symlink is followed and its target replaced. An existing FILE is overwritten. `split` and `hashlock --random` are the exceptions: their output is new on every run and cannot be re-made, so they refuse an existing FILE (exit 64, naming it), and a failed write leaves nothing at FILE. When the verb also prints on stdout (`encode --json`, `split --json`, `repair`, `hashlock`, `--random` too) and stdout is FILE (the same path, a symlink or a hard link), the run is refused before anything is read (exit 64). `ms gen-man --out <DIR>` is unrelated: there it names a directory.``
+  ``Output can go to a file as well: **`--out FILE`** on `encode`, `split`, `repair` and `hashlock` writes the canonical artifact owner-only (mode `0600`, so an existing world-readable file is tightened too). The new contents go to a temporary `FILE.<pid>.<n>.tmp` beside FILE, which then replaces it, so a failed write leaves an existing FILE unchanged; FILE's directory (its target's, for a symlink) must be writable, and a run killed mid-write can leave that owner-only temporary behind. A symlink is followed and its target replaced. An existing FILE is overwritten. `split` and `hashlock --random` are the exceptions: their output is new on every run and cannot be re-made, so they refuse an existing FILE (exit 64, naming it), and a failed write leaves nothing at FILE. When the verb also prints on stdout (`encode --json`, `split --json`, `repair`, `hashlock`, `--random` too) and stdout is FILE (the same path, a symlink or a hard link), the run is refused before anything is read (exit 64). `ms gen-man --out <DIR>` is unrelated: there it names a directory.``
 - **M2, manual `43-ms.md:900` ("When stdout fails"), PROPOSED, sentence appended to the paragraph:**
   `` A write error on an `--out` file prints `ms: cannot write the output: <FILE>: <error>` and exits 1; the line ends `. <FILE> is unchanged.` or `. Nothing was written.` when ms can see that is so.``
-- **C1, CHANGELOG `## ms-cli [Unreleased]` / `### Fixed`, PROPOSED (three bullets):**
-  - ``**A failed `--out` write no longer destroys the existing file** (bh-ms-I13). `encode`, `repair` and `hashlock` write a temporary file beside FILE and rename it over FILE (mnemonic-io-lib 0.1.2), so a full disk or quota leaves the old file byte-identical; FILE's directory must now be writable. `split` and `hashlock --random` remove the partial file they created, so a retry works. The error is now `ms: cannot write the output: <FILE>: <error>`, followed by `. <FILE> is unchanged.` or `. Nothing was written.` when that is so (was `error: failed to write --out <FILE>: <error>`; exit 1 as before).``
+- **C1, CHANGELOG `## ms-cli [Unreleased]` / `### Fixed`, PROPOSED (three bullets under `### Fixed`, then a new `### Changed` section with one bullet):**
+  - ``**A failed `--out` write no longer destroys the existing file** (bh-ms-I13). `encode`, `repair` and `hashlock` write a temporary file beside FILE and rename it over FILE (mnemonic-io-lib 0.1.2), so a full disk or quota leaves the old file byte-identical; FILE's directory (its target's, for a symlink) must now be writable. `split` and `hashlock --random` remove the partial file they created, so a retry works. The error is now `ms: cannot write the output: <FILE>: <error>`, followed by `. <FILE> is unchanged.` or `. Nothing was written.` when that is so (was `error: failed to write --out <FILE>: <error>`; exit 1 as before).``
   - ``**`--out` and standard output can no longer be one file** (bh-ms-I1). `ms encode --json --out F > F`, `ms hashlock --out P > P` and `ms repair --out C > C` (or a link to the file) exited 0 with the report where the card was promised; they are now refused before anything is read (exit 64). `ms hashlock --random --json --out R >> R` and `ms split --json --out SH >> SH` no longer append an error object to the file they refused to overwrite.``
   - ``**`ms encode --out F 2> F` keeps the card in F.** The engraving card on stderr no longer overwrites it.``
+  - ``- **ms-cli takes `mnemonic-io-lib` from crates.io** (was a git rev of mnemonic-engrave), so a rebuilder's `[source]` activation is the two-block form (`docs/verify-reproducibility.md`).``
 - **P1, `crates/ms-cli/Cargo.toml:21-31` under Q1 (a), PROPOSED (comment and pin, whole):**
   ```toml
   # THE SHARED IO MECHANISM (P2), from crates.io. mnemonic-io-lib 0.1.2 was
@@ -201,7 +201,7 @@ reverted; section 6). Base outputs: `MS=<base ms> bash design/FIX_bughunt1119_ms
 | o5_missing_directory_text_and_exit | `encode --hex - --out nodir/x.ms1` | rc 1, `error: failed to write --out nodir/x.ms1: No such file or directory (os error 2)` | rc 1, stderr exactly `ms: cannot write the output: nodir/x.ms1: No such file or directory (os error 2). Nothing was written.` |
 | o6_read_only_directory_refuses_and_keeps_file | `ro/F` = CARD0, chmod 0500 ro; `encode --hex - --out ro/F` with `11`x16 (skip when euid is 0) | rc 0, ro/F replaced | rc 1, stderr exactly `ms: cannot write the output: ro/F: Permission denied (os error 13). ro/F is unchanged.`, ro/F == CARD0 |
 | o7_symlink_out_replaces_target_keeps_link | T = `OLD\n` 0644, `L -> T`; `encode --hex - --out L` | rc 0, L a symlink, T == CARD0, mode 600 | same (control) |
-| o8_stdio_alias_onto_a_file_names_no_state | S2 = `OLD BACKUP LINE\n`; FSIZE8 `encode --hex - --out /dev/stdout` with stdout appended to S2 | rc 1, `error: failed to write --out /dev/stdout: File too large (os error 27)` | rc 1, stderr starts `E27(/dev/stdout)` and is either exactly `E27(/dev/stdout)` (S2 changed: io-lib 0.1.2 cuts it to `ms10entr`) or exactly `E27(/dev/stdout). /dev/stdout is unchanged.` (S2 still `OLD BACKUP LINE\n`: an io-lib that appends to a stdio alias); the test asserts the sentence is present if and only if S2 == `OLD BACKUP LINE\n` (seen: revB the first, revC the second). |
+| o8_stdio_alias_onto_a_file_names_no_state | S2 = `OLD BACKUP LINE\n`; FSIZE8 `encode --hex - --out /dev/stdout` with stdout appended to S2 | rc 1, `error: failed to write --out /dev/stdout: File too large (os error 27)` | rc 1, stderr starts `E27(/dev/stdout)` and is either exactly `E27(/dev/stdout)` (S2 changed: io-lib 0.1.2 cuts it to `ms10entr`) or exactly `E27(/dev/stdout). /dev/stdout is unchanged.` (S2 still `OLD BACKUP LINE\n`: an io-lib that appends to a stdio alias); the test asserts the sentence is present if and only if S2 == `OLD BACKUP LINE\n` (seen: io-lib at mnemonic-engrave e09d538d the first; an io-lib that appends to a stdio alias, the 0.1.3 release, the second). |
 | o9_create_new_failed_write_text | FSIZE8 `split -k 2 -n 3 --hex - --out SH` | rc 1, `error: failed to write --out SH: ...`, SH = 8 bytes | rc 1, stderr last line exactly `E27(SH). Nothing was written.`, SH absent |
 | o9b_create_new_retry_after_failed_write | o9, then `split -k 2 -n 3 --hex - --out SH` | rc 64, `--out SH already exists; ...` | rc 0, SH = 3 lines (153 bytes), mode 600 |
 | o9c_random_preimage_failed_write_leaves_nothing | FSIZE8 `hashlock --random --no-engraving-card --out R` | rc 1, R = 8 bytes | rc 1, stderr last line exactly `E27(R). Nothing was written.`, R absent |
@@ -237,7 +237,7 @@ R3 repair -> o15; R3 split -> o24 (JSON), o18 (text not checked); R4 -> o9, o9b,
 Measured: the scratch prototype (io-lib 0.1.2 from `git archive e09d538d crates/mnemonic-io-lib` as a path dependency,
 R2 through a new `CliError` variant, R3 at the three call sites, R4 in `write_artifact_create_new`) run as
 `cargo nextest run --offline --workspace --all-targets --all-features --no-fail-fast --build-jobs 6 -j 6` (not
-`--locked`: the path dependency rewrites `Cargo.lock`): `786 tests run: 785 passed, 1 failed, 23 skipped`. The one
+`--locked`: the path dependency rewrites `Cargo.lock`): `786 tests run: 785 passed, 1 failed, 23 skipped`. The r1 review re-ran it on the fixed text (two variants, R3 at encode, split, hashlock and repair): the same counts. The one
 failure is the only test that changes:
 
 - `crates/ms-cli/tests/split_out_refuses_existing.rs:139-147` `a_missing_parent_directory_is_still_exit_1`: the
@@ -256,7 +256,7 @@ truncating writer"). The triage tests `bh1119_ms_i1_json_stdout_aliasing_out_is_
 `scripts/ms-output-sink-fix-gate.sh`; every cargo call with `CARGO_BUILD_JOBS=6`; run once to a file and grep):
 step 0 `cargo search mnemonic-io-lib --limit 1` lists `0.1.2` (else STOP, the overrides); step 1, in a detached
 worktree at 08ea22c with only the new test file added, `cargo nextest run --locked -p ms-cli --test bh1119_ms_out_writes
---no-fail-fast` shows `27 tests run: 5 passed, 22 failed` and the 17 failing names are exactly section 5's RED set;
+--no-fail-fast` shows `27 tests run: 5 passed, 22 failed` and the 22 failing names are exactly section 5's RED set;
 step 2 on the head: first, before the cargo steps, these lines (the mt #12 gate.sh pattern, ms paths) and
 `actionlint .github/workflows/man-release.yml` (exit 0):
 

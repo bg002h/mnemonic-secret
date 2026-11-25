@@ -72,7 +72,7 @@ pub struct HashlockArgs {
     /// Phrase -> preimage method (phrase sources only).
     #[arg(long, value_enum)]
     pub method: Option<Method>,
-    /// Write the preimage ms1 string here, owner-only. Never suppresses stdout.
+    /// Write the preimage ms1 string here, owner-only; a failed write leaves an existing file unchanged. Never suppresses stdout, so stdout must not be this file (refused, exit 64).
     #[arg(long, value_name = "FILE")]
     pub out: Option<PathBuf>,
     /// One JSON object on stdout in place of the record line. Carries the secret.
@@ -389,6 +389,11 @@ fn method_line(d: &Derived) -> String {
 }
 
 pub fn run(args: HashlockArgs) -> Result<u8> {
+    // bh-ms-I1: hashlock always prints the record or the JSON on stdout, so stdout
+    // must not be the `--out` file (`--random` included); before anything is read.
+    if let Some(path) = args.out.as_deref() {
+        crate::out::refuse_stdout_alias(path)?;
+    }
     let source = pick_source(&args)?;
     // Refused here rather than ignored: a flag that asks for a record and
     // silently produces none sends the operator looking for output that was

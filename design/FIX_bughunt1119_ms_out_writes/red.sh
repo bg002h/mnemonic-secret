@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# design/FIX_bughunt1119_ms_out_writes/red.sh -- the FIX doc's rows o1-o21 and
+# design/FIX_bughunt1119_ms_out_writes/red.sh -- the FIX doc's rows o1-o25 (o9b, o9c included) and
 # the out-of-scope evidence x1-x4, as printed commands against one `ms` binary.
 #
 # Usage: MS=<path to ms> bash design/FIX_bughunt1119_ms_out_writes/red.sh > OUT
@@ -144,6 +144,10 @@ reset; printf '%s\n' "$B" | FS8 "$MS" encode --hex - --out F --json --no-engravi
 show o25_json_failed_overwrite_line_on_stderr_no_envelope $rc F; cmp -s F F.orig && echo "F == previous" || echo "F CHANGED"
 rm -f F F.orig
 
+reset; "$MS" hashlock --random --no-engraving-card --out R >R 2>err; rc=$?
+show o19_hashlock_random_out_with_stdout_on_it_refused $rc R
+rm -f R
+
 # ---- controls ----
 reset; printf '%s\n' "$A" | "$MS" encode --hex - --out F --no-engraving-card >F 2>err; rc=$?
 show o16_text_encode_out_with_stdout_on_it_still_writes $rc F
@@ -158,10 +162,6 @@ rm -f F
 reset; printf '%s\n' "$A" | "$MS" split -k 2 -n 3 --hex - --out SH >SH 2>err; rc=$?
 show o18_split_out_with_stdout_on_it_refused_as_existing $rc SH
 rm -f SH
-
-reset; "$MS" hashlock --random --no-engraving-card --out R >R 2>err; rc=$?
-show o19_hashlock_random_out_with_stdout_on_it_refused_as_existing $rc R
-rm -f R
 
 mkfifo FF; ( cat FF > fifo.got & ); sleep 0.2
 reset; printf '%s\n' "$A" | "$MS" encode --hex - --out FF --no-engraving-card >out 2>err; rc=$?; sleep 0.2
