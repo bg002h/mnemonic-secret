@@ -76,7 +76,10 @@ grep -q ' 0 failed\|passed' "$OUT/workspace.log" || fail "no workspace summary"
 load; cargo test --locked -p ms-codec --doc
 load; cargo clippy --locked -p ms-codec --all-targets -- -D warnings
 load; cargo clippy --locked --all-targets -p ms-cli -- -D warnings
-for g in g2_1 g2_3 g2_4; do load; cargo test --locked -p ms-cli --bin ms "mlock::tests::$g" -- --include-ignored; done
+# CI (rust.yml, the `test` job) runs the fault-injection tests with the mode in the env.
+for gm in g2_1:eperm g2_3:einval g2_4:off; do
+  load; MNEMONIC_TEST_MLOCK_FAIL_MODE="${gm#*:}" cargo test --locked -p ms-cli --bin ms "mlock::tests::${gm%%:*}" -- --include-ignored
+done
 for t in history_purge the_decline mlock_g6_invariant; do load; cargo test --locked -p ms-cli --test "$t" -- --include-ignored; done
 bash ci/docs-only.test.sh
 bash ci/bh1119-doc-lint.test.sh
