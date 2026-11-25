@@ -22,6 +22,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## ms-cli [Unreleased]
 
 ### Fixed
+- **`ms derive` warns when the passphrase holds a line break or other control character** (bug hunt
+  2026-11-25 ms#3). After the shared strip-one-trailing-newline rule, a passphrase file with an extra blank line
+  (or two lines) derived from a passphrase containing `\n` at exit 0 with no word. It now prints one stderr line,
+  `warning: --passphrase from <origin> contains a line break or other control character ...`, naming the channel
+  and never the value. The passphrase VALUE is unchanged (it is the wallet); the shared vectors still hold.
 - **`ms encode` / `ms split` refuse a non-English `--language` with `--hex`** (bug hunt 2026-11-25 ms#2). `--hex`
   mints a card that carries no wordlist language, so `--hex - --language japanese` used to exit 0 with the flag
   silently dropped, and the backup restored by default to the English wallet (a different seed; `ms derive`
