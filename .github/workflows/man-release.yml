@@ -20,9 +20,18 @@ on:
     tags:
       - "ms-cli-v*"
   workflow_dispatch:
+    inputs:
+      full:
+        description: "also run the nightly jobs (no nightly jobs in this workflow; accepted so the release gate can pass -f full=true everywhere)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   man-tarball:
@@ -162,6 +171,18 @@ jobs:
       # Source the centralized recipe from the toolkit at the F-675 fix (4120af85,
       # toolkit master; contains 327f9a16). MUST match the `uses:` pin above.
       toolkit_ref: 4120af853ec68dc515cb4ac0eb7245a018a50c78
+
+  repro-doc-recipe:
+    name: reproducibility doc, section 8 recipe run as printed
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the section 8 two-distinct-path recipe as printed
+        shell: bash
+        run: bash ci/bh1119-doc-lint.test.sh --run-recipe
 
   # Static, dependency-free `ms` binaries for air-gapped / Alpine / musl boxes.
   # Builds both musl targets and attaches a static tarball per arch + a per-arch

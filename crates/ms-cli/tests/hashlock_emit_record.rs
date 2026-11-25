@@ -178,6 +178,9 @@ fn json_carries_the_record_only_under_the_flag() {
 /// leading a wire format owned by mnemonic-engrave, which the Rust-primary rule
 /// puts in the primary first, with vectors; F-535 stays open for that.
 ///
+/// The cases run with the card because text mode without it refuses
+/// `--emit-record` (bh-ms-I4).
+///
 /// MUTATION: drop the `args.emit_record` clause -> the third row fails (it
 /// would warn about a record that was never emitted). MUTATION: drop the
 /// kind check -> the second row fails.
@@ -202,7 +205,7 @@ fn emit_record_says_the_phrase_record_does_not_carry_the_kind() {
         ),
     ];
     for (extra, want, why) in cases {
-        let mut args = vec!["hashlock", "--hashlock-phrase-stdin", "--no-engraving-card"];
+        let mut args = vec!["hashlock", "--hashlock-phrase-stdin"];
         args.extend(extra.iter().copied());
         let r = ms()
             .args(&args)

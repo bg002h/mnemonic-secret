@@ -7,8 +7,10 @@ Companion CLI to the [`ms-codec`](https://crates.io/crates/ms-codec) library —
 ## Installation
 
 ```bash
-cargo install ms-cli
+cargo install --locked --git https://github.com/bg002h/mnemonic-secret --tag ms-cli-v0.21.0 ms-cli
 ```
+
+This builds the tagged release from source. The crates.io copy (`cargo install ms-cli`) is ms-cli 0.14.0, which lacks every fix since; do not use it.
 
 The installed binary is named `ms`.
 
@@ -47,7 +49,9 @@ ms repair --in broken.txt
 #   #   ms1 chunk 0: 1 correction at position 17: 'z' -> 'q'
 #   ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f   # corrected on last line
 # stderr:
-#   warning: stdout carries private key material (can spend) — redirect or encrypt
+#   warning: stdout carries private key material (can spend) — redirect or encrypt (e.g. '> file.txt' or '| age -e ...')
+#   repair: correction UNVERIFIED — a corrected seed card cannot be self-verified; confirm the derived address/xpub against a known-good copy before use; BIP-93 recommends confirming a corrected codex32 string
+# exit status: 4
 
 # Stdin via `-`:
 ms repair --ms1 - < broken.txt
@@ -60,9 +64,11 @@ ms repair --in broken.txt --json
 | Exit | Meaning |
 |---|---|
 | `0` | input already valid; no correction applied; echoed unchanged. |
-| `5` | `REPAIR_APPLIED` — at least one substitution corrected; stdout = repair report + corrected string. Consistent across all four CLIs per plan D26 (`mnemonic` / `mk` / `ms` / `md`). |
-| `2` | unrepairable (more than 4 substitution errors, or structural ms1 error before correction could run). |
+| `4` | **`VERIFY-ME` Candidate** (Cycle F, `ms1-repair-demote-to-candidate` — a funds fix) — at least one substitution corrected; stdout = repair report + corrected string; stderr carries an UNVERIFIED advisory. **Never exit 5** — see below. |
+| `2` | unrepairable (BCH-uncorrectable: > 4 substitution errors, or structural ms1 error before correction could run). |
 | `1` | I/O error or other generic failure. |
+
+**Confirm every exit-4 card before use.** Up to 4 substitutions are corrected back to the original string; beyond that a correction can still succeed and land on a different, valid card, and an ms1 string carries nothing else to catch it. Confirm the corrected card against an independent record: for a seed card, the derived address or xpub against a known-good copy; for a hashlock preimage card (`ms10hash…`), its hash against the hashlock it was made for. `ms repair` never exits 5.
 
 `ms repair` wraps `ms_codec::decode_with_correction` (ms-codec v0.2.0+)
 and shares the `RepairJson` envelope schema byte-exact with the other

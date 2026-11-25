@@ -494,6 +494,12 @@ Refusals name the rule and **never echo the phrase**.
   dklen}` or `{hash}`) and `phrase_chars`. Every hex value is lowercase, and a
   row pins it. It carries the secret, so the `PrivateKeyMaterial` advisory
   fires, as `encode --json` does. (R0 r0 correctness I-3, I-4.)
+- **`--emit-record`** (F-495; phrase sources only, otherwise exit 64 "needs a phrase"): the `phrase:` record
+  goes on the card (`record (phrase):`) in text mode and into `phrase_record` under `--json`, never on the
+  text-mode stdout, which stays the public digest alone. **Text mode with `--no-engraving-card` is refused,
+  exit 64** (bh-ms-I4, architect T26): there is no card to carry the record, and stdout is the channel this
+  verb keeps public. The refusal follows the §4.1 source checks and the needs-a-phrase refusal and precedes
+  reading the phrase and writing `--out`. `--json --no-engraving-card` is admitted: the object carries it.
 
 ---
 
