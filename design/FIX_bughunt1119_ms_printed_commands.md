@@ -125,6 +125,11 @@ R5 texts (one stderr line, `error: ` + the message; `<T>` is the threshold digit
 - R5, `crates/ms-cli/src/error.rs` L229-236: the `message` of the `IsShareNotSingleString` arm branches the same way
   with the same two texts (`underlying_kind` and `details` unchanged). The comment above it (L222-228, "directs the user
   to `ms combine`") says: except for index `s`.
+- R5, `design/SPEC_ms_v0_2_kofn.md` L71: after ``whose `Display` directs the user to `ms combine` `` insert
+``, except at share index `s` (the secret itself, which `ms combine` refuses per C1): there it says so and names no
+command (bh-ms-R11)``. `crates/ms-codec/src/envelope.rs` L131-135 comment: ``route to `ms combine` `` becomes
+``route to `ms combine`, or for index `s` say it is the secret``, and ``a share's index is a non-`s` distributed index
+by design`` becomes ``a share-threshold string may still carry index `s`, the secret itself (bh-ms-R11)``.
 - `CHANGELOG.md` under `## ms-cli [Unreleased]`, a `### Fixed` entry, PROPOSED (architect confirms):
   `- **The \`--in\` hex note prints a command that runs.** On \`ms split\` it carries \`-k\`/\`-n\`; a given \`--out\`
   is carried; paths are single-quoted. \`ms gen-man --help\`'s user-manpath example falls back to
