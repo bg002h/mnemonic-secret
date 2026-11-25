@@ -16,8 +16,23 @@ const MS1: &str = "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f";
 
 /// Run `ms args` with stdin and stderr on a pty, type `typed` (then EOT when
 /// `eot`), and return (everything the terminal displayed, stdout, exit code).
-#[allow(clippy::zombie_processes)] // every panic path is a failed test
 fn on_pty(args: &[&str], typed: &str, eot: bool) -> (String, String, Option<i32>) {
+    let r = on_pty_full(args, typed, eot);
+    (r.shown, r.stdout, r.code)
+}
+
+/// What a pty run shows: terminal output, stdout, exit code, and whether the
+/// pty's ECHO bit is on after the child exited (read from the master side,
+/// which reports the slave's termios on Linux).
+struct PtyRun {
+    shown: String,
+    stdout: String,
+    code: Option<i32>,
+    echo_after: bool,
+}
+
+#[allow(clippy::zombie_processes)] // every panic path is a failed test
+fn on_pty_full(args: &[&str], typed: &str, eot: bool) -> PtyRun {
     // SAFETY: plain pty setup; every fd is checked and owned below.
     let (master, slave) = unsafe {
         let m = libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY);
@@ -41,6 +56,8 @@ fn on_pty(args: &[&str], typed: &str, eot: bool) -> (String, String, Option<i32>
     unsafe {
         cmd.pre_exec(|| {
             libc::setsid();
+            // The slave becomes the controlling terminal, so `/dev/tty` opens.
+            libc::ioctl(0, libc::TIOCSCTTY as _, 0);
             Ok(())
         });
     }
@@ -90,11 +107,19 @@ fn on_pty(args: &[&str], typed: &str, eot: bool) -> (String, String, Option<i32>
     }
     let mut out = String::new();
     let _ = stdout.read_to_string(&mut out);
-    (
-        String::from_utf8_lossy(&shown).into_owned(),
-        out,
-        status.and_then(|s| s.code()),
-    )
+    let echo_after = {
+        use std::os::fd::AsRawFd;
+        // SAFETY: tcgetattr on the open master fd into a zeroed termios.
+        let mut t: libc::termios = unsafe { std::mem::zeroed() };
+        assert_eq!(unsafe { libc::tcgetattr(master.as_raw_fd(), &mut t) }, 0);
+        t.c_lflag & libc::ECHO != 0
+    };
+    PtyRun {
+        shown: String::from_utf8_lossy(&shown).into_owned(),
+        stdout: out,
+        code: status.and_then(|s| s.code()),
+        echo_after,
+    }
 }
 
 /// MUTATION: drop the echo-off guard in `read_phrase_stdin` -> the terminal
@@ -127,7 +152,7 @@ fn ms1_read_from_stdin_does_not_echo_at_a_terminal() {
     );
 }
 
-/// MUTATION: drop the echo-off guard `let _echo = (crate::passphrase_input::path_is_stdin(path) && io::stdin().is_terminal()).then(crate::passphrase_input::EchoOff::new);`
+/// MUTATION: drop the echo-off guard `let _echo = ...` (the `is_terminal()` branch)
 /// in `parse::read_in_file` -> the ms1 string typed into `--in /dev/stdin` is
 /// displayed and this fails.
 #[test]
@@ -139,5 +164,85 @@ fn ms1_read_in_dev_stdin_does_not_echo_at_a_terminal() {
     assert!(
         !shown.contains(MS1),
         "the terminal displayed the ms1 string:\n{shown}"
+    );
+}
+
+/// MUTATION: `--in /dev/tty` is not covered by the echo-off guard in
+/// `parse::read_in_file` -> the ms1 string typed on the terminal is displayed.
+#[test]
+fn ms1_read_in_dev_tty_does_not_echo_at_a_terminal() {
+    let (shown, stdout, code) = on_pty(&["decode", "--in", "/dev/tty"], &format!("{MS1}\n"), true);
+    assert_eq!(code, Some(0), "shown:\n{shown}");
+    assert!(!stdout.is_empty());
+    assert!(
+        !shown.contains(MS1),
+        "the terminal displayed the ms1 string:\n{shown}"
+    );
+}
+
+/// The ECHO bit is back on after `--in /dev/tty` was read and failed to parse.
+#[test]
+fn echo_is_restored_after_a_bad_ms1_on_dev_tty() {
+    let r = on_pty_full(&["decode", "--in", "/dev/tty"], "not-an-ms1-string\n", true);
+    assert_ne!(r.code, Some(0), "shown:\n{}", r.shown);
+    assert!(
+        r.echo_after,
+        "ECHO still off after exit; shown:\n{}",
+        r.shown
+    );
+}
+
+/// Restore after an error exit: a bad ms1 typed at `decode -`.
+/// MUTATION: drop the guard's restore in `EchoOff::drop` -> ECHO stays off.
+#[test]
+fn echo_is_restored_after_a_bad_ms1_on_decode_stdin() {
+    let r = on_pty_full(&["decode", "-"], "not-an-ms1-string\n", true);
+    assert_ne!(r.code, Some(0), "shown:\n{}", r.shown);
+    assert!(
+        !r.shown.contains("not-an-ms1-string"),
+        "echoed:\n{}",
+        r.shown
+    );
+    assert!(
+        r.echo_after,
+        "ECHO still off after exit; shown:\n{}",
+        r.shown
+    );
+}
+
+/// `combine -` at a terminal: nothing typed is displayed, and ECHO is back
+/// on after the (failing) read.
+#[test]
+fn combine_stdin_does_not_echo_and_restores_echo() {
+    let r = on_pty_full(&["combine", "-"], "not-a-share-string\n", true);
+    assert_ne!(r.code, Some(0), "shown:\n{}", r.shown);
+    assert!(
+        !r.shown.contains("not-a-share-string"),
+        "echoed:\n{}",
+        r.shown
+    );
+    assert!(
+        r.echo_after,
+        "ECHO still off after exit; shown:\n{}",
+        r.shown
+    );
+}
+
+/// The non-tty path: a piped stdin reads and decodes as before, with no pty
+/// involved and no echo notice on stderr.
+#[test]
+fn decode_stdin_pipe_is_unchanged_without_a_terminal() {
+    let o = assert_cmd::Command::cargo_bin("ms")
+        .unwrap()
+        .args(["decode", "-"])
+        .write_stdin(format!("{MS1}\n"))
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0));
+    assert!(!o.stdout.is_empty());
+    assert!(
+        !String::from_utf8_lossy(&o.stderr).contains("echo"),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
     );
 }

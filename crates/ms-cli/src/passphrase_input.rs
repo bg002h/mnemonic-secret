@@ -164,6 +164,8 @@ pub(crate) fn stdin_is_terminal() -> bool {
 /// working terminal. A signal the process inherited as IGNORED stays ignored.
 pub(crate) struct EchoOff {
     #[cfg(unix)]
+    fd: libc::c_int,
+    #[cfg(unix)]
     saved: Option<libc::termios>,
     #[cfg(unix)]
     old_actions: Option<[libc::sigaction; 4]>,
@@ -171,12 +173,14 @@ pub(crate) struct EchoOff {
 
 #[cfg(unix)]
 mod echo_signal {
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
     /// The mode to restore from the handler. Written BEFORE `ACTIVE` is set
     /// and read only while it is set.
     static mut SAVED: std::mem::MaybeUninit<libc::termios> = std::mem::MaybeUninit::uninit();
     static ACTIVE: AtomicBool = AtomicBool::new(false);
+    /// The fd whose mode to restore from the handler; written with SAVED.
+    static FD: AtomicI32 = AtomicI32::new(0);
     pub(super) const SIGNALS: [libc::c_int; 4] =
         [libc::SIGINT, libc::SIGTERM, libc::SIGHUP, libc::SIGQUIT];
 
@@ -185,7 +189,11 @@ mod echo_signal {
         if ACTIVE.swap(false, Ordering::SeqCst) {
             // SAFETY: SAVED was fully written before ACTIVE was set.
             unsafe {
-                libc::tcsetattr(0, libc::TCSANOW, (*std::ptr::addr_of!(SAVED)).as_ptr());
+                libc::tcsetattr(
+                    FD.load(Ordering::SeqCst),
+                    libc::TCSANOW,
+                    (*std::ptr::addr_of!(SAVED)).as_ptr(),
+                );
             }
         }
         // SAFETY: default disposition, then deliver the same signal again.
@@ -199,8 +207,9 @@ mod echo_signal {
     ///
     /// # Safety
     /// Single-threaded use around one prompt at a time.
-    pub(super) unsafe fn arm(saved: &libc::termios) -> [libc::sigaction; 4] {
+    pub(super) unsafe fn arm(fd: libc::c_int, saved: &libc::termios) -> [libc::sigaction; 4] {
         (*std::ptr::addr_of_mut!(SAVED)).write(*saved);
+        FD.store(fd, Ordering::SeqCst);
         ACTIVE.store(true, Ordering::SeqCst);
         let mut old: [libc::sigaction; 4] = std::mem::zeroed();
         for (i, s) in SIGNALS.iter().enumerate() {
@@ -231,21 +240,30 @@ mod echo_signal {
 impl EchoOff {
     /// `(guard, echo_disabled)`.
     pub(crate) fn new() -> (Self, bool) {
+        Self::new_on(0)
+    }
+
+    /// As [`EchoOff::new`] on terminal fd `fd`, which must stay open for the
+    /// guard's life (an `--in /dev/tty` read holds its own handle).
+    pub(crate) fn new_on(fd: i32) -> (Self, bool) {
+        #[cfg(not(unix))]
+        let _ = fd;
         #[cfg(unix)]
         {
-            // SAFETY: tcgetattr/tcsetattr on fd 0 with a zeroed, then
+            // SAFETY: tcgetattr/tcsetattr on `fd` with a zeroed, then
             // kernel-filled, termios; the handlers are armed before echo goes
             // off, so no window exists with echo off and no handler.
             unsafe {
                 let mut t: libc::termios = std::mem::zeroed();
-                if libc::tcgetattr(0, &mut t) == 0 {
+                if libc::tcgetattr(fd, &mut t) == 0 {
                     let saved = t;
-                    let old = echo_signal::arm(&saved);
+                    let old = echo_signal::arm(fd, &saved);
                     t.c_lflag &= !libc::ECHO;
                     t.c_lflag |= libc::ECHONL;
-                    if libc::tcsetattr(0, libc::TCSANOW, &t) == 0 {
+                    if libc::tcsetattr(fd, libc::TCSANOW, &t) == 0 {
                         return (
                             Self {
+                                fd,
                                 saved: Some(saved),
                                 old_actions: Some(old),
                             },
@@ -257,6 +275,7 @@ impl EchoOff {
             }
             (
                 Self {
+                    fd,
                     saved: None,
                     old_actions: None,
                 },
@@ -278,7 +297,7 @@ impl Drop for EchoOff {
                 // SAFETY: restores the attributes read in `new`. Restore
                 // FIRST, then disarm: a signal in between restores again.
                 unsafe {
-                    libc::tcsetattr(0, libc::TCSANOW, &t);
+                    libc::tcsetattr(self.fd, libc::TCSANOW, &t);
                 }
             }
             if let Some(old) = self.old_actions.take() {
