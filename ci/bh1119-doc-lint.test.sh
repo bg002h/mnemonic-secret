@@ -67,6 +67,8 @@ run93() { # $1 = stub mode (bin|none), $2 = fresh dir; prints rc; leaves clone i
   echo $?
 }
 epoch="$(git show -s --format=%ct HEAD)"
+cleanup() { [ -n "${t1:-}" ] && rm -r "$t1"; [ -n "${t2:-}" ] && rm -r "$t2"; return 0; }
+trap cleanup EXIT
 r=bh1119_ms_i11_aarch64_packaging_uses_commit_epoch
 t1="$(mktemp -d)"; rc="$(run93 bin "$t1")"
 arc="$t1/repo/ms-${ver}-aarch64-linux-musl.tar.gz"
