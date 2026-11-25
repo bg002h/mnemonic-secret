@@ -16,6 +16,11 @@
 # FOLLOWUPS file to check them.
 ^scripts/ms-output-sink-fix-gate\.sh$
 
+# Not run by CI: the local gate of the ms out-writes FIX document (bughunt-1119
+# row 11), run by hand before the PR. It reads the docs and the design folder
+# it checks.
+^scripts/ms-out-writes-fix-gate\.sh$
+
 # Runs in the rust.yml clippy job before its docs-only guard step (and, with
 # --run-recipe, in man-release.yml), so no step the skip can skip runs it. It
 # reads the docs it lints.
