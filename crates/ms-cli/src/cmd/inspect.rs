@@ -13,6 +13,7 @@ use ms_codec::{InspectKind, InspectReport};
 use serde_json::to_string;
 use zeroize::Zeroizing;
 
+use crate::advisory::{emit_output_class_advisory, OutputClass};
 use crate::error::Result;
 use crate::format::{InspectJson, InspectReportJson};
 use crate::parse::{read_input, Source};
@@ -81,6 +82,11 @@ pub fn run(args: InspectArgs) -> Result<u8> {
     } else {
         emit_text(&report, would_decode, &reasons);
     }
+    // The report prints `payload_bytes` (BIP-39 entropy / a hashlock preimage).
+    emit_output_class_advisory(
+        OutputClass::PrivateKeyMaterial,
+        &mut std::io::stderr().lock(),
+    );
     Ok(0)
 }
 

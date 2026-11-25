@@ -18,7 +18,7 @@
 //!
 //! # Inert commands (no advisory)
 //!
-//! `ms inspect`, `ms verify`, `ms vectors`, `ms gui-schema` do NOT write
+//! `ms verify`, `ms vectors`, `ms gui-schema` and an `ms inspect` share report do NOT write
 //! private material to stdout — no advisory line.
 //!
 //! # Byte-parity
@@ -229,19 +229,40 @@ fn ms_repair_emits_private_key_material() {
 
 // ─── Inert commands: no advisory line ─────────────────────────────────────────
 
-/// `ms inspect` outputs structural fields only — no key material on stdout.
+/// ms-inspect-no-output-advisory: `ms inspect` prints `payload_bytes` (the
+/// entropy / a preimage), so it emits the P advisory like `ms decode`.
 #[test]
-fn ms_inspect_is_inert_no_advisory() {
-    let out = support::run(&["inspect", ABANDON_MS1]);
-    assert!(
-        out.status.success(),
-        "expected exit 0; stderr={}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+fn ms_inspect_no_output_advisory() {
+    for extra in [&[][..], &["--json"][..]] {
+        let mut args = vec!["inspect", ABANDON_MS1];
+        args.extend_from_slice(extra);
+        let out = support::run(&args);
+        assert!(
+            out.status.success(),
+            "expected exit 0; stderr={}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let stderr = String::from_utf8(out.stderr).expect("stderr utf-8");
+        assert!(
+            stderr.contains(PRIVATE_KEY_LINE),
+            "ms inspect {extra:?} must emit the P advisory; got stderr={stderr:?}"
+        );
+    }
+}
+
+/// A K-of-N share report carries no payload bytes: still no advisory.
+#[test]
+fn ms_inspect_share_report_has_no_advisory() {
+    let split = support::run(&["split", "--hex", ABANDON_HEX, "-k", "2", "-n", "3", "--json"]);
+    assert!(split.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&split.stdout).unwrap();
+    let share = v["shares"][0].as_str().unwrap().to_string();
+    let out = support::run(&["inspect", &share]);
+    assert!(out.status.success());
     let stderr = String::from_utf8(out.stderr).expect("stderr utf-8");
     assert!(
         !stderr.contains("warning:") && !stderr.contains("note: stdout"),
-        "ms inspect must NOT emit any output-class advisory; got stderr={stderr:?}"
+        "a share report must not emit an advisory; got stderr={stderr:?}"
     );
 }
 
