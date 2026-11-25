@@ -136,7 +136,7 @@ enum Command {
     /// release asset on each `ms-cli-v*` tag.
     #[command(
         name = "gen-man",
-        after_long_help = "EXAMPLES:\n  ms gen-man --out ./man         # write ms.1, ms-encode.1, … into ./man\n  ms gen-man --out \"$XDG_DATA_HOME/man/man1\"   # user manpath"
+        after_long_help = "EXAMPLES:\n  ms gen-man --out ./man         # write ms.1, ms-encode.1, … into ./man\n  ms gen-man --out \"${XDG_DATA_HOME:-$HOME/.local/share}/man/man1\"   # user manpath"
     )]
     GenMan(cmd::gen_man::GenManArgs),
 

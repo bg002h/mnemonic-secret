@@ -15,7 +15,7 @@ use serde_json::to_string;
 use zeroize::Zeroizing;
 
 use crate::advisory::{emit_output_class_advisory, OutputClass};
-use crate::cmd::encode::resolve_secret_payload;
+use crate::cmd::encode::{note_verb, resolve_secret_payload};
 use crate::error::{CliError, Result};
 use crate::format::{render_grouped, SplitJson};
 use crate::language::CliLanguage;
@@ -109,6 +109,17 @@ pub fn run(mut args: SplitArgs) -> Result<u8> {
         crate::out::refuse_existing_out(path, SPLIT_OUT_WHAT)?;
     }
 
+    // K and N are checked before the secret is read, so the `--in` note (which
+    // prints them) is only ever printed with a valid pair.
+    let threshold = Threshold::new(args.k)?;
+    if !((args.k as usize) <= args.n && args.n <= 31) {
+        return Err(ms_codec::Error::InvalidShareCount {
+            k: args.k,
+            n: args.n,
+        }
+        .into());
+    }
+
     // Shared entropy-resolution + AUTO-route (English/hex → entr; non-English
     // phrase → mnem). The 2nd tuple element (language_for_card) is ignored —
     // split derives the JSON `language` field from the Payload itself.
@@ -117,12 +128,14 @@ pub fn run(mut args: SplitArgs) -> Result<u8> {
         hex_arg.as_ref().map(|h| h.as_str()),
         args.in_path.as_deref(),
         args.language,
-        "split",
+        &note_verb(
+            &format!("split -k {} -n {}", args.k, args.n),
+            args.out.as_deref(),
+        ),
     )?;
 
     // K-of-N split. `Threshold::new` rejects k ∉ 2..=9 (→ InvalidThreshold →
     // BadInput exit 1); `encode_shares` rejects n ∉ k..=31 (→ InvalidShareCount).
-    let threshold = Threshold::new(args.k)?;
     let shares = ms_codec::encode_shares(Tag::ENTR, threshold, args.n, &payload)?;
 
     // Each share carries the share-set's shared random id + threshold char;

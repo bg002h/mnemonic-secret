@@ -225,15 +225,23 @@ impl From<ms_codec::Error> for CliError {
             // This is a FORMAT VIOLATION (exit 2, the §6 ms1-shape class): the
             // string is well-formed codex32 but not a v0.1 single-string. The
             // message (carried from ms_codec's Display) directs the user to
-            // `ms combine`.
+            // `ms combine`, except for index `s` (the secret itself).
             ms_codec::Error::IsShareNotSingleString { threshold, index } => {
                 CliError::FormatViolation {
                     underlying_kind: "IsShareNotSingleString",
-                    message: format!(
-                        "this is one share of a K-of-N set (threshold '{}', index '{}'); \
-                         use `ms combine` to recombine K shares",
-                        threshold, index
-                    ),
+                    message: if index.eq_ignore_ascii_case(&'s') {
+                        format!(
+                            "this is the secret share of a K-of-N set (threshold '{}', index '{}'); \
+                             it is the secret itself, not a distributed share, and `ms combine` does not take it",
+                            threshold, index
+                        )
+                    } else {
+                        format!(
+                            "this is one share of a K-of-N set (threshold '{}', index '{}'); \
+                             use `ms combine` to recombine K shares",
+                            threshold, index
+                        )
+                    },
                     details: Some(json!({
                         "threshold": threshold.to_string(),
                         "index": index.to_string(),

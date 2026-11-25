@@ -200,41 +200,51 @@ fn every_help_example_runs_and_none_puts_material_on_argv() {
                 Some((c, f)) => (c.to_string(), Some(f.trim().trim_matches('\'').to_string())),
                 None => (line.clone(), None),
             };
-            let dir = tempfile::tempdir().unwrap();
-            fixtures(dir.path(), verb);
-            let out = Proc::new("bash")
-                .args(["-o", "pipefail", "-c", &cmd])
-                .current_dir(dir.path())
-                .env("PATH", &path)
-                .env("XDG_DATA_HOME", dir.path())
-                .env("HOME", dir.path())
-                .output()
-                .unwrap();
-            let code = out.status.code();
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            assert!(
-                !stderr.contains("on ARGV"),
-                "`{line}` is refused by ms's own argv guard:\n{stderr}"
-            );
-            // `ms repair` on a damaged card is exit 4 (VERIFY-ME) by design.
-            let ok = code == Some(0) || (verb == "repair" && code == Some(4));
-            assert!(ok, "`{line}` exited {code:?}:\n{stderr}");
-            if let Some(filter) = jq {
-                let v: serde_json::Value = serde_json::from_slice(&out.stdout)
-                    .unwrap_or_else(|e| panic!("`{line}`: stdout is not JSON ({e})"));
-                if let Some(field) = filter.strip_prefix('.') {
-                    if field.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-                        assert!(
-                            !v[field].is_null(),
-                            "`{line}`: the JSON has no {field:?} for jq to select"
-                        );
+            for with_xdg in [true, false] {
+                let mode = if with_xdg {
+                    "XDG_DATA_HOME set"
+                } else {
+                    "XDG_DATA_HOME unset"
+                };
+                let dir = tempfile::tempdir().unwrap();
+                fixtures(dir.path(), verb);
+                let mut proc = Proc::new("bash");
+                proc.args(["-o", "pipefail", "-c", &cmd])
+                    .current_dir(dir.path())
+                    .env("PATH", &path)
+                    .env("HOME", dir.path());
+                if with_xdg {
+                    proc.env("XDG_DATA_HOME", dir.path());
+                } else {
+                    proc.env_remove("XDG_DATA_HOME");
+                }
+                let out = proc.output().unwrap();
+                let code = out.status.code();
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                assert!(
+                    !stderr.contains("on ARGV"),
+                    "`{line}` is refused by ms's own argv guard ({mode}):\n{stderr}"
+                );
+                // `ms repair` on a damaged card is exit 4 (VERIFY-ME) by design.
+                let ok = code == Some(0) || (verb == "repair" && code == Some(4));
+                assert!(ok, "`{line}` ({mode}) exited {code:?}:\n{stderr}");
+                if let Some(filter) = &jq {
+                    let v: serde_json::Value = serde_json::from_slice(&out.stdout)
+                        .unwrap_or_else(|e| panic!("`{line}`: stdout is not JSON ({e}) ({mode})"));
+                    if let Some(field) = filter.strip_prefix('.') {
+                        if field.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                            assert!(
+                                !v[field].is_null(),
+                                "`{line}`: the JSON has no {field:?} for jq to select"
+                            );
+                        }
                     }
                 }
+                ran += 1;
             }
-            ran += 1;
         }
     }
-    assert!(ran >= 30, "only {ran} examples ran");
+    assert!(ran >= 60, "only {ran} examples ran");
 }
 
 /// The repair examples specifically -- the F-677 item -- read the damaged card
