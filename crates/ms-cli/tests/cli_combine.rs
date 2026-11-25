@@ -251,3 +251,23 @@ fn combine_duplicate_index_rejected() {
         .failure()
         .stderr(predicate::str::contains("repeated"));
 }
+
+/// ms-combine-to-ms1-advisory-unpinned: `combine --to ms1` writes secret
+/// material to stdout, so the PrivateKeyMaterial advisory is on stderr.
+#[test]
+fn ms_combine_to_ms1_advisory_unpinned() {
+    let shares = split_shares(&["--phrase", ENGLISH_12], "2", "3");
+    let out = Command::cargo_bin("ms")
+        .unwrap()
+        .args(["combine", "-", "--to", "ms1"])
+        .write_stdin([shares[0].to_string(), shares[1].to_string()].join("\n"))
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(
+        stderr.contains("warning: stdout carries private key material (can spend)"),
+        "combine --to ms1 must emit the P advisory; stderr={stderr:?}"
+    );
+}
