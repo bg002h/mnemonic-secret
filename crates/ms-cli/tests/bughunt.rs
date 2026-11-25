@@ -62,7 +62,6 @@ fn locked_kb_of_vma_containing(addr: usize) -> u64 {
 }
 
 #[test]
-#[ignore = "deferred-minor: ms-mlock-unpin-not-refcounted"]
 fn bughunt_ms_02_mlock_unpin_not_refcounted() {
     let page = mlock::page_size_for_test();
     // One private anonymous mapping of two pages: a page nothing else touches.
