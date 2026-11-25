@@ -283,7 +283,7 @@ pub fn decide(argv: &[String]) -> Decision {
         };
     }
     match find_argv_material(argv) {
-        Some((i, class, len)) => Decision::Refuse(refusal(argv, i, class, len)),
+        Some((i, class)) => Decision::Refuse(refusal(argv, i, class)),
         None => Decision::Proceed(argv.to_vec()),
     }
 }
@@ -456,9 +456,8 @@ fn substitute(argv: &[String]) -> std::result::Result<Vec<String>, String> {
     Ok(out)
 }
 
-/// `(index, class, character length)` of the first argv token carrying
-/// material, or `None`.
-fn find_argv_material(argv: &[String]) -> Option<(usize, &'static str, usize)> {
+/// `(index, class)` of the first argv token carrying material, or `None`.
+fn find_argv_material(argv: &[String]) -> Option<(usize, &'static str)> {
     for (i, token) in argv.iter().enumerate().skip(1) {
         // Layer 1 -- flag-keyed. The VALUE is not examined at all: behind a
         // secret flag, anything that is not the stdin sentinel is material by
@@ -467,7 +466,7 @@ fn find_argv_material(argv: &[String]) -> Option<(usize, &'static str, usize)> {
         if SECRET_FLAGS.contains(&whole.as_str()) {
             if let Some(value) = argv.get(i + 1) {
                 if !is_channel(&whole, value) {
-                    return Some((i + 1, flag_class(&whole), value.trim().chars().count()));
+                    return Some((i + 1, flag_class(&whole)));
                 }
             }
             continue;
@@ -476,10 +475,9 @@ fn find_argv_material(argv: &[String]) -> Option<(usize, &'static str, usize)> {
             if SECRET_FLAGS.contains(&lhs) {
                 // The value is everything after the FIRST `=`; a value that
                 // itself contains `=` is still one value.
-                let raw = token.trim().split_once('=').map(|(_, r)| r).unwrap_or("");
                 let exact = token.split_once('=').map(|(_, r)| r).unwrap_or("");
                 if !is_channel(lhs, exact) {
-                    return Some((i, flag_class(lhs), raw.trim().chars().count()));
+                    return Some((i, flag_class(lhs)));
                 }
                 continue;
             }
@@ -488,7 +486,7 @@ fn find_argv_material(argv: &[String]) -> Option<(usize, &'static str, usize)> {
         // Layer 2 -- value-shape, over all four normalisations.
         for cand in argv_candidates(token) {
             if let Some(class) = material_class(&cand) {
-                return Some((i, class, cand.chars().count()));
+                return Some((i, class));
             }
         }
     }
@@ -509,7 +507,8 @@ fn find_argv_material(argv: &[String]) -> Option<(usize, &'static str, usize)> {
 /// ms derive - < seed.txt   -> error: string length 164 not in v0.1 set […]
 /// ```
 ///
-/// because `--in` and stdin on `derive` read an ms1, not a phrase. The guard
+/// because `--in` and bare `-` stdin on `derive` read an ms1, not a phrase; the
+/// phrase's one-liner is `ms derive --phrase - < seed.txt`. The guard
 /// identified the verb and the material precisely and then prescribed a remedy
 /// that fails for them -- and an operator who runs it, sees an error, and
 /// retries on the command line has been taught to defeat the guard.
@@ -550,8 +549,11 @@ fn private_channels(verb: &str, class: &str, value_is_ms1: bool) -> String {
         "derive" if hexish => {
             vec!["    ms derive --hex - < entropy.hex   # hex on stdin".to_string()]
         }
-        // A phrase has to become a card first; two commands, no one-liner.
+        // `--phrase -` reads the phrase on stdin (measured: ms 0.20.4 derive
+        // --phrase - < seed.txt exits 0); the two-command route stays as the
+        // alternative.
         "derive" => vec![
+            "    ms derive --phrase - < seed.txt   # phrase on stdin".to_string(),
             "    ms encode --in seed.txt --out card.ms1   # phrase -> card, once".to_string(),
             "    ms derive --in card.ms1                   # then derive from the card".to_string(),
             "A passphrase goes on its own channel:".to_string(),
@@ -589,7 +591,8 @@ fn flag_class(flag: &str) -> &'static str {
     }
 }
 
-/// The refusal. **It names the CLASS and the LENGTH, never the value** —
+/// The refusal. **It names the CLASS and the position, never the value or its
+/// length (passphrase convention rule 9)** —
 /// printing the value back would put the material in a SECOND public place,
 /// which is the defect this message exists to name.
 ///
@@ -601,7 +604,7 @@ fn flag_class(flag: &str) -> &'static str {
 /// here. Copying `me`'s wording would inherit that overstatement into a tool
 /// that partly closed the hole. The live reasons on `ms` are shell history and
 /// the same-UID process table, and those are what this says.
-fn refusal(argv: &[String], index: usize, class: &str, len: usize) -> String {
+fn refusal(argv: &[String], index: usize, class: &str) -> String {
     let (surface, allowlisted) = argv_surface(argv);
     let verb = surface.strip_prefix("ms ").unwrap_or("encode").to_string();
     let purge = mnemonic_io_lib::remedy::history_purge_block(&surface);
@@ -629,7 +632,7 @@ fn refusal(argv: &[String], index: usize, class: &str, len: usize) -> String {
     };
     format!(
         "argument {index} on ARGV (arguments count from 0, and 0 is `ms` itself) \
-         is {class}, {len} characters long.\n      \
+         is {class}.\n      \
          Refused BEFORE the command line was parsed; nothing was read and nothing \
          was written.\n      \
          `ms` already sets PR_SET_DUMPABLE to 0, so /proc/$PID/ is closed to OTHER \
@@ -773,6 +776,17 @@ mod tests {
     }
 
     #[test]
+    fn pp_s2_2_ms_refusal_gives_position_not_count() {
+        let seed = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+        let Decision::Refuse(msg) = decide(&argv(&["encode", "--phrase", seed])) else {
+            panic!("a seed on argv must be refused");
+        };
+        assert!(msg.contains("argument 3 on ARGV"), "{msg}");
+        assert!(!msg.contains("characters long"), "{msg}");
+        assert!(!msg.contains(&seed.chars().count().to_string()), "{msg}");
+    }
+
+    #[test]
     fn the_refusal_never_reproduces_the_value() {
         let seed = "legal winner thank year wave sausage worth useful legal winner thank yellow";
         let msg = match decide(&argv(&["encode", "--phrase", seed])) {
@@ -784,9 +798,13 @@ mod tests {
             assert!(
                 !msg.to_lowercase().contains(word),
                 "the refusal reproduced `{word}` -- it must name the CLASS and the \
-                 LENGTH and nothing else:\n{msg}"
+                 CLASS and nothing else:\n{msg}"
             );
         }
-        assert!(msg.contains(&format!("{} characters long", seed.chars().count())));
+        // pp-s2-2 (ruling T4): a refusal gives the position, not the count.
+        assert!(
+            !msg.contains("characters long"),
+            "the refusal still states the length:\n{msg}"
+        );
     }
 }
