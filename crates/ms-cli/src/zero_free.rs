@@ -70,6 +70,7 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for ZeroFree<A> {
 /// counts the nonzero bytes of the WHOLE block it is given, before it frees
 /// it: so every byte of the block is checked, the first ones included.
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::ZeroFree;
     use std::alloc::{GlobalAlloc, Layout, System};
