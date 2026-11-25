@@ -152,7 +152,13 @@ pub fn run(mut args: CombineArgs) -> Result<u8> {
     // (SecretShareSuppliedToCombine / Codex32(ThresholdNotPassed/Mismatched*/
     // RepeatedIndex)) which the From<ms_codec::Error> mapping + codex32_friendly
     // render into clean messages.
-    let (_tag, payload): (Tag, Payload) = ms_codec::combine_shares(&shares)?;
+    let (_tag, payload): (Tag, Payload) = match ms_codec::combine_shares(&shares) {
+        Ok(r) => r,
+        Err(e) => {
+            note_failing_checksums(&shares);
+            return Err(e.into());
+        }
+    };
 
     // Extract the entropy + language for rendering. The on-wire language byte is
     // authoritative for mnem; entr renders as English.
@@ -208,6 +214,31 @@ pub fn run(mut args: CombineArgs) -> Result<u8> {
         &mut std::io::stderr().lock(),
     );
     Ok(0)
+}
+
+/// Bug hunt 2026-11-25 ms#1: a set with one damaged share failed with a bare
+/// checksum error that named no share. Name each share (by its place in the
+/// input, never its text) whose checksum fails, and the verb that can propose
+/// a correction. The error itself, its kind and exit code are unchanged.
+fn note_failing_checksums(shares: &[String]) {
+    let n = shares.len();
+    for (i, share) in shares.iter().enumerate() {
+        let what = match ms_codec::correct_checksum(share) {
+            Ok((corrected, fixes)) => {
+                drop(Zeroizing::new(corrected));
+                if fixes.is_empty() {
+                    continue;
+                }
+                "does not pass its checksum; `ms repair --in FILE` (that share alone, in \
+                 FILE) can propose a correction, as an unverified candidate"
+            }
+            Err(ms_codec::Error::TooManyErrors { .. }) => {
+                "does not pass its checksum, with more errors than `ms repair` can correct"
+            }
+            Err(_) => "is not an ms1 share string",
+        };
+        eprintln!("note: share {} of {n} {what}", i + 1);
+    }
 }
 
 /// stderr line for `--to entropy` on a preimage share set, text mode only.

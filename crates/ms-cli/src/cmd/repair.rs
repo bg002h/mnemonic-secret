@@ -6,6 +6,12 @@
 //! `(Tag, Payload, Vec<CorrectionDetail>)`) and renders a per-input repair
 //! report.
 //!
+//! One share of a K-of-N set (threshold 2-9, index not `s`) is corrected
+//! through `ms_codec::correct_checksum` instead, which checks the checksum
+//! without decoding a payload; a corrected share is a candidate (exit 4) like
+//! any other correction, and a share needing none is refused as before
+//! (bug hunt 2026-11-25 ms#1).
+//!
 //! Single-chunk context: ms1 is single-chunk per codex32 spec, so the
 //! `--ms1` flag is non-repeating (cf. mk-cli's variadic `mk1_strings`).
 //! Single-HRP context (always `ms`): no `--hrp` flag and no Levenshtein
@@ -144,7 +150,29 @@ pub fn run(args: RepairArgs) -> Result<u8> {
     // length / BCH-uncorrectable rejections surface as `ms_codec::Error`
     // and route to the appropriate exit code via `From<ms_codec::Error>`
     // in error.rs (`TooManyErrors` → `FormatViolation` → exit 2 per D26).
-    let (_tag, _payload, corrections) = ms_codec::decode_with_correction(&original)?;
+    //
+    // Bug hunt 2026-11-25 ms#1: one distributed share of a K-of-N set
+    // (threshold 2-9, index not `s`) is refused by `decode` by design, so a
+    // damaged share used to have no repair path here (and this verb sent its
+    // holder back to `ms combine`, which fails the whole set). Its checksum is
+    // the same BIP-93 short code, so correct it on its own -- the payload is
+    // not decoded -- and emit the result as an UNVERIFIED candidate below.
+    // A share that needs no correction is refused exactly as before.
+    let (corrections, is_share) = match ms_codec::decode_with_correction(&original) {
+        Ok((_tag, _payload, corrections)) => (corrections, false),
+        Err(e @ ms_codec::Error::IsShareNotSingleString { index, .. }) if index != 's' => {
+            let (corrected, corrections) = ms_codec::correct_checksum(&original)?;
+            let corrected = Zeroizing::new(corrected);
+            if corrections.is_empty() {
+                return Err(e.into());
+            }
+            // The corrected string must itself parse as a codex32 share.
+            ms_codec::codex32::Codex32String::from_string((*corrected).clone())
+                .map_err(ms_codec::Error::Codex32)?;
+            (corrections, true)
+        }
+        Err(e) => return Err(e.into()),
+    };
 
     // The corrected ms1 is itself a valid decodable secret — hold it as Zeroizing.
     let (corrected_chunk, corrected_positions) =
@@ -199,7 +227,17 @@ pub fn run(args: RepairArgs) -> Result<u8> {
     // with no cross-chunk hash / internal redundancy, so the correction
     // cannot self-verify. The reason BODY mirrors the toolkit engine's ms1
     // `SetVerify::Unverified` reason text (prefixed `repair: ` here) (D27/D9 parity).
-    if any_correction {
+    if any_correction && is_share {
+        // Same shape as the toolkit engine's K-of-N share reason, naming
+        // ms-cli's own verb. Recombining cannot verify the correction either:
+        // K shares always interpolate to SOME secret.
+        eprintln!(
+            "repair: correction UNVERIFIED — a corrected K-of-N share cannot be \
+             self-verified; recombine it with the other shares (ms combine) and confirm \
+             the recovered seed's address/xpub against a known-good copy before use; \
+             BIP-93 recommends confirming a corrected codex32 string"
+        );
+    } else if any_correction {
         eprintln!(
             "repair: correction UNVERIFIED — a corrected seed card cannot be \
              self-verified; confirm the derived address/xpub against a known-good \

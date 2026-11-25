@@ -261,6 +261,42 @@ fn encode_ms1_string(data_with_checksum: &[u8]) -> String {
 /// correction-detail vector is in ascending `position` order; an empty
 /// vector means the input was already a valid codeword.
 pub fn decode_with_correction(s: &str) -> Result<(Tag, Payload, Vec<CorrectionDetail>)> {
+    let (corrected_str, details) = correct_checksum(s)?;
+    if details.is_empty() {
+        // Already a valid codeword; pass the ORIGINAL through to the existing
+        // decoder (so its case rules see what the caller typed).
+        let (tag, payload) = decode(s)?;
+        return Ok((tag, payload, Vec::new()));
+    }
+    // Hand the corrected string to the existing decoder. Any §4-rule
+    // error surfaces directly per Q1 lock; toolkit helper at B.7 absorbs.
+    let (tag, payload) = decode(&corrected_str)?;
+    Ok((tag, payload, details))
+}
+
+/// BCH-correct an ms1 string's checksum **without decoding its payload**.
+///
+/// Returns the corrected string (lowercase, `ms1` + data part) and one
+/// [`CorrectionDetail`] per changed character, in ascending `position`
+/// order; an empty vector means the input was already a valid codeword (the
+/// returned string is then the input, lowercased).
+///
+/// This is the correction step of [`decode_with_correction`] on its own, for
+/// strings that [`decode`] refuses by design but whose checksum is the same
+/// BIP-93 short code: chiefly one share of a K-of-N set (threshold `2`..`9`),
+/// which `decode` routes to [`Error::IsShareNotSingleString`]. It checks only
+/// the HRP, the alphabet and the checksum: it does not check the string's
+/// length, threshold, share index or payload.
+///
+/// **A corrected string is an unverified candidate.** A bounded-distance
+/// substitution correction can land on a DIFFERENT valid codeword (BIP-93:
+/// do not proceed with a corrected codex32 string without user
+/// confirmation), and a share carries nothing that could tell. The returned
+/// string is secret material: callers hold it in `Zeroizing`.
+///
+/// Errors: [`Error::WrongHrp`], [`Error::Codex32`] (`InvalidChar`), or
+/// [`Error::TooManyErrors`] when the errors exceed what the code corrects.
+pub fn correct_checksum(s: &str) -> Result<(String, Vec<CorrectionDetail>)> {
     // Parse data-part symbols. Length checks live in `decode` proper
     // (rule 9 is enforced there after we've potentially corrected, since
     // BCH correction does not change the string length).
@@ -272,9 +308,7 @@ pub fn decode_with_correction(s: &str) -> Result<(Tag, Payload, Vec<CorrectionDe
     let residue = crate::bch::polymod_run(&input) ^ crate::bch::MS_REGULAR_CONST;
 
     if residue == 0 {
-        // Already a valid codeword; pass through to the existing decoder.
-        let (tag, payload) = decode(s)?;
-        return Ok((tag, payload, Vec::new()));
+        return Ok((encode_ms1_string(&symbols), Vec::new()));
     }
 
     // Attempt BCH correction.
@@ -312,11 +346,7 @@ pub fn decode_with_correction(s: &str) -> Result<(Tag, Payload, Vec<CorrectionDe
         return Err(Error::TooManyErrors { bound: 8 });
     }
 
-    // Hand the corrected string to the existing decoder. Any §4-rule
-    // error surfaces directly per Q1 lock; toolkit helper at B.7 absorbs.
-    let corrected_str = encode_ms1_string(&corrected);
-    let (tag, payload) = decode(&corrected_str)?;
-    Ok((tag, payload, details))
+    Ok((encode_ms1_string(&corrected), details))
 }
 
 #[cfg(test)]
@@ -450,5 +480,63 @@ mod tests {
             Err(Error::WrongHrp { got }) => assert_eq!(got, "ñ"),
             other => panic!("expected WrongHrp {{ got: \"ñ\" }}, got {other:?}"),
         }
+    }
+
+    /// Bug hunt 2026-11-25 ms#1: `correct_checksum` corrects one share of a
+    /// K-of-N set, which `decode_with_correction` refuses by design.
+    #[test]
+    fn correct_checksum_repairs_a_k_of_n_share() {
+        use crate::shares::{encode_shares, Threshold};
+        let p = Payload::Entr((0u8..16).collect());
+        let shares = encode_shares(Tag::ENTR, Threshold::new(2).unwrap(), 3, &p).unwrap();
+        let good = &shares[1];
+        // decode_with_correction refuses the share, damaged or not.
+        let mut chars: Vec<char> = good.chars().collect();
+        let pos = 20; // data-part position 17
+        chars[pos] = if chars[pos] == 'q' { 'p' } else { 'q' };
+        let bad: String = chars.into_iter().collect();
+        assert!(matches!(
+            decode_with_correction(&bad),
+            Err(Error::IsShareNotSingleString { .. })
+        ));
+        let (fixed, details) = correct_checksum(&bad).unwrap();
+        assert_eq!(&fixed, good);
+        assert_eq!(details.len(), 1);
+        assert_eq!(details[0].position, pos - 3);
+        assert_eq!(details[0].now, good.as_bytes()[pos] as char);
+        // The corrected share combines with another to the original secret.
+        let (_, back) = crate::shares::combine_shares(&[fixed, shares[2].clone()]).unwrap();
+        assert_eq!(back, p);
+    }
+
+    #[test]
+    fn correct_checksum_valid_input_is_unchanged_and_lowercased() {
+        let s = encode::encode(Tag::ENTR, &Payload::Entr(vec![0x11u8; 16])).unwrap();
+        let (out, details) = correct_checksum(&s).unwrap();
+        assert_eq!(out, s);
+        assert!(details.is_empty());
+        let (out, details) = correct_checksum(&s.to_ascii_uppercase()).unwrap();
+        assert_eq!(out, s);
+        assert!(details.is_empty());
+    }
+
+    #[test]
+    fn correct_checksum_refuses_too_many_errors_and_bad_input() {
+        let s = encode::encode(Tag::ENTR, &Payload::Entr(vec![0x11u8; 16])).unwrap();
+        // Overwrite ten data characters: well past t=4.
+        let mut chars: Vec<char> = s.chars().collect();
+        for c in chars.iter_mut().skip(10).take(10) {
+            *c = if *c == 'q' { 'p' } else { 'q' };
+        }
+        let bad: String = chars.into_iter().collect();
+        assert!(correct_checksum(&bad).is_err());
+        assert!(matches!(
+            correct_checksum("mk1qqqq"),
+            Err(Error::WrongHrp { .. })
+        ));
+        assert!(matches!(
+            correct_checksum("ms10entrsbqqq"),
+            Err(Error::Codex32(_))
+        ));
     }
 }

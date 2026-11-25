@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## ms-codec [Unreleased]
 
+### Added
+- **`correct_checksum(s) -> Result<(String, Vec<CorrectionDetail>)>`** (bug hunt 2026-11-25 ms#1): the BCH
+  correction step of `decode_with_correction` on its own, returning the corrected lowercase string without
+  decoding a payload, so one share of a K-of-N set (which `decode` refuses by design) can be corrected.
+  Additive; `decode_with_correction` now calls it and behaves exactly as before. No wire-format change.
+
 ### Fixed
 - **`codex32::Codex32String::from_unchecksummed_string` returns a readable card.** It used to append the raw
   checksum residue instead of the checksum, always in lower case, so the string it returned was refused by
@@ -22,6 +28,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## ms-cli [Unreleased]
 
 ### Fixed
+- **`ms repair` corrects a damaged K-of-N share** (bug hunt 2026-11-25 ms#1). It used to refuse any share
+  (exit 2, "use `ms combine`"), while `ms combine` failed the whole set with a checksum error naming no share: a
+  loop. A share with correctable errors is now printed corrected, exit 4, `verdict: "candidate"`, with
+  `repair: correction UNVERIFIED — a corrected K-of-N share cannot be self-verified; recombine it ... and confirm
+  the recovered seed's address/xpub against a known-good copy before use`. A share that needs no correction is
+  refused as before. `ms combine` adds one stderr note per share that fails its checksum
+  (`note: share I of N does not pass its checksum; ms repair --in FILE ...`); its error and exit code are
+  unchanged.
 - **`ms derive` warns when the passphrase holds a line break or other control character** (bug hunt
   2026-11-25 ms#3). After the shared strip-one-trailing-newline rule, a passphrase file with an extra blank line
   (or two lines) derived from a passphrase containing `\n` at exit 0 with no word. It now prints one stderr line,
