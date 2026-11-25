@@ -210,7 +210,7 @@ fn printed_cmd_split_remedy_keeps_out_and_recombines() {
     assert_eq!(run.status.code(), Some(0));
     let shares = std::fs::read_to_string(d.path().join("shares.txt")).unwrap();
     assert_eq!(count_shares(&shares), 3);
-    let two: String = shares.lines().take(2).map(|l| format!("{l}\n")).collect();
+    let two: String = shares.lines().take(2).collect::<Vec<_>>().join("\n") + "\n";
     std::fs::write(d.path().join("two.txt"), two).unwrap();
     let out = ms()
         .current_dir(d.path())
@@ -459,7 +459,13 @@ fn printed_cmd_distributed_share_advice_combines() {
         &first,
         &["decode", "-"],
     );
-    let two: String = shares.iter().take(2).map(|l| format!("{l}\n")).collect();
+    let two: String = shares
+        .iter()
+        .take(2)
+        .copied()
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
     std::fs::write(d.path().join("two.txt"), two).unwrap();
     let c = ms()
         .current_dir(d.path())
