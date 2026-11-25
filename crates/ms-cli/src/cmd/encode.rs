@@ -121,7 +121,7 @@ pub(crate) fn resolve_secret_payload(
     hex: Option<&str>,
     in_path: Option<&std::path::Path>,
     language: CliLanguage,
-    verb: &'static str,
+    verb: &str,
 ) -> Result<(Payload, Option<&'static str>)> {
     use zeroize::Zeroizing;
 
@@ -248,7 +248,7 @@ pub fn run(mut args: EncodeArgs) -> Result<u8> {
         hex_arg.as_ref().map(|h| h.as_str()),
         args.in_path.as_deref(),
         args.language,
-        "encode",
+        &note_verb("encode", args.out.as_deref()),
     )?;
 
     let ms1 = ms_codec::encode(Tag::ENTR, &payload)?;
@@ -326,22 +326,33 @@ pub fn run(mut args: EncodeArgs) -> Result<u8> {
 /// operator who points `--in` at a file of hex otherwise gets a wordlist error
 /// and no way forward except `--allow-argv-secret`, which is the exposure this
 /// phase exists to close.
-fn phrase_parse_error(
-    e: bip39::Error,
-    in_path: Option<&std::path::Path>,
-    verb: &'static str,
-) -> CliError {
+fn phrase_parse_error(e: bip39::Error, in_path: Option<&std::path::Path>, verb: &str) -> CliError {
     if let Some(p) = in_path {
         let mut stderr = std::io::stderr().lock();
         let _ = writeln!(
             stderr,
             "note: --in reads a PHRASE and never sniffs the file's contents. If \
              {path} holds hex entropy, use the hex channel:\n      \
-             \x20   ms {verb} --hex - < {path}",
-            path = p.display()
+             \x20   ms {verb} --hex - < {quoted}",
+            path = p.display(),
+            quoted = sh_quote(&p.display().to_string())
         );
     }
     CliError::Bip39(e)
+}
+
+/// One POSIX single-quoted shell word: `'` + `s` + `'`, each `'` in `s` written `'\''`.
+pub(crate) fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// The verb part of the `--in` note's command: `verb`, then ` --out='<FILE>'`
+/// (quoted per [`sh_quote`]) when the holder gave `--out`.
+pub(crate) fn note_verb(verb: &str, out: Option<&std::path::Path>) -> String {
+    match out {
+        Some(p) => format!("{verb} --out={}", sh_quote(&p.display().to_string())),
+        None => verb.to_string(),
+    }
 }
 
 pub(crate) fn parse_hex_entropy(hex_str: &str) -> Result<Vec<u8>> {

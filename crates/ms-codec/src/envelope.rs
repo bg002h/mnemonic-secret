@@ -129,10 +129,10 @@ pub(crate) fn discriminate(c: &Codex32String) -> Result<(Tag, Payload)> {
         });
     }
     // Threshold-field dispatch (SPEC_ms_v0_2_kofn §1): '0' → v0.1 single-string
-    // (proceed); '2'..'9' → one share of a K-of-N set (route to `ms combine`,
+    // (proceed); '2'..'9' → one share of a K-of-N set (route to `ms combine`, or for index `s` say it is the secret,
     // do NOT treat its garbage prefix byte as a payload kind); anything else →
     // the v0.1 ThresholdNotZero reject. The share-index check stays on the '0'
-    // path only (a share's index is a non-`s` distributed index by design).
+    // path only (a share-threshold string may still carry index `s`, the secret itself (bh-ms-R11)).
     match fields.threshold_byte {
         THRESHOLD_V01 => {
             if fields.share_index_byte != SHARE_INDEX_V01 {

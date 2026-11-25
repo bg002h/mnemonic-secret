@@ -15,6 +15,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   check the share index against a zero threshold, nor the finished length. Its behaviour is unchanged.
 - **The README no longer promises `TooManyErrors` beyond t=4** (bh-ms-I8): a correction there can land on a
   different valid string, so every corrected result is an unverified candidate.
+- **`Error::IsShareNotSingleString`'s `Display` for index `s`** says the string is the
+  secret itself and that `ms combine` does not take it, instead of directing to `ms combine`. Text only; no API
+  change (bh-ms-R11).
 
 ## ms-cli [Unreleased]
 
@@ -28,6 +31,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   crates.io copy is 0.14.0). The `ms repair` README gives exit 4 (VERIFY-ME candidate), not 5, and its full
   stderr. `docs/verify-reproducibility.md` section 8 is now a runnable two-path recipe from the pinned toolkit
   workflow (CI runs it) and section 9.3 sets the epoch once and fails on any packaging error.
+- **The `--in` hex note prints a command that runs.** On `ms split` it carries `-k`/`-n`; a given `--out`
+  is carried; paths are single-quoted. `ms gen-man --help`'s user-manpath example falls back to
+  `$HOME/.local/share` when `XDG_DATA_HOME` is unset or empty (bh-ms-I6, bh-ms-I9).
+- **`ms decode` and `ms repair` no longer send an index-`s` string to `ms combine`.** A threshold 2-9
+  string at share index `s` is the secret itself, which `ms combine` refuses; the error now says so. Other share
+  indices keep the K-share advice; exit 2 unchanged (bh-ms-R11).
 
 ## ms-cli [0.21.0] — 2026-11-22
 

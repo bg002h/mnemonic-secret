@@ -130,6 +130,7 @@ pub enum Error {
     InvalidThreshold(u8),
     /// A single-string `decode` was handed one share of a K-of-N share-set
     /// (threshold char `2..9`). Use `ms combine` to recombine K shares.
+    /// Index `s` is the secret itself, which `ms combine` does not take.
     IsShareNotSingleString {
         /// The threshold char observed on the wire (`'2'..'9'`).
         threshold: char,
@@ -249,12 +250,23 @@ impl fmt::Display for Error {
                 "invalid threshold {}; K-of-N shares require k in 2..=9",
                 k
             ),
-            Error::IsShareNotSingleString { threshold, index } => write!(
-                f,
-                "this is one share of a K-of-N set (threshold '{}', index '{}'); \
-                 use `ms combine` to recombine K shares",
-                threshold, index
-            ),
+            Error::IsShareNotSingleString { threshold, index } => {
+                if index.eq_ignore_ascii_case(&'s') {
+                    write!(
+                        f,
+                        "this is the secret share of a K-of-N set (threshold '{}', index '{}'); \
+                         it is the secret itself, not a distributed share, and `ms combine` does not take it",
+                        threshold, index
+                    )
+                } else {
+                    write!(
+                        f,
+                        "this is one share of a K-of-N set (threshold '{}', index '{}'); \
+                         use `ms combine` to recombine K shares",
+                        threshold, index
+                    )
+                }
+            }
             Error::SecretShareSuppliedToCombine => write!(
                 f,
                 "the secret share (index 's') cannot be supplied to combine; \
