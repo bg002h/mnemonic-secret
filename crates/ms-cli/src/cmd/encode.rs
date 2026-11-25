@@ -74,7 +74,8 @@ pub struct EncodeArgs {
     #[arg(long = "in", value_name = "FILE")]
     pub in_path: Option<std::path::PathBuf>,
 
-    /// BIP-39 wordlist for the input phrase. Ignored under --hex.
+    /// BIP-39 wordlist for the input phrase. A --hex card carries no language,
+    /// so a non-English value with --hex is refused (use the phrase instead).
     #[arg(long, default_value = "english")]
     pub language: CliLanguage,
 
@@ -126,6 +127,23 @@ pub(crate) fn resolve_secret_payload(
     verb: &str,
 ) -> Result<(Payload, Option<&'static str>)> {
     use zeroize::Zeroizing;
+
+    // Bug hunt 2026-11-25 ms#2: `--hex` mints a language-less Entr card, so an
+    // explicit non-English `--language` would be accepted and dropped, and the
+    // backup would restore by default to the ENGLISH wallet -- a different seed
+    // (`ms derive --hex --language` honours the same pair, so the operator has
+    // every reason to think it took). Refuse the pair before anything is read,
+    // and name the channel that keeps the language. English is the Entr default,
+    // so `--language english` with `--hex` stays accepted, and no card changes.
+    if in_path.is_none() && phrase.is_none() && hex.is_some() && language != CliLanguage::English {
+        let lang = language.as_str();
+        return Err(CliError::Usage(format!(
+            "--language {lang} has no effect with --hex: a card minted from hex entropy carries \
+             no wordlist language, so it would restore as English by default (a different \
+             wallet). To keep the language on the card, give the {lang} phrase instead: \
+             ms {verb} --phrase - --language {lang} (or --in FILE)"
+        )));
+    }
 
     // clap's mutually-exclusive group enforces exactly-one-of-{phrase,hex}.
     // `entropy` is the secret byte buffer; `language_for_card` is the 2nd

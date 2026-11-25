@@ -250,8 +250,27 @@ fn emit_phrase(
     } else {
         println!("entropy: {}", hex::encode(entropy));
         println!("phrase: {}", *phrase);
-        println!("language: {} ({} words)", language.as_str(), word_count);
+        // Bug hunt 2026-11-25 ms#2: an Entr share set carries no wordlist
+        // language, so "english" is a default, not a fact read off the shares.
+        // Say so the way `ms decode` does for an Entr card.
+        if kind == "entr" {
+            println!(
+                "language: {} ({} words, default — verify against your records)",
+                language.as_str(),
+                word_count
+            );
+        } else {
+            println!("language: {} ({} words)", language.as_str(), word_count);
+        }
         println!("kind: {kind}");
+        if kind == "entr" {
+            eprintln!(
+                "note: these shares carry no wordlist language, so the phrase is shown in the \
+                 default '{}'; if your wallet was created with a different wordlist, recombine \
+                 with --to ms1 and decode that card with `ms decode --language <lang>`.",
+                language.as_str()
+            );
+        }
     }
     Ok(())
 }
