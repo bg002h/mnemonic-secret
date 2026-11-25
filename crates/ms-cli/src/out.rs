@@ -170,3 +170,77 @@ pub(crate) fn write_artifact(path: &std::path::Path, body: &str) -> Result<()> {
     mnemonic_io_lib::write::write_private(path, body.as_bytes())
         .map_err(|e| write_failure(path, &e, &before))
 }
+
+#[cfg(test)]
+mod second_look_tests {
+    use super::*;
+
+    fn msg(e: CliError) -> String {
+        match e {
+            CliError::OutputWrite(m) => m,
+            _ => panic!("not an OutputWrite"),
+        }
+    }
+    fn efbig() -> std::io::Error {
+        std::io::Error::from_raw_os_error(27)
+    }
+
+    #[test]
+    fn unchanged_is_claimed_for_an_untouched_file() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("F");
+        std::fs::write(&p, "old\n").unwrap();
+        let before = look_before(&p);
+        assert!(msg(write_failure(&p, &efbig(), &before)).ends_with("F is unchanged."));
+    }
+
+    #[test]
+    fn a_file_whose_length_changed_is_not_called_unchanged() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("F");
+        std::fs::write(&p, "old\n").unwrap();
+        let before = look_before(&p);
+        std::fs::write(&p, "much longer\n").unwrap();
+        assert!(!msg(write_failure(&p, &efbig(), &before)).contains("unchanged"));
+    }
+
+    #[test]
+    fn a_file_whose_mtime_changed_is_not_called_unchanged() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("F");
+        std::fs::write(&p, "old\n").unwrap();
+        let before = look_before(&p);
+        let f = std::fs::OpenOptions::new().write(true).open(&p).unwrap();
+        f.set_modified(std::time::SystemTime::UNIX_EPOCH).unwrap();
+        assert!(!msg(write_failure(&p, &efbig(), &before)).contains("unchanged"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_replaced_file_of_equal_length_and_mtime_is_not_called_unchanged() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("F");
+        std::fs::write(&p, "old\n").unwrap();
+        let mt = std::fs::metadata(&p).unwrap().modified().unwrap();
+        let before = look_before(&p);
+        let q = d.path().join("G");
+        std::fs::write(&q, "new\n").unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&q)
+            .unwrap()
+            .set_modified(mt)
+            .unwrap();
+        std::fs::rename(&q, &p).unwrap();
+        assert!(!msg(write_failure(&p, &efbig(), &before)).contains("unchanged"));
+    }
+
+    #[test]
+    fn a_file_that_appeared_is_not_called_nothing_written() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("N");
+        let before = look_before(&p);
+        std::fs::write(&p, "x").unwrap();
+        assert!(!msg(write_failure(&p, &efbig(), &before)).contains("Nothing was written"));
+    }
+}
