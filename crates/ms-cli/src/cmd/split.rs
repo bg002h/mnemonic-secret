@@ -68,7 +68,8 @@ pub struct SplitArgs {
     #[arg(long = "in", value_name = "FILE")]
     pub in_path: Option<std::path::PathBuf>,
 
-    /// BIP-39 wordlist for the input phrase. Ignored under --hex.
+    /// BIP-39 wordlist for the input phrase. A --hex card carries no language,
+    /// so a non-English value with --hex is refused (use the phrase instead).
     #[arg(long, default_value = "english")]
     pub language: CliLanguage,
 

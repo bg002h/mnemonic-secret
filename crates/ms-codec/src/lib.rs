@@ -53,7 +53,7 @@ pub mod tag;
 
 mod envelope; // crate-private; v0.2-migration seam
 
-pub use decode::{decode, decode_with_correction, CorrectionDetail};
+pub use decode::{correct_checksum, decode, decode_with_correction, CorrectionDetail};
 pub use encode::encode;
 pub use error::{Error, Result};
 pub use inspect::{inspect, InspectKind, InspectReport};

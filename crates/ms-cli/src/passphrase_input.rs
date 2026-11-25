@@ -555,12 +555,40 @@ pub(crate) fn resolve_or_empty(
                 .into(),
         ));
     }
-    match source(value, stdin_flag, admitted) {
-        PassphraseSource::Absent => Ok(Zeroizing::new(String::new())),
-        PassphraseSource::Stdin => read_stdin_passphrase(),
-        PassphraseSource::Env => resolve_env(value.unwrap_or("")),
-        PassphraseSource::Argv => Ok(Zeroizing::new(admitted.or(value).unwrap_or("").to_string())),
+    let (pp, origin) = match source(value, stdin_flag, admitted) {
+        PassphraseSource::Absent => return Ok(Zeroizing::new(String::new())),
+        PassphraseSource::Stdin => (read_stdin_passphrase()?, "stdin".to_string()),
+        PassphraseSource::Env => {
+            let v = value.unwrap_or("");
+            let var = v.strip_prefix(ENV_PREFIX).unwrap_or(v);
+            (resolve_env(v)?, format!("environment variable {var}"))
+        }
+        PassphraseSource::Argv => (
+            Zeroizing::new(admitted.or(value).unwrap_or("").to_string()),
+            "argv".to_string(),
+        ),
+    };
+    if has_control_char(&pp) {
+        eprintln!("{}", control_char_warning(&origin));
     }
+    Ok(pp)
+}
+
+/// Bug hunt 2026-11-25 ms#3: does the resolved passphrase still hold a line
+/// break or another control character (after the strip-one-newline rule)?
+fn has_control_char(s: &str) -> bool {
+    s.chars().any(char::is_control)
+}
+
+/// The one line printed when the resolved passphrase holds a control
+/// character. The value is used exactly as read -- changing it would change
+/// the wallet -- and is never echoed.
+pub(crate) fn control_char_warning(origin: &str) -> String {
+    format!(
+        "warning: --passphrase from {origin} contains a line break or other control character \
+         (after removing one trailing newline); it is used exactly as read, and most wallets \
+         cannot type it -- check for an extra blank line or a second line"
+    )
 }
 
 #[cfg(test)]

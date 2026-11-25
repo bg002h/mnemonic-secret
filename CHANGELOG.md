@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## ms-codec [Unreleased]
 
+### Added
+- **`correct_checksum(s) -> Result<(String, Vec<CorrectionDetail>)>`** (bug hunt 2026-11-25 ms#1): the BCH
+  correction step of `decode_with_correction` on its own, returning the corrected lowercase string without
+  decoding a payload, so one share of a K-of-N set (which `decode` refuses by design) can be corrected.
+  Additive; `decode_with_correction` now calls it and behaves exactly as before. No wire-format change.
+
 ### Fixed
 - **`codex32::Codex32String::from_unchecksummed_string` returns a readable card.** It used to append the raw
   checksum residue instead of the checksum, always in lower case, so the string it returned was refused by
@@ -22,6 +28,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## ms-cli [Unreleased]
 
 ### Fixed
+- **`ms repair` corrects a damaged K-of-N share** (bug hunt 2026-11-25 ms#1). It used to refuse any share
+  (exit 2, "use `ms combine`"), while `ms combine` failed the whole set with a checksum error naming no share: a
+  loop. A share with correctable errors is now printed corrected, exit 4, `verdict: "candidate"`, with
+  `repair: correction UNVERIFIED — a corrected K-of-N share cannot be self-verified; recombine it ... and confirm
+  the recovered seed's address/xpub against a known-good copy before use`. A share that needs no correction is
+  refused as before. `ms combine` adds one stderr note per share that fails its checksum
+  (`note: share I of N does not pass its checksum; ms repair --in FILE ...`); its error and exit code are
+  unchanged.
+- **`ms derive` warns when the passphrase holds a line break or other control character** (bug hunt
+  2026-11-25 ms#3). After the shared strip-one-trailing-newline rule, a passphrase file with an extra blank line
+  (or two lines) derived from a passphrase containing `\n` at exit 0 with no word. It now prints one stderr line,
+  `warning: --passphrase from <origin> contains a line break or other control character ...`, naming the channel
+  and never the value. The passphrase VALUE is unchanged (it is the wallet); the shared vectors still hold.
+- **`ms encode` / `ms split` refuse a non-English `--language` with `--hex`** (bug hunt 2026-11-25 ms#2). `--hex`
+  mints a card that carries no wordlist language, so `--hex - --language japanese` used to exit 0 with the flag
+  silently dropped, and the backup restored by default to the English wallet (a different seed; `ms derive`
+  honours the same pair). The pair is now refused before anything is read (exit 64, `Usage`), naming the phrase
+  channel (`ms encode --phrase - --language <lang>` or `--in FILE`) that keeps the language on the card.
+  `--hex` alone and `--hex --language english` mint exactly the same card as before; no card changes. The
+  `--language` help no longer says "Ignored under --hex".
+- **`ms combine` marks an Entr share set's `english` as a default** (ms#2): text output prints
+  `language: english (N words, default — verify against your records)` and a stderr note naming
+  `--to ms1` then `ms decode --language <lang>`, as `ms decode` does for an Entr card. `--json` is unchanged.
 - **A failed `--out` write no longer destroys the existing file** (bh-ms-I13). `encode`, `repair` and `hashlock` write a temporary file beside FILE and rename it over FILE (mnemonic-io-lib 0.1.3), so a full disk or quota leaves the old file byte-identical; FILE's directory (its target's, for a symlink) must now be writable. `split` and `hashlock --random` remove the partial file they created, so a retry works. The error is now `ms: cannot write the output: <FILE>: <error>`, followed by `. <FILE> is unchanged.` or `. Nothing was written.` when that is so (was `error: failed to write --out <FILE>: <error>`; exit 1 as before).
 - **`--out` and standard output can no longer be one file** (bh-ms-I1). `ms encode --json --out F > F`, `ms hashlock --out P > P` and `ms repair --out C > C` (or a link to the file) exited 0 with the report where the card was promised; they are now refused before anything is read (exit 64). `ms hashlock --random --json --out R >> R` and `ms split --json --out SH >> SH` no longer append an error object to the file they refused to overwrite.
 - **`ms encode --out F 2> F` keeps the card in F.** The engraving card on stderr no longer overwrites it.
