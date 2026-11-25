@@ -51,9 +51,8 @@ if grep -q 'KNOWN-RED' "$doc"; then row_fail $r "doc still says F-324 is KNOWN-R
 
 # I11: run the section 9.3 block with a stub cross, in a fresh env and a clone of HEAD
 blk="$(awk '/^### 9\.3/{s=1;next} /^#{2,3} /{s=0} s' "$doc" | awk '/^```(sh|bash)$/{f=1;next} /^```/{f=0} f')"
-iorev="$(grep -oE 'mnemonic-engrave\?rev=[0-9a-f]{40}' Cargo.lock | head -1 | grep -oE '[0-9a-f]{40}')"
 # A reader fills the placeholders the old block printed; the fixed block has none.
-blk="$(printf '%s\n' "$blk" | sed -e 's/<tagged-commit-SHA>/HEAD/g' -e "s/<VER>/$ver/g" -e "s/<IO_LIB_REV>/$iorev/g")"
+blk="$(printf '%s\n' "$blk" | sed -e 's/<tagged-commit-SHA>/HEAD/g' -e "s/<VER>/$ver/g")"
 run93() { # $1 = stub mode (bin|none), $2 = fresh dir; prints rc; leaves clone in $2/repo
   t="$2"
   git clone --quiet --no-hardlinks "$root" "$t/repo" 2>/dev/null

@@ -142,8 +142,13 @@ fn a_missing_parent_directory_is_still_exit_1() {
     let p = dir.path().join("nodir").join("x.txt");
     let out = split_to(&p, &[]);
     assert_eq!(out.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&out.stderr)
-        .starts_with(&format!("error: failed to write --out {}: ", p.display())));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        format!(
+            "ms: cannot write the output: {}: No such file or directory (os error 2). Nothing was written.\n",
+            p.display()
+        )
+    );
 }
 
 #[test]

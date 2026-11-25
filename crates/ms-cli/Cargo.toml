@@ -18,17 +18,15 @@ path = "src/main.rs"
 
 [dependencies]
 ms-codec = { path = "../ms-codec", version = "=0.10.1" }
-# THE SHARED IO MECHANISM, BY GIT REV -- never `path =`.
-#
-# `ms`'s CI is wider than most: `freebsd-compile-gate` and both `musl-check`
-# targets build from a CLEAN CHECKOUT on foreign targets, so a path dep out of
-# the workspace fails there first. The rev is written out rather than left as a
-# placeholder because there is nothing left to wait for -- the crate is on
-# origin/master today. It moves FORWARD only, and whatever rev is chosen must
-# carry the four items P2 adopts: `fd::mode_of`, `remedy::history_purge_block`,
-# `remedy::history_purge_recipes`, `write::write_private`. The pin's gate is
-# `tests/crate_items_resolve.rs`, which goes RED if a rev predates any of them.
-mnemonic-io-lib = { git = "https://github.com/bg002h/mnemonic-engrave", rev = "d8fec6786bd5a8325f52dacc18cedc23d9edbd3a" }
+# THE SHARED IO MECHANISM (P2), from crates.io. mnemonic-io-lib 0.1.3 was
+# published from mnemonic-engrave 12adba30 (tag mnemonic-io-lib-v0.1.3), so a
+# clean checkout (freebsd-compile-gate, both musl-check targets) resolves it with
+# no sibling repository and no git source (Brian 2026-11-24). 0.1.3 writes through
+# a temp file and a rename, so a failed write leaves the old file as it was, and
+# adds `same_file`. It must carry the four items P2 adopts: `fd::mode_of`,
+# `remedy::history_purge_block`, `remedy::history_purge_recipes`,
+# `write::write_private`; `tests/crate_items_resolve.rs` goes RED if not.
+mnemonic-io-lib = "0.1.3"
 bip39 = { version = "2", features = ["all-languages"] }
 bitcoin = "0.32"
 clap = { version = "4", features = ["derive"] }

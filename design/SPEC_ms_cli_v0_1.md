@@ -550,6 +550,8 @@ JSON-mode error display (stdout):
 
 Errors in JSON mode go to **stdout**, not stderr — consumers parse one stream. Process exit code matches `CliError::exit_code()`.
 
+Two errors are printed on stderr in both modes and never as an envelope. A failed `--out` write prints `ms: cannot write the output: <FILE>: <error>`, followed by `. <FILE> is unchanged.` (its bytes; io-lib may have set its mode to 0600) or `. Nothing was written.` when a second look at FILE confirms it, and exits 1 (the constellation's failed-write contract, T6). `--out` naming the same file as standard output prints `error: --out <FILE> and standard output are the same file ...` and exits 64: stdout is FILE, so an envelope would be written into it.
+
 ---
 
 ## §7. BIP-39 wordlist languages

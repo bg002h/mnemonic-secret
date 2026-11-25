@@ -909,7 +909,7 @@ a `--hex` value that is also a seed's entropy — the tool cannot tell one
 | `ms decode` accepts the all-uppercase form | `crates/ms-cli/tests/decode_uppercase.rs` |
 | `--hex` parses via `hex::FromHex`, both cases | `crates/ms-cli/src/cmd/encode.rs:283` |
 | `--json` replaces the text output on stdout | `crates/ms-cli/src/cmd/encode.rs:218-230`; `decode.rs:123` |
-| `--out` is a truncating `write_private` | `crates/ms-cli/src/out.rs:24-28` |
+| `--out` replaces through a temp file and a rename (`write_private`, io-lib 0.1.3) | `crates/ms-cli/src/out.rs:168-171` |
 | the advisory writes one line and returns | `crates/ms-cli/src/advisory.rs:60-72` |
 | `repair` discards the payload | `crates/ms-cli/src/cmd/repair.rs:141` |
 | singles carry `Tag::ENTR` | `crates/ms-cli/src/cmd/encode.rs:200` |

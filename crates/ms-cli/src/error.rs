@@ -23,6 +23,14 @@ pub enum CliError {
     /// A usage error the verb itself detects (source arithmetic, a gate a flag
     /// must satisfy): exit 64, the same code clap uses for its own.
     Usage(String),
+    /// A failed `--out` write (R2 of FIX_bughunt1119_ms_out_writes): exit 1, printed
+    /// on stderr as `ms: cannot write the output: <FILE>: <error>` plus the state
+    /// sentence when a second look confirms it, in both modes (never an envelope).
+    OutputWrite(String),
+    /// `--out` names the file standard output is on (R3 of the same FIX): exit 64,
+    /// printed on stderr in both modes, because an envelope on stdout would be
+    /// written into that very file.
+    StdoutIsOut(String),
     /// BIP-39 phrase parse / checksum failure.
     Bip39(bip39::Error),
     /// codex32 parse / BCH-checksum failure (delegated from ms_codec).
@@ -56,7 +64,8 @@ impl CliError {
             | CliError::Codex32(_)
             | CliError::UnexpectedStringLength { .. }
             | CliError::PayloadLengthMismatch { .. } => 1,
-            CliError::Usage(_) => 64,
+            CliError::Usage(_) | CliError::StdoutIsOut(_) => 64,
+            CliError::OutputWrite(_) => 1,
             CliError::FormatViolation { .. } => 2,
             CliError::FutureFormat { .. } => 3,
             CliError::VerifyPhraseMismatch => 4,
@@ -66,8 +75,8 @@ impl CliError {
     /// Stable kebab-case-style discriminant for JSON `kind` field (SPEC §5.4).
     pub fn kind(&self) -> &'static str {
         match self {
-            CliError::BadInput(_) => "BadInput",
-            CliError::Usage(_) => "Usage",
+            CliError::BadInput(_) | CliError::OutputWrite(_) => "BadInput",
+            CliError::Usage(_) | CliError::StdoutIsOut(_) => "Usage",
             CliError::Bip39(_) => "Bip39",
             CliError::Codex32(_) => "Codex32",
             CliError::UnexpectedStringLength { .. } => "UnexpectedStringLength",
@@ -84,7 +93,7 @@ impl CliError {
     pub fn message(&self) -> String {
         match self {
             CliError::BadInput(m) => m.clone(),
-            CliError::Usage(m) => m.clone(),
+            CliError::Usage(m) | CliError::StdoutIsOut(m) | CliError::OutputWrite(m) => m.clone(),
             CliError::Bip39(e) => friendly_bip39(e),
             CliError::Codex32(e) => friendly_codex32(e),
             CliError::UnexpectedStringLength { got } => {
@@ -104,6 +113,12 @@ impl CliError {
                 "phrase mismatch (decoded does not match --phrase)".to_string()
             }
         }
+    }
+
+    /// True for the two errors printed on stderr in both modes and never as a JSON
+    /// envelope on stdout (`OutputWrite`, `StdoutIsOut`).
+    pub fn stderr_only(&self) -> bool {
+        matches!(self, CliError::OutputWrite(_) | CliError::StdoutIsOut(_))
     }
 
     /// Structured `details` field for JSON output (SPEC §6.1.1 dispatch table).
@@ -140,7 +155,11 @@ impl std::fmt::Debug for CliError {
 
 impl std::fmt::Display for CliError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "error: {}", self.message())
+        match self {
+            // T6's shape, shared with md, mk and mt: `ms: cannot write the output: ...`.
+            CliError::OutputWrite(m) => write!(f, "ms: {}", m),
+            _ => write!(f, "error: {}", self.message()),
+        }
     }
 }
 

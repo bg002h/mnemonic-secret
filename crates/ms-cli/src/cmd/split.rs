@@ -104,6 +104,13 @@ pub fn run(mut args: SplitArgs) -> Result<u8> {
         std::mem::take(&mut args.phrase).map(Zeroizing::new);
     let hex_arg: Option<Zeroizing<String>> = std::mem::take(&mut args.hex).map(Zeroizing::new);
 
+    // bh-ms-I1: with `--json` the shares go to stdout too; stdout must not be --out.
+    if args.json {
+        if let Some(path) = args.out.as_deref() {
+            crate::out::refuse_stdout_alias(path)?;
+        }
+    }
+
     // An existing --out is refused before the secret is read or a share drawn.
     if let Some(path) = args.out.as_deref() {
         crate::out::refuse_existing_out(path, SPLIT_OUT_WHAT)?;

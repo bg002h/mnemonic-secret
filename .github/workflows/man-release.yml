@@ -71,32 +71,6 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/ms-cli-v')
         run: gh release upload "$REF_NAME" ms-man.tar.gz --clobber
 
-  # ── F-324: derive the mnemonic-io-lib rev from Cargo.lock ──────────────────
-  # Derives the rev from Cargo.lock, as ci/repro/vendor-freshness.sh does, and
-  # fails closed on an empty result, so the `repro` job below never carries a
-  # hand-written copy of the rev that could drift from the lockfile the pin
-  # actually lives in.
-  pins:
-    name: derive git-source pins
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    outputs:
-      io_lib_rev: ${{ steps.derive.outputs.io_lib_rev }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Derive mnemonic-io-lib rev from Cargo.lock
-        id: derive
-        run: |
-          set -euo pipefail
-          REV="$(grep -oE 'mnemonic-engrave\?rev=[0-9a-f]{40}' Cargo.lock | head -1 | grep -oE '[0-9a-f]{40}' || true)"
-          if [ -z "$REV" ]; then
-            echo "::error::pins: could not derive the mnemonic-io-lib rev from Cargo.lock" \
-                 "(expected a 'mnemonic-engrave?rev=<40-hex>' source line). Failing closed." >&2
-            exit 1
-          fi
-          echo "io_lib_rev=$REV" >> "$GITHUB_OUTPUT"
-
   # ── REPRODUCIBILITY: the toolkit-homed gate ────────────────────────────────
   # Calls the centralized reusable workflow from mnemonic-toolkit (F6: ONE
   # source of truth for Dockerfile.repro + ci/repro/*.sh + the gate jobs). The
@@ -111,27 +85,13 @@ jobs:
   # TWO-block `--config` form (crates-io + vendored-sources only; NO git-fork
   # stanza).
   #
-  # ── F-324: FIXED 2026-09-02, once the gate below has executed green ────────
-  # P2 pinned `mnemonic-io-lib` by git rev, so Cargo.lock carries a
-  # `git+https://github.com/bg002h/mnemonic-engrave?rev=…` source. The reusable
-  # workflow's ONLY git-source knob used to be `miniscript_rev`, whose three
-  # `--config` lines hard-code `https://github.com/rust-bitcoin/rust-miniscript`
-  # as the source URL — there was no input by which a caller could declare a
-  # different git source, so this job could not resolve mnemonic-io-lib
-  # `--offline` and failed at `ms-cli-v0.17.0`'s tag (run 33621228397:
-  # `repro-substrate` / `repro-x86_64-musl` FAILED, both `musl-binary` legs
-  # SKIPPED, no musl tarballs / PROVENANCE / SHA256SUMS published).
-  #
-  # The toolkit gained generic `git_source_url` / `git_source_rev` inputs at
-  # TOOLKIT_SHA (bg002h/mnemonic-toolkit@d39d96269ce352270189c11fabebf9ad070362b4,
-  # commits 21b6696e + d39d9626) — a fourth `[source]` replacement stanza,
-  # additive to the miniscript one, added only when both inputs are non-empty.
-  # This caller supplies them below; the `pins` job above derives the rev from
-  # Cargo.lock (not hand-written) so moving the pin forward cannot leave this
-  # job pointing at a stale rev. F-324 in mnemonic-engrave's
-  # design/FOLLOWUPS.md carries the full history; closed once a
-  # `workflow_dispatch` run of this workflow reports the `repro` job green
-  # end-to-end against this config (the gate below).
+  # ── F-324: closed by the crates.io pin ───────────────────────────────────
+  # ms pinned `mnemonic-io-lib` by git rev from P2 (2026-08-27) until
+  # FIX_bughunt1119_ms_out_writes moved it to crates.io (Brian 2026-11-24).
+  # Cargo.lock has no git source left, so this caller passes no
+  # `git_source_url` / `git_source_rev` (the toolkit adds that stanza only when
+  # both are non-empty) and there is no `pins` job. F-324 in mnemonic-engrave's
+  # design/FOLLOWUPS.md carries the history.
   #
   # run_aarch64: true (F-680, operator ruling 2026-09-24) — BOTH byte-gates run
   # inline: x86_64 AND the slow (~4-10min QEMU) aarch64 `repro-aarch64-musl`.
@@ -147,7 +107,6 @@ jobs:
   # concrete: the empty default falls back to the CALLER's SHA, which does not
   # exist in the toolkit repo (the recipe checkout would 404).
   repro:
-    needs: pins
     uses: bg002h/mnemonic-toolkit/.github/workflows/reproducible-musl-build.yml@4120af853ec68dc515cb4ac0eb7245a018a50c78
     permissions:
       contents: read
@@ -159,15 +118,9 @@ jobs:
       target: x86_64-unknown-linux-musl
       arch: x86_64
       run_aarch64: true
-      # ms is fork-free ⇒ EMPTY rev selects the TWO-block --config form for
-      # the miniscript stanza specifically (unrelated to the git_source_* pair
-      # below, which is additive).
+      # ms is fork-free and has no git source ⇒ EMPTY rev selects the
+      # TWO-block --config form (crates-io + vendored-sources).
       miniscript_rev: ""
-      # F-324: the mnemonic-io-lib git source. Both non-empty ⇒ the toolkit
-      # adds a fourth [source] replacement stanza; the rev tracks Cargo.lock
-      # via the pins job above.
-      git_source_url: https://github.com/bg002h/mnemonic-engrave
-      git_source_rev: ${{ needs.pins.outputs.io_lib_rev }}
       # Source the centralized recipe from the toolkit at the F-675 fix (4120af85,
       # toolkit master; contains 327f9a16). MUST match the `uses:` pin above.
       toolkit_ref: 4120af853ec68dc515cb4ac0eb7245a018a50c78
@@ -286,12 +239,6 @@ jobs:
           # from-side is cross's internal /project mount (NOT the host path).
           REMAP="--remap-path-prefix=/project=/build --remap-path-prefix=/cargo=/cargo"
           CFMAP="-ffile-prefix-map=/project=/build -ffile-prefix-map=/cargo=/cargo"
-          # P2: ms pins mnemonic-io-lib by git rev, so Cargo.lock carries a
-          # `git+...` source that `source.crates-io` does not serve. Derived from
-          # Cargo.lock (authoritative, comment-free) so moving the pin forward
-          # cannot leave this step pointing at the old rev. Fail CLOSED.
-          IO_LIB_REV="$(grep -oE 'mnemonic-engrave\?rev=[0-9a-f]{40}' Cargo.lock | head -1 | grep -oE '[0-9a-f]{40}')"
-          IO_LIB_SRC="git+https://github.com/bg002h/mnemonic-engrave?rev=${IO_LIB_REV}"
           umask 022
           env \
             SOURCE_DATE_EPOCH="$EPOCH" \
@@ -302,9 +249,6 @@ jobs:
             cross build --locked --offline --release \
               --target "$TARGET" -p ms-cli --bin ms \
               --config 'source.crates-io.replace-with="vendored-sources"' \
-              --config "source.\"${IO_LIB_SRC}\".git=\"https://github.com/bg002h/mnemonic-engrave\"" \
-              --config "source.\"${IO_LIB_SRC}\".rev=\"${IO_LIB_REV}\"" \
-              --config "source.\"${IO_LIB_SRC}\".replace-with=\"vendored-sources\"" \
               --config 'source.vendored-sources.directory="vendor"'
           tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$EPOCH" \
             -cf - -C "target/${TARGET}/release" ms \
@@ -349,8 +293,6 @@ jobs:
           git config --global --add safe.directory "$PWD"
           VER="${REF_NAME##*-v}"
           EPOCH="$(git show -s --format=%ct HEAD)"
-          # See the aarch64 leg: the git-source stanza is derived, not written.
-          IO_LIB_REV="$(grep -oE 'mnemonic-engrave\?rev=[0-9a-f]{40}' Cargo.lock | head -1 | grep -oE '[0-9a-f]{40}')"
           docker pull "$REPRO_IMAGE"
           docker run --rm --network=none \
             -v "$PWD":/build/src -w /build/src \
@@ -362,17 +304,12 @@ jobs:
             -e CFLAGS="-ffile-prefix-map=/build/src=/build -ffile-prefix-map=/cargo=/cargo" \
             -e "CFLAGS_x86_64_unknown_linux_musl=-ffile-prefix-map=/build/src=/build -ffile-prefix-map=/cargo=/cargo" \
             -e VER="$VER" -e ARCH="$ARCH" -e TARGET="$TARGET" \
-            -e IO_LIB_REV="$IO_LIB_REV" \
             "$REPRO_IMAGE" \
             bash -euxo pipefail -c '
               umask 022
-              IO_LIB_SRC="git+https://github.com/bg002h/mnemonic-engrave?rev=${IO_LIB_REV}"
               cargo build --locked --offline --release \
                 --target "$TARGET" -p ms-cli --bin ms \
                 --config '"'"'source.crates-io.replace-with="vendored-sources"'"'"' \
-                --config "source.\"${IO_LIB_SRC}\".git=\"https://github.com/bg002h/mnemonic-engrave\"" \
-                --config "source.\"${IO_LIB_SRC}\".rev=\"${IO_LIB_REV}\"" \
-                --config "source.\"${IO_LIB_SRC}\".replace-with=\"vendored-sources\"" \
                 --config '"'"'source.vendored-sources.directory="vendor"'"'"'
               tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" \
                 -cf - -C "target/$TARGET/release" ms \
