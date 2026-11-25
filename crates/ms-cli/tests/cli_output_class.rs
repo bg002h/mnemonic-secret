@@ -253,7 +253,16 @@ fn ms_inspect_no_output_advisory() {
 /// A K-of-N share report carries no payload bytes: still no advisory.
 #[test]
 fn ms_inspect_share_report_has_no_advisory() {
-    let split = support::run(&["split", "--hex", ABANDON_HEX, "-k", "2", "-n", "3", "--json"]);
+    let split = support::run(&[
+        "split",
+        "--hex",
+        ABANDON_HEX,
+        "-k",
+        "2",
+        "-n",
+        "3",
+        "--json",
+    ]);
     assert!(split.status.success());
     let v: serde_json::Value = serde_json::from_slice(&split.stdout).unwrap();
     let share = v["shares"][0].as_str().unwrap().to_string();
