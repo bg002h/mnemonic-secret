@@ -24,8 +24,9 @@
 //! reallocation (`.push` / `.extend` / `.reserve`) invalidates the pin. Sites
 //! 2/3/4 (per SPEC §4 P3a) use construct-and-pin idioms that satisfy this.
 
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 // ============================================================================
 // Page size accessor (cached)
@@ -87,13 +88,33 @@ impl Drop for PinnedPageRange {
         if self.page_count == 0 || self.start.is_null() {
             return;
         }
-        let bytes = self.page_count * page_size();
-        // SAFETY: `self.start` was returned by a prior successful mlock in
-        // `pin_pages_for`; caller contract requires the underlying buffer to
-        // remain valid until this Drop (no Vec reallocation). munlock does
-        // not dereference the address; only kernel bookkeeping updates.
-        let _ = unsafe { sys_munlock(self.start, bytes) };
-        // munlock errno is ignored: there is no recovery path on cleanup.
+        let page = page_size();
+        let mut pins = mlock_state()
+            .pins
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        for i in 0..self.page_count {
+            let addr = self.start as usize + i * page;
+            let last = match pins.get_mut(&addr) {
+                Some(n) if *n > 1 => {
+                    *n -= 1;
+                    false
+                }
+                _ => {
+                    pins.remove(&addr);
+                    true
+                }
+            };
+            if last {
+                // SAFETY: `addr` is a page this pin locked in `pin_pages_for`,
+                // and no other live pin covers it (its count reached 0);
+                // caller contract requires the underlying buffer to remain
+                // valid until this Drop. munlock does not dereference the
+                // address; only kernel bookkeeping updates.
+                let _ = unsafe { sys_munlock(addr as *const u8, page) };
+                // munlock errno is ignored: there is no recovery path on cleanup.
+            }
+        }
     }
 }
 
@@ -110,6 +131,12 @@ pub fn pin_pages_for(buf: &[u8]) -> PinnedPageRange {
 
     mlock_state().record_attempt();
 
+    // Held across mlock and the count update (see `MlockState::pins`).
+    let mut pins = mlock_state()
+        .pins
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
     // SAFETY: `start_ptr` is page-aligned (computed by round_to_pages's
     // round-down step); `bytes` is a multiple of page_size. mlock contract
     // requires page-aligned address and multiple-of-page length per POSIX;
@@ -117,10 +144,15 @@ pub fn pin_pages_for(buf: &[u8]) -> PinnedPageRange {
     // kernel mlock bookkeeping.
     let result = unsafe { sys_mlock_attempt(start_ptr, bytes) };
     match result {
-        Ok(()) => PinnedPageRange {
-            start: start_ptr,
-            page_count,
-        },
+        Ok(()) => {
+            for i in 0..page_count {
+                *pins.entry(start + i * page_size()).or_insert(0) += 1;
+            }
+            PinnedPageRange {
+                start: start_ptr,
+                page_count,
+            }
+        }
         Err(errno) => {
             if errno == libc::EINVAL {
                 // SPEC §2 row 6: EINVAL should be unreachable from the
@@ -159,6 +191,10 @@ struct MlockState {
     failure_count: AtomicUsize,
     total_bytes_unlocked: AtomicUsize,
     first_errno: OnceLock<i32>,
+    /// Live pin count per page address. mlock is not reference-counted, so a
+    /// page is munlocked only when its last live pin drops. Held across the
+    /// syscall so a pin and an unpin of one page cannot interleave.
+    pins: Mutex<BTreeMap<usize, usize>>,
 }
 
 impl MlockState {
@@ -168,6 +204,7 @@ impl MlockState {
             failure_count: AtomicUsize::new(0),
             total_bytes_unlocked: AtomicUsize::new(0),
             first_errno: OnceLock::new(),
+            pins: Mutex::new(BTreeMap::new()),
         }
     }
 

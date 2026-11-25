@@ -99,11 +99,19 @@ impl<'a> Source<'a> {
 /// one that quietly read the previous stage of a pipeline would engrave the
 /// wrong card at exit 0.
 pub(crate) fn read_in_file(path: &Path) -> Result<Zeroizing<String>> {
-    let _echo = (crate::passphrase_input::path_is_stdin(path) && io::stdin().is_terminal())
-        .then(crate::passphrase_input::EchoOff::new);
-    let buf: Zeroizing<String> = Zeroizing::new(std::fs::read_to_string(path).map_err(|e| {
-        CliError::BadInput(format!("failed to read --in {}: {}", path.display(), e))
-    })?);
+    let fail =
+        |e: io::Error| CliError::BadInput(format!("failed to read --in {}: {}", path.display(), e));
+    let mut file = std::fs::File::open(path).map_err(fail)?;
+    // A path that opens onto a terminal (`/dev/stdin`, `/dev/tty`, `/dev/pts/N`)
+    // gets echo off on THAT handle for the read, restored by the guard's drop.
+    #[cfg(unix)]
+    let _echo = {
+        use std::os::fd::AsRawFd;
+        file.is_terminal()
+            .then(|| crate::passphrase_input::EchoOff::new_on(file.as_raw_fd()))
+    };
+    let mut buf: Zeroizing<String> = Zeroizing::new(String::new());
+    file.read_to_string(&mut buf).map_err(fail)?;
     // Same treatment the stdin buffer gets: pin the freshly-read secret pages
     // for this function's scope (Cycle B SPEC §2 row 5).
     let _entropy_pin = crate::mlock::pin_pages_for(buf.as_bytes());
