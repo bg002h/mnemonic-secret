@@ -121,6 +121,29 @@ show o15_repair_stdout_is_out_refused $rc C
 "$MS" verify --in C >/dev/null 2>&1; echo "verify --in C rc=$?"
 rm -f C
 
+enc "$A" F; cp F F.orig
+reset; printf '%s\n' "$B" | "$MS" encode --hex - --out F --json --no-engraving-card >>F 2>err; rc=$?
+show o22_encode_json_stdout_appended_to_out_keeps_card $rc F; cmp -s F F.orig && echo "F == previous" || echo "F CHANGED"
+"$MS" verify --in F >/dev/null 2>&1; echo "verify --in F rc=$?"
+rm -f F F.orig
+
+"$MS" hashlock --random --no-engraving-card --out R >/dev/null 2>&1; cp R R.orig
+reset; "$MS" hashlock --random --json --no-engraving-card --out R >>R 2>err; rc=$?
+show o23_hashlock_random_json_stdout_appended_keeps_preimage $rc R; cmp -s R R.orig && echo "R == previous" || echo "R CHANGED"
+"$MS" hashlock --kind sha256 --in R --no-engraving-card >/dev/null 2>&1; echo "hashlock --in R rc=$?"
+rm -f R R.orig
+
+printf '%s\n' "$A" | "$MS" split -k 2 -n 3 --hex - --out SH >/dev/null 2>&1; cp SH SH.orig
+reset; printf '%s\n' "$A" | "$MS" split -k 2 -n 3 --hex - --json --out SH >>SH 2>err; rc=$?
+show o24_split_json_stdout_appended_keeps_shares $rc SH; cmp -s SH SH.orig && echo "SH == previous" || echo "SH CHANGED"
+"$MS" combine --in SH >/dev/null 2>&1; echo "combine --in SH rc=$?"
+rm -f SH SH.orig
+
+enc "$A" F; cp F F.orig
+reset; printf '%s\n' "$B" | FS8 "$MS" encode --hex - --out F --json --no-engraving-card > >(cat > out) 2> >(cat > err); rc=$?; sleep 0.1
+show o25_json_failed_overwrite_line_on_stderr_no_envelope $rc F; cmp -s F F.orig && echo "F == previous" || echo "F CHANGED"
+rm -f F F.orig
+
 # ---- controls ----
 reset; printf '%s\n' "$A" | "$MS" encode --hex - --out F --no-engraving-card >F 2>err; rc=$?
 show o16_text_encode_out_with_stdout_on_it_still_writes $rc F
