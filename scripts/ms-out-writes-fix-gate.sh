@@ -80,6 +80,8 @@ load; cargo clippy --locked --all-targets -p ms-cli -- -D warnings
 for gm in g2_1:eperm g2_3:einval g2_4:off; do
   load; MNEMONIC_TEST_MLOCK_FAIL_MODE="${gm#*:}" cargo test --locked -p ms-cli --bin ms "mlock::tests::${gm%%:*}" -- --include-ignored
 done
+# g6 needs the sibling mnemonic-toolkit checkout (CI checks out master); set SIBLING_REPO_PATH to override.
+export SIBLING_REPO_PATH=${SIBLING_REPO_PATH:-/scratch/code/shibboleth/mnemonic-toolkit}
 for t in history_purge the_decline mlock_g6_invariant; do load; cargo test --locked -p ms-cli --test "$t" -- --include-ignored; done
 bash ci/docs-only.test.sh
 bash ci/bh1119-doc-lint.test.sh
