@@ -247,7 +247,8 @@ fn the_digest_advisory_does_not_send_a_digest_to_hex() {
         .args(["hashlock", "--hashlock-phrase-stdin", "--kind", "sha256"])
         .write_stdin("3cf5d421caf2a9c8eb9de1d400866ea7d475e6ba978861bb0167a37cb70a4c12")
         .assert()
-        .failure();
+        .failure()
+        .code(8);
     let err = String::from_utf8_lossy(&r.get_output().stderr).to_string();
 
     assert!(

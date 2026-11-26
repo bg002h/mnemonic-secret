@@ -424,10 +424,19 @@ fn printed_cmd_decode_distributed_share_keeps_combine_advice() {
 
 #[test]
 fn printed_cmd_repair_distributed_share_keeps_combine_advice() {
-    share_row(
-        &format!("error: {}", share_text('9', 'a')),
-        A9,
-        &["repair", "--ms1", "-"],
+    // A clean distributed share is a valid string for `repair` (exit-code final
+    // review I-2): echoed at 0, and the stderr line still points at combine.
+    let out = ms()
+        .args(["repair", "--ms1", "-"])
+        .write_stdin(format!("{A9}\n"))
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&out.stdout).contains(A9));
+    let err = String::from_utf8(out.stderr).unwrap();
+    assert!(
+        err.contains("repair: this is share 'a' of a 9-of-N set, not a single card; recover the secret with `ms combine` and 9 shares"),
+        "{err}"
     );
 }
 

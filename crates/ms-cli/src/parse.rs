@@ -69,6 +69,18 @@ impl<'a> Source<'a> {
             && crate::argv_guard::admitted(self.channel).is_none()
     }
 
+    /// The empty-input error (decision 3: exit 2), naming where it was read.
+    fn empty(&self) -> CliError {
+        let from = match (self.in_path, self.arg) {
+            (Some(p), _) => format!("--in {}", p.display()),
+            (None, Some(s)) if s != "-" && !self.channel.is_empty() => self.channel.to_string(),
+            (None, Some(s)) if s != "-" => "the argument".to_string(),
+            _ if crate::argv_guard::admitted(self.channel).is_some() => self.channel.to_string(),
+            _ => "stdin".to_string(),
+        };
+        CliError::BadInput(format!("the input is empty ({from})"))
+    }
+
     /// The raw bytes this source names, as a scrub-on-drop `String`, or the
     /// contention refusal.
     fn read_raw(&self) -> Result<Zeroizing<String>> {
@@ -131,7 +143,11 @@ pub(crate) fn read_in_file(path: &Path) -> Result<Zeroizing<String>> {
 /// user explicitly requested stdin, or `Some(s)` when the user provided a value.
 pub fn read_input(src: Source) -> Result<String> {
     let raw: Zeroizing<String> = src.read_raw()?;
-    Ok(strip_whitespace(&raw))
+    let s = strip_whitespace(&raw);
+    if s.is_empty() {
+        return Err(src.empty());
+    }
+    Ok(s)
 }
 
 /// Read a BIP-39 phrase from either the supplied arg or stdin.
@@ -143,7 +159,11 @@ pub fn read_input(src: Source) -> Result<String> {
 /// move the secret-bearing buffer to a scrub-on-drop binding.
 pub fn read_phrase_input(src: Source) -> Result<Zeroizing<String>> {
     let raw: Zeroizing<String> = src.read_raw()?;
-    Ok(Zeroizing::new(normalize_phrase(&raw)))
+    let s = Zeroizing::new(normalize_phrase(&raw));
+    if s.is_empty() {
+        return Err(src.empty());
+    }
+    Ok(s)
 }
 
 /// Normalize a BIP-39 phrase: trim edges and collapse whitespace runs.

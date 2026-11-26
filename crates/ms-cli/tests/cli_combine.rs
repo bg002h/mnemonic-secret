@@ -205,6 +205,7 @@ fn combine_below_threshold_friendly_error() {
         .write_stdin([shares[0].to_string(), shares[1].to_string()].join("\n"))
         .assert()
         .failure()
+        .code(2)
         .stderr(predicate::str::contains("not enough shares"));
 }
 
@@ -249,5 +250,6 @@ fn combine_duplicate_index_rejected() {
         .write_stdin([shares[0].to_string(), shares[0].to_string()].join("\n"))
         .assert()
         .failure()
+        .code(2)
         .stderr(predicate::str::contains("repeated"));
 }

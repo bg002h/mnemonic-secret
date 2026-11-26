@@ -50,7 +50,9 @@
 //! `ms1-repair-demote-to-candidate`) is `"blessed"` for a clean (0-correction)
 //! decode, `"candidate"` for a touched substitution correction. A corrected
 //! string that does not decode (exit 22) adds `not_a_card: {kind, message}`
-//! after `verdict`; the field is absent otherwise.
+//! after `verdict`; the field is absent otherwise. A distributed share
+//! (threshold 2-9, index not `s`) repairs like a card (0 or 20) and adds
+//! `share: {threshold, index}`.
 
 use clap::Args;
 use ms_codec::CorrectionDetail;
@@ -153,12 +155,22 @@ pub fn run(args: RepairArgs) -> Result<u8> {
     // Exit-code spec decision 6: a CORRECTED string that does not decode is
     // still printed (a person repairing by hand needs to see it), and the run
     // adds 2. A clean string that does not decode fails atomically (2).
+    // A distributed share (threshold 2-9, index not `s`) is a valid string of
+    // the format, not a non-card: clean it is echoed (0), corrected it is a
+    // candidate like a card (20) and is filed (final review I-2).
+    let mut share: Option<(char, char)> = None;
     let (corrections, not_a_card): (Vec<CorrectionDetail>, Option<CliError>) =
         match ms_codec::decode_with_correction(&original) {
             Ok((_tag, _payload, corrections)) => (corrections, None),
             Err(e @ ms_codec::Error::TooManyErrors { .. }) => return Err(e.into()),
-            Err(e) => match correct_only(&original) {
-                Some(c) if !c.is_empty() => (c, Some(CliError::from(e))),
+            Err(e) => match (correct_only(&original), &e) {
+                (Some(c), ms_codec::Error::IsShareNotSingleString { threshold, index })
+                    if !index.eq_ignore_ascii_case(&'s') =>
+                {
+                    share = Some((*threshold, *index));
+                    (c, None)
+                }
+                (Some(c), _) if !c.is_empty() => (c, Some(CliError::from(e))),
                 _ => return Err(e.into()),
             },
         };
@@ -198,7 +210,12 @@ pub fn run(args: RepairArgs) -> Result<u8> {
     }
 
     if args.json {
-        emit_json(corrected_chunks.as_slice(), &reports, not_a_card.as_ref())?;
+        emit_json(
+            corrected_chunks.as_slice(),
+            &reports,
+            not_a_card.as_ref(),
+            share,
+        )?;
     } else {
         emit_text(corrected_chunks.as_slice(), &reports)?;
     }
@@ -225,6 +242,12 @@ pub fn run(args: RepairArgs) -> Result<u8> {
             "repair: correction UNVERIFIED — a corrected seed card cannot be \
              self-verified; confirm the derived address/xpub against a known-good \
              copy before use; BIP-93 recommends confirming a corrected codex32 string"
+        );
+    }
+    if let Some((threshold, index)) = share {
+        eprintln!(
+            "repair: this is share '{index}' of a {threshold}-of-N set, not a single card; \
+             recover the secret with `ms combine` and {threshold} shares"
         );
     }
     let mut bits = Bits::NONE;
@@ -378,8 +401,18 @@ struct RepairJson<'a> {
     /// envelopes are unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     not_a_card: Option<NotACardJson>,
+    /// Present only for a distributed share (threshold 2-9): its threshold
+    /// and index. Absent for a single card.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    share: Option<ShareJson>,
     corrected_chunks: &'a [String],
     repairs: Vec<RepairJsonDetail<'a>>,
+}
+
+#[derive(Serialize)]
+struct ShareJson {
+    threshold: u32,
+    index: String,
 }
 
 #[derive(Serialize)]
@@ -407,6 +440,7 @@ fn emit_json(
     corrected_chunks: &[String],
     reports: &[RepairDetail],
     not_a_card: Option<&CliError>,
+    share: Option<(char, char)>,
 ) -> Result<()> {
     let any_correction = reports.iter().any(|r| !r.corrected_positions.is_empty());
     let envelope = RepairJson {
@@ -420,6 +454,10 @@ fn emit_json(
         not_a_card: not_a_card.map(|e| NotACardJson {
             kind: e.kind(),
             message: e.message(),
+        }),
+        share: share.map(|(t, i)| ShareJson {
+            threshold: t.to_digit(10).unwrap_or(0),
+            index: i.to_ascii_lowercase().to_string(),
         }),
         corrected_chunks,
         repairs: reports

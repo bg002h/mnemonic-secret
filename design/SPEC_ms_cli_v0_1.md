@@ -446,7 +446,7 @@ Locked exit-code table. **Replaced on 2026-11-26** by the constellation exit-cod
 spec (`SPEC_constellation_exit_codes.md` in mnemonic-engrave's `design/`,
 revision 5, its decisions 3 and 8 and §7c taken as recommended). The codes are
 the constellation's: 1 to 63 are sums of six bits, and 64 and 101 never combine.
-The root `ms --help` ends with the constellation legend.
+The root `ms --help` ends with the constellation legend, and each verb's `-h`/`--help` with one `Exit status:` line for that verb.
 
 | code | name | `ms` cases | CliError variants |
 |---|---|---|---|
@@ -460,7 +460,7 @@ The root `ms --help` ends with the constellation legend.
 | 64 | USAGE | clap's errors; the verb's own checks on the command line alone: two readers on one stdin, `--in` with an argument, K or N out of range, `derive --account` of 2^31 or more, a source count, a flag gate, an invalid `@env:` name, non-UTF-8 argv; all judged before any input is read or any refusal runs (R2) | `Usage` |
 | 101 | INTERNAL | a panic, a serializer or BIP-32 derivation that cannot fail, an `ms_codec::Error` variant newer than this build (R13: a test fails on any variant of the workspace's ms-codec that has no class) | `Internal` |
 
-`repair` sums: 0 clean; 20 a correction (16 + 4); 22 a correction whose result
+`repair` sums (a K-of-N share at an index other than `s` counts as a valid string: 0 clean and echoed, 20 corrected and filed, `--json` adds `share: {threshold, index}`): 0 clean; 20 a correction (16 + 4); 22 a correction whose result
 is not a card ms decodes (20 + 2: printed with the warning, `--out` not
 written; decision 6; `--json` adds `not_a_card: {kind, message}` after `verdict`); 2 uncorrectable or a clean string that is not a card
 (nothing printed). A failed stdout write adds 32 (a lost repair report: 52).

@@ -19,7 +19,8 @@ fn verify_round_trip_with_wrong_phrase_exit_2() {
         .args(["verify", "--in", card.to_str().unwrap(), "--phrase", "-"])
         .write_stdin((wrong).to_string())
         .assert()
-        .failure();
+        .failure()
+        .code(2);
 
     let output = assertion.get_output();
     let combined = String::from_utf8_lossy(&output.stdout).to_string()

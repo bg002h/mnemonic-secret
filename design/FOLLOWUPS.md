@@ -408,7 +408,7 @@ Single source of truth for items that surfaced during a review or implementation
 
 - **Surfaced:** SPEC_ms_cli_v0_1 review r2.
 - **Where:** `design/SPEC_ms_cli_v0_1.md` §2.3.1.
-- **What:** Inspect on a string that fails BIP-93 parse (e.g., long-checksum framing that's actually a future v0.2+ string) returns exit 1, not exit 3. Only `verify` post-decode can route exit 3. Add a one-line acknowledgement to §2.3.1.
+- **What:** Inspect on a string that fails BIP-93 parse (e.g., long-checksum framing that's actually a future v0.2+ string) returns exit 1, not exit 3. Only `verify` post-decode can route exit 3. Add a one-line acknowledgement to §2.3.1. (Since the 2026-11-26 constellation exit codes both are 2: a future format is no longer its own code, so this asymmetry is gone.)
 - **Why deferred:** correctness is unaffected; users discover this via inspect's `failure_reasons` field.
 - **Status:** `resolved 2026-05-04 — §2.3.1 gains explicit "Note on exit-3 routing" paragraph at user request.`
 - **Tier:** `v0.1-nice-to-have`
@@ -435,7 +435,7 @@ Single source of truth for items that surfaced during a review or implementation
 
 - **Surfaced:** SPEC_ms_cli_v0_1 review r2.
 - **Where:** SPEC §2.1 "Encoder pre-checks".
-- **What:** `--phrase ""`, `--phrase " "`, `--hex ""`, `--hex "ZZ"` produce specific errors but aren't enumerated. All hit exit 1 (Bip39 BadWordCount / Bip39 BadWordCount / PayloadLengthMismatch / BadInput). Adding the enumeration removes test-surface ambiguity.
+- **What:** `--phrase ""`, `--phrase " "`, `--hex ""`, `--hex "ZZ"` produce specific errors but aren't enumerated. All hit exit 1 (Bip39 BadWordCount / Bip39 BadWordCount / PayloadLengthMismatch / BadInput); exit 2 since the 2026-11-26 constellation exit codes, and the two empty ones now say `the input is empty (--phrase)` / `(--hex)`. Adding the enumeration removes test-surface ambiguity.
 - **Why deferred:** behaviors are unambiguous; spec can be tightened at IMPLEMENTATION_PLAN time when test fixtures are written.
 - **Status:** `resolved 2026-05-04 — §2.1 "Encoder pre-checks" gains a 10-row edge-case table at user request: empty/whitespace/short/odd/non-hex/conflict/missing inputs each map to specific CliError + exit code.`
 - **Tier:** `v0.1-nice-to-have`
@@ -453,7 +453,7 @@ Single source of truth for items that surfaced during a review or implementation
 
 - **Surfaced:** IMPLEMENTATION_PLAN_ms_cli_v0_1 review r2 (2026-05-04).
 - **Where:** `cmd/encode.rs::parse_hex_entropy` (per IMPLEMENTATION_PLAN Phase 2 Task 2.2).
-- **What:** Hex like `--hex 0011223344` (5 bytes) passes hex parse and is handed to `ms_codec::encode`, which rejects with `PayloadLengthMismatch` (mapped to CliError::PayloadLengthMismatch — exit 1). User sees `tag "entr" payload length 5 not in expected set [16, 20, 24, 28, 32]`. Functionally correct but the message wording comes from ms-codec rather than a hex-specific pre-check. SPEC §2.1 edge-case row would prefer "hex decodes to 5 bytes; expected 16/20/24/28/32" wording.
+- **What:** Hex like `--hex 0011223344` (5 bytes) passes hex parse and is handed to `ms_codec::encode`, which rejects with `PayloadLengthMismatch` (mapped to CliError::PayloadLengthMismatch — exit 1; exit 2 since the 2026-11-26 constellation exit codes). User sees `tag "entr" payload length 5 not in expected set [16, 20, 24, 28, 32]`. Functionally correct but the message wording comes from ms-codec rather than a hex-specific pre-check. SPEC §2.1 edge-case row would prefer "hex decodes to 5 bytes; expected 16/20/24/28/32" wording.
 - **Why deferred:** Functionally identical exit code + similar message; cosmetic improvement only.
 - **Status:** `open`
 - **Tier:** `v0.1-nice-to-have`
@@ -925,11 +925,59 @@ can never be mistaken for BIP-48.
 - **Status:** `resolved ce20d5a`
 - **Tier:** text / exit code (non-gating)
 
+### `ms-exit-codes-manual-lockstep` — the toolkit manuals still state ms's old exit codes (repo: **mnemonic-toolkit** `docs/manual` and `docs/manual-gui`; owning phase: the toolkit PR that pins the first ms-cli release with the constellation codes)
+
+- **Surfaced:** 2026-11-26, final exit-code review M-6 (the line list lived only in the implementer's report, outside any repo).
+- **What:** ms-cli exits with the constellation codes (CHANGELOG ms-cli Unreleased "Changed (breaking: exit codes)"). The manual chapters must move in lockstep:
+  - `docs/manual/src/40-cli-reference/43-ms.md`:
+    - `:47` and `:249`: existing `--out` "exit 64" → 8.
+    - `:342` `kind: share`: a share that would not combine (index `s`, bad length) exits 2; a combinable share 0.
+    - `:368` verify `--phrase` mismatch 4 → 1.
+    - `:411` digest-shaped phrase 1 → 8.
+    - `:784-791` repair table: 0 clean (a clean share is echoed at 0 too); 20 corrected, card or share (was 4); 22 corrected but neither card nor share (printed, `--out` not written); 2 uncorrectable, or a clean string that is neither (also empty input); 8 an argv secret or `--out` is stdout; 32 I/O (was 1); 64.
+    - `:793-815` and `:837`: exit-4/5 prose → 20 (16 + 4).
+    - Repair JSON: at 22 `not_a_card: {kind, message}` follows `verdict`. For a share, `share: {threshold, index}` follows. Both fields are absent otherwise.
+    - `:889-894` gen-man I/O 1 → 32.
+    - `:900` stdout failure: adds 32 to the verb's code (0→32, 20→52, 2→34); 64 is kept. Not detected on Windows (see `ms-closed-stdout-windows-gap`).
+    - derive flag table: `--account` is 0 to 2147483647; a larger value is 64, with nothing read.
+    - `@env:` with a bad name is 64 before anything is read; unset is 32; a non-UTF-8 value is 2.
+    - Each verb's `-h`/`--help` now ends with an `Exit status:` line; mirror it if the chapter quotes the help.
+    - Empty input names itself: `the input is empty (stdin)`, exit 2.
+  - `docs/manual-gui/src/60-ms/`:
+    - `62-inspect.md:84`: 1 → 2; a would-not-decode report exits 2.
+    - `63-encode.md:272-276`: 1 → 2.
+    - `64-decode.md:158`: 1 → 2. `:160` reserved tag: was "exit 3, silent"; now 2 with the stderr error line.
+    - `65-verify.md:5-7,15,27,34,49,179,186-191`: 3 → 2 (no OK line), 4 → 1, contention 1 → 64, parse errors 1 → 2.
+    - `66-vectors.md:37`: 1 → 101.
+    - `67-split.md:231-232`: K/N 1 → 64; existing `--out` 64 → 8.
+    - `68-combine.md`, `6a-repair.md`, `6c-hashlock.md`: the same moves. For repair this includes 20/22, the share rule and the two JSON fields.
+  - New JSON `kind`s `Refused`, `Io`, `Internal`, `MnemUnknownLanguage`; an existing `--out` moved from `Usage` to `Refused` (GUI manual and mnemonic-gui).
+- **Companion:** mnemonic-toolkit `design/FOLLOWUPS.md` (to be mirrored by the toolkit agent with these lines).
+- **Status:** `open`
+- **Tier:** `cross-repo`
+
+### `ms-closed-stdout-windows-gap` — a closed stdout still exits 0 with the output lost on Windows and on Unix targets without the probe (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-26, exit-code impl review M4 and final review M-8.
+- **Where:** `crates/ms-cli/src/sink.rs`: the `closed_fds` constructor probe is cfg'd to linux, android, freebsd, netbsd, openbsd, dragonfly and macos, and `read_only` is `false` off unix.
+- **What:** std reopens a closed standard handle as a success on Windows. On illumos, Solaris, AIX and Haiku the probe is not built. On these platforms `ms vectors >&-` exits 0 with the output lost, against R8. Documented in the CHANGELOG and `SPEC_ms_cli_v0_1.md` §6.
+- **Fix (for later):** on Windows, check `GetStdHandle(STD_OUTPUT_HANDLE)` for null or `INVALID_HANDLE_VALUE` at the first stdout write and record an EBADF equivalent. Extend the unix cfg list once each target's constructor section is confirmed. The macOS and BSD probes were not run either; they are built only.
+- **Status:** `open`
+- **Tier:** exit code (non-gating)
+
+### `ms-out-same-file-as-input` — `ms encode --in F --out F` overwrites F, exit 0 (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
+
+- **Surfaced:** 2026-11-26, final exit-code review (cross-CLI table, "`--out` is an input"). The behaviour is older than the exit-code change.
+- **What:** md and mk refuse an `--out` that is the same file as an input (8, REFUSED). ms refuses only an `--out` that is stdout. `ms encode --in F --out F` replaces the phrase file with the card, exit 0, and `ms repair --in F --out F` exits 20. Losing the phrase file to its own card is recoverable only from the card.
+- **Fix (for later):** in `out.rs`, refuse an `--out` whose device and inode, or whose canonical path, equals `--in`'s before anything is read (8, `Refused`). Cover `encode`, `repair`, `split`, `hashlock` and `combine`, with a row per verb.
+- **Status:** `open`
+- **Tier:** exit code / data safety (non-gating)
+
 ### `ms-repair-accepts-mixed-case-with-typo` — `decode_with_correction` repairs a mixed-case string that also has an error, though the same string without the error is refused (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
 
 - **Surfaced:** 2026-10-31 bug hunt (unrated item X1); triage CONFIRMED as behaviour; graded Nit (the output is the right codeword, exit 4 UNVERIFIED; BIP-93 line 159 permits treating wrong-case characters as erasures; the defect is inconsistency with `decode`/`combine`, U4).
 - **Where:** `crates/ms-codec/src/decode.rs` `parse_ms1_symbols` (case-folds every character).
-- **Fix (for later):** `decode_with_correction` refuses a mixed-case string with the same `Codex32(InvalidCase(..))` that `decode` returns for it, naming the same character (`ms decode` names `S` for `ms10entrSqz4…` and `s` for `MS10ENTRsQZ4…`); message `mixed case at character '<c>' (codex32 strings must be all-lower or all-upper)`, exit 1. Not `fix-x1.patch` verbatim (it names the first uppercase character).
+- **Fix (for later):** `decode_with_correction` refuses a mixed-case string with the same `Codex32(InvalidCase(..))` that `decode` returns for it, naming the same character (`ms decode` names `S` for `ms10entrSqz4…` and `s` for `MS10ENTRsQZ4…`); message `mixed case at character '<c>' (codex32 strings must be all-lower or all-upper)`, exit 2 (was 1 before the 2026-11-26 constellation exit codes). Not `fix-x1.patch` verbatim (it names the first uppercase character).
 - **RED row:** `crates/ms-codec/tests/bughunt.rs::bughunt_ms_x1_mixed_case_correction`, `#[ignore = "deferred-minor: ms-repair-accepts-mixed-case-with-typo"]`.
 - **Why deferred:** Nit; the FIX PR carries only C and I.
 - **Status:** `deferred-minor`
@@ -1011,7 +1059,7 @@ can never be mistaken for BIP-48.
 - **Status:** `deferred-minor`
 - **Tier:** `cross-repo`, docs (non-gating)
 
-### `ms-repair-exit-table-char-outside-alphabet` — the `ms repair` exit table's row 2 ("structural ms1 error before correction could run") misleads for a character outside the alphabet, which exits 1 (repo: **mnemonic-toolkit** manual `43-ms.md`, companion PR; owning phase: **none — ownerless residue**)
+### `ms-repair-exit-table-char-outside-alphabet` — the `ms repair` exit table's row 2 ("structural ms1 error before correction could run") misleads for a character outside the alphabet, which exits 1, now 2 under the 2026-11-26 constellation exit codes (repo: **mnemonic-toolkit** manual `43-ms.md`, companion PR; owning phase: **none — ownerless residue**)
 
 - **Surfaced:** 2026-11-01, FIX review r1 M-6 (`design/agent-reports/bughunt-fix-review-r1-ms.md`).
 - **Where:** `docs/manual/src/40-cli-reference/43-ms.md` exit table (line 780 onward at `c2b09861`); FIX 5.3 keeps it as is. A character outside the alphabet (including a typed `?`, which the primer now discusses) is exactly that structural error, yet #7's message exits 1. It fails closed.
@@ -1032,7 +1080,7 @@ can never be mistaken for BIP-48.
 ### `ms-invalid-char-message-invisible-char` — the #7 message names the character as typed, so an invisible character prints invisibly (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
 
 - **Surfaced:** 2026-11-01, FIX review r1 N-1 (`design/agent-reports/bughunt-fix-review-r1-ms.md`).
-- **Where:** `friendly_codex32` text for `InvalidChar(c)` (`crates/ms-cli/src/error.rs`). A pasted U+200B gives `error: invalid character '​' (not in codex32 alphabet)`, exit 1 (measured); `ms decode` says `string length 53 …` for the same input.
+- **Where:** `friendly_codex32` text for `InvalidChar(c)` (`crates/ms-cli/src/error.rs`). A pasted U+200B gives `error: invalid character '​' (not in codex32 alphabet)`, exit 1 (measured; 2 since the 2026-11-26 constellation exit codes); `ms decode` says `string length 53 …` for the same input.
 - **Fix (for later):** an escaped form (`'\u{200b}'`) for non-printing characters would name it.
 - **Why deferred:** Nit; the FIX PR carries only C and I.
 - **Status:** `deferred-minor`
@@ -1371,6 +1419,9 @@ deferred-minor. From the toolkit-side review report `agent-reports/whole-diff-ar
 - [ms-codex32-parts-short-data-panic] status=open grade=M kind=input owner=fix-bughunt1119-ms-codex32-ctors filed=2026-11-24 src=bug-hunt-2026-11-19-R2 repo=mnemonic-secret :: Codex32String parts_inner slices unguarded (codex32/mod.rs:255-270) and panics on a long-HRP short-data checksum-valid string (2026-11-24: regraded M, converted)
 - [ms-too-many-errors-says-more-than-8] status=open grade=M kind=ux owner=none filed=2026-11-24 src=bug-hunt-2026-11-19-R3 repo=mnemonic-secret :: "more than 8 errors" for 5 substitutions (ms-codec error.rs:240, ms-cli error.rs:218); say 4 substitutions, keep bound:8 (2026-11-24: regraded M, converted)
 - [ms-cli-mnem-unknown-language-catch-all] status=resolved grade=M kind=ux owner=none filed=2026-11-24 src=bug-hunt-2026-11-19-R4 repo=mnemonic-secret :: reserved Mnem language code hit the catch-all (exit 1, then 101 under the constellation codes); typed exit-2 arm added in the exit-code fold (2026-11-24: regraded M, converted)
+- [ms-exit-codes-manual-lockstep] status=open grade=M kind=docs owner=toolkit filed=2026-11-26 src=exit-codes-final-review-M-6 repo=mnemonic-toolkit :: 43-ms.md and manual-gui 60-ms still state ms's old exit codes; line list in the full entry
+- [ms-closed-stdout-windows-gap] status=open grade=M kind=exit owner=none filed=2026-11-26 src=exit-codes-impl-review-M4 repo=mnemonic-secret :: closed stdout exits 0 with output lost on Windows and unprobed unix (sink.rs closed_fds cfg list)
+- [ms-out-same-file-as-input] status=open grade=M kind=data owner=none filed=2026-11-26 src=exit-codes-final-review-table repo=mnemonic-secret :: `ms encode --in F --out F` overwrites F at 0; md and mk refuse with 8
 - [ms-codec-corrections-on-decode-failure] status=open grade=N kind=api owner=none filed=2026-11-26 src=exit-codes-impl-review-N2 repo=mnemonic-secret :: `ms repair` re-runs the BCH steps in ms-cli (`cmd/repair.rs` `correct_only`) to show a corrected string that does not decode (exit 22); next ms-codec minor: return the corrections with the post-correction decode error (e.g. `decode_with_correction` -> `Err` carrying `Vec<CorrectionDetail>`, or a `correct(s) -> Result<Vec<CorrectionDetail>>`), then drop `correct_only`. Drift guard until then: `cmd::repair::tests::correct_only_matches_decode_with_correction`
 - [ms-repair-accepts-mixed-case-with-typo] status=open grade=N kind=input owner=none filed=2026-11-24 src=bug-hunt-2026-11-19-R5 repo=mnemonic-secret :: decode_with_correction lowercases before the case check (decode.rs:173-174), so repair accepts mixed case when one typo is also present (2026-11-24: regraded N, converted)
 - [ms-combine-accepts-non-ms-hrp] status=open grade=M kind=input owner=none filed=2026-11-24 src=bug-hunt-2026-11-19-R6 repo=mnemonic-secret :: combine_shares (shares.rs:207-229) has no HRP check; a foreign-HRP set recombines while decode refuses WrongHrp (2026-11-24: regraded M, converted)

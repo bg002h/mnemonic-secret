@@ -135,7 +135,8 @@ fn read_shares(
     }
     if out.is_empty() {
         return Err(CliError::BadInput(
-            "expected at least one share (positional or via stdin with '-')".into(),
+            "the input is empty: expected at least one share (positional or via stdin with '-')"
+                .into(),
         ));
     }
     Ok(Zeroizing::new(out))

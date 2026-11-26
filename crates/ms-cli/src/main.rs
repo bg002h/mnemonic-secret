@@ -75,44 +75,63 @@ pub(crate) struct Cli {
     command: Command,
 }
 
+/// One `Exit status:` line per verb (exit-code spec R11; the root legend
+/// names the bits). Shown by both `-h` and `--help`.
+const EXIT_SEED_READER: &str = "Exit status: 0 done; 2 invalid input (bad checksum, length, phrase or hex; empty input); 8 refused (a secret on argv; --out is stdout); 32 an I/O failure (added to the code); 64 a bad command line.";
+const EXIT_HASHLOCK: &str = "Exit status: 0 done; 2 invalid input (bad hex, phrase or ms1; empty input); 8 refused (a secret on argv; --out is stdout; --random --out exists; a digest-shaped phrase); 32 an I/O failure (added to the code); 64 a bad command line (sources, flag gates).";
+const EXIT_INSPECT: &str = "Exit status: 0 the string would decode (or the share would combine); 2 would not decode, or would not combine (the report is printed); 8 refused (a secret on argv); 32 an I/O failure (added to the code); 64 a bad command line.";
+const EXIT_VERIFY: &str = "Exit status: 0 valid (and the phrase matches); 1 the phrase does not match; 2 invalid input; 8 refused (a secret on argv); 32 an I/O failure (added to the code); 64 a bad command line.";
+const EXIT_PRINTER: &str =
+    "Exit status: 0 done; 32 an I/O failure (stdout or --out); 64 a bad command line.";
+const EXIT_REPAIR: &str = "Exit status: 0 already valid (echoed); 20 corrected (16 repaired + 4 verify before use); 22 corrected, but not a card or share (printed, --out not written); 2 uncorrectable, or not a card or share; 8 refused (a secret on argv; --out is stdout); 32 an I/O failure, added to the code, e.g. 52 for a lost corrected report; 64 a bad command line.";
+const EXIT_SPLIT: &str = "Exit status: 0 done; 2 invalid input; 8 refused (a secret on argv; --out exists or is stdout); 32 an I/O failure (added to the code); 64 a bad command line (K or N out of range).";
+const EXIT_COMBINE: &str = "Exit status: 0 recovered; 2 invalid shares (bad checksum, the secret share, an inconsistent set, too few); 8 refused (a secret on argv); 32 an I/O failure (added to the code); 64 a bad command line.";
+
 #[derive(Subcommand, Debug)]
 enum Command {
     /// Derive the master fingerprint (+ account xpub with --template) — read-only public derivation.
+    #[command(after_help = EXIT_SEED_READER)]
     Derive(cmd::derive::DeriveArgs),
 
     /// Encode a BIP-39 mnemonic (or hex entropy) as an ms1 string for engraving.
     #[command(
-        after_long_help = "EXAMPLES:\n  ms encode --in phrase.txt                     # ms1 on stdout; word count etc. on stderr\n  ms encode --in phrase.txt --group-size 5      # the ms1 in groups of 5, for hand engraving\n  ms encode --phrase - < phrase.txt             # the phrase on stdin\n  ms encode --hex - --no-engraving-card < entropy.hex\n  ms encode --in phrase.txt --out card.ms1      # the ms1 to an owner-only file\n  ms encode --in phrase.txt --json | jq .ms1\n\nThe secret never goes on the command line: ms refuses it there unless\n--allow-argv-secret is given (argv is visible to `ps` and lands in shell\nhistory). Use --in FILE, or `-` for stdin."
+        after_help = EXIT_SEED_READER,
+        after_long_help = format!("{}\n\n{}", "EXAMPLES:\n  ms encode --in phrase.txt                     # ms1 on stdout; word count etc. on stderr\n  ms encode --in phrase.txt --group-size 5      # the ms1 in groups of 5, for hand engraving\n  ms encode --phrase - < phrase.txt             # the phrase on stdin\n  ms encode --hex - --no-engraving-card < entropy.hex\n  ms encode --in phrase.txt --out card.ms1      # the ms1 to an owner-only file\n  ms encode --in phrase.txt --json | jq .ms1\n\nThe secret never goes on the command line: ms refuses it there unless\n--allow-argv-secret is given (argv is visible to `ps` and lands in shell\nhistory). Use --in FILE, or `-` for stdin.", EXIT_SEED_READER)
     )]
     Encode(cmd::encode::EncodeArgs),
 
     /// Decode an ms1 string back to its BIP-39 mnemonic and entropy bytes.
     #[command(
-        after_long_help = "EXAMPLES:\n  ms decode --in card.ms1\n  ms decode - < card.ms1\n  ms decode --in card.ms1 --language french\n  ms decode --in card.ms1 --json | jq .phrase"
+        after_help = EXIT_SEED_READER,
+        after_long_help = format!("{}\n\n{}", "EXAMPLES:\n  ms decode --in card.ms1\n  ms decode - < card.ms1\n  ms decode --in card.ms1 --language french\n  ms decode --in card.ms1 --json | jq .phrase", EXIT_SEED_READER)
     )]
     Decode(cmd::decode::DecodeArgs),
 
     /// Derive a hashlock preimage from a phrase (or take one), print the `hash:` record, and back the preimage up as an ms1 plate string.
     #[command(
-        after_long_help = "EXAMPLES:\n  ms hashlock --kind sha256 --hashlock-phrase-stdin < phrase.txt\n  ms hashlock --kind ripemd160 --hashlock-phrase-stdin < phrase.txt\n  ms hashlock --kind sha256 --hashlock-phrase-stdin --method sha256 < phrase.txt\n  ms hashlock --kind sha256 --random --out preimage.txt\n\nTHE --kind IS IN EVERY LINE ON PURPOSE (F-553). Omitting it is legal and\nlists all four digests on stderr -- but STDOUT carries the sha256 record,\nand stdout is what a pipe consumes. An operator whose wallet is ripemd160\nfollowing a taught one-liner without --kind packs a sha256 payload."
+        after_help = EXIT_HASHLOCK,
+        after_long_help = format!("{}\n\n{}", "EXAMPLES:\n  ms hashlock --kind sha256 --hashlock-phrase-stdin < phrase.txt\n  ms hashlock --kind ripemd160 --hashlock-phrase-stdin < phrase.txt\n  ms hashlock --kind sha256 --hashlock-phrase-stdin --method sha256 < phrase.txt\n  ms hashlock --kind sha256 --random --out preimage.txt\n\nTHE --kind IS IN EVERY LINE ON PURPOSE (F-553). Omitting it is legal and\nlists all four digests on stderr -- but STDOUT carries the sha256 record,\nand stdout is what a pipe consumes. An operator whose wallet is ripemd160\nfollowing a taught one-liner without --kind packs a sha256 payload.", EXIT_HASHLOCK)
     )]
     Hashlock(cmd::hashlock::HashlockArgs),
 
     /// Inspect an ms1 string's structural fields and decoder verdict.
     #[command(
-        after_long_help = "EXAMPLES:\n  ms inspect --in card.ms1          # verdict + fields\n  ms inspect --in card.ms1 --json   # structured output for tooling\n  ms inspect - < typed-back.txt     # a card typed back in its grouped form"
+        after_help = EXIT_INSPECT,
+        after_long_help = format!("{}\n\n{}", "EXAMPLES:\n  ms inspect --in card.ms1          # verdict + fields\n  ms inspect --in card.ms1 --json   # structured output for tooling\n  ms inspect - < typed-back.txt     # a card typed back in its grouped form", EXIT_INSPECT)
     )]
     Inspect(cmd::inspect::InspectArgs),
 
     /// Verify an ms1 string is valid (and optionally round-trips against a phrase).
     #[command(
-        after_long_help = "EXAMPLES:\n  ms verify --in card.ms1                                # exit 0 = valid v0.1\n  ms verify --in card.ms1 --phrase - < phrase.txt        # round-trip; exit 1 on mismatch\n  ms verify --in card.ms1 --phrase - --json < phrase.txt # structured outcome"
+        after_help = EXIT_VERIFY,
+        after_long_help = format!("{}\n\n{}", "EXAMPLES:\n  ms verify --in card.ms1                                # exit 0 = valid v0.1\n  ms verify --in card.ms1 --phrase - < phrase.txt        # round-trip; exit 1 on mismatch\n  ms verify --in card.ms1 --phrase - --json < phrase.txt # structured outcome", EXIT_VERIFY)
     )]
     Verify(cmd::verify::VerifyArgs),
 
     /// Print the SHA-pinned v0.1 test-vector corpus as JSON.
     #[command(
-        after_long_help = "EXAMPLES:\n  ms vectors                # compact JSON\n  ms vectors --pretty       # indented JSON\n  ms vectors | jq '.[0]'    # filter via jq"
+        after_help = EXIT_PRINTER,
+        after_long_help = format!("{}\n\n{}", "EXAMPLES:\n  ms vectors                # compact JSON\n  ms vectors --pretty       # indented JSON\n  ms vectors | jq '.[0]'    # filter via jq", EXIT_PRINTER)
     )]
     Vectors(cmd::vectors::VectorsArgs),
 
@@ -125,7 +144,8 @@ enum Command {
     /// `FOLLOWUPS.md` entry `mnemonic-gui-schema-mirror`.
     #[command(
         name = "gui-schema",
-        after_long_help = "EXAMPLES:\n  ms gui-schema | jq .version             # always 1\n  ms gui-schema | jq '.subcommands[].name' # list subcommands\n  ms gui-schema | jq '.subcommands[] | select(.name == \"encode\").flags'"
+        after_help = EXIT_PRINTER,
+        after_long_help = format!("{}\n\n{}", "EXAMPLES:\n  ms gui-schema | jq .version             # always 1\n  ms gui-schema | jq '.subcommands[].name' # list subcommands\n  ms gui-schema | jq '.subcommands[] | select(.name == \"encode\").flags'", EXIT_PRINTER)
     )]
     GuiSchema,
 
@@ -138,7 +158,8 @@ enum Command {
     /// release asset on each `ms-cli-v*` tag.
     #[command(
         name = "gen-man",
-        after_long_help = "EXAMPLES:\n  ms gen-man --out ./man         # write ms.1, ms-encode.1, … into ./man\n  ms gen-man --out \"${XDG_DATA_HOME:-$HOME/.local/share}/man/man1\"   # user manpath"
+        after_help = EXIT_PRINTER,
+        after_long_help = format!("{}\n\n{}", "EXAMPLES:\n  ms gen-man --out ./man         # write ms.1, ms-encode.1, … into ./man\n  ms gen-man --out \"${XDG_DATA_HOME:-$HOME/.local/share}/man/man1\"   # user manpath", EXIT_PRINTER)
     )]
     GenMan(cmd::gen_man::GenManArgs),
 
@@ -151,10 +172,12 @@ enum Command {
     /// 4 unverified) on correction-applied (a corrected ms1 is an UNVERIFIED
     /// candidate that cannot self-verify; confirm independently before use; D26);
     /// exit 0 if input was already valid; exit 2 if BCH-uncorrectable
-    /// (`TooManyErrors`) or the input is not an ms1 card; 22 (20 + 2) if a
-    /// correction was applied but the corrected string is not a card.
+    /// (`TooManyErrors`) or the input is neither an ms1 card nor a K-of-N
+    /// share; 22 (20 + 2) if a correction was applied but the corrected string
+    /// is neither. A share repairs like a card (0 or 20).
     #[command(
-        after_long_help = "EXAMPLES:\n  ms repair --in broken.txt                    # text-form report on stdout\n  ms repair --ms1 - < broken.txt               # read the ms1 from stdin\n  ms repair --in broken.txt --json             # JSON envelope on stdout\n  ms repair --in broken.txt --out repaired.ms1 # the repaired ms1 alone, to an owner-only file"
+        after_help = EXIT_REPAIR,
+        after_long_help = format!("{}\n\n{}", "EXAMPLES:\n  ms repair --in broken.txt                    # text-form report on stdout\n  ms repair --ms1 - < broken.txt               # read the ms1 from stdin\n  ms repair --in broken.txt --json             # JSON envelope on stdout\n  ms repair --in broken.txt --out repaired.ms1 # the repaired ms1 alone, to an owner-only file", EXIT_REPAIR)
     )]
     Repair(cmd::repair::RepairArgs),
 
@@ -165,7 +188,8 @@ enum Command {
     /// advisory is emitted). A non-English `--phrase` splits as a `mnem`
     /// share-set so the wordlist language survives the split. Bounds: 2 ≤ K ≤ N ≤ 31.
     #[command(
-        after_long_help = "EXAMPLES:\n  ms split --in phrase.txt -k 2 -n 3\n  ms split --hex - -k 3 -n 5 < entropy.hex\n  ms split --in phrase.txt -k 2 -n 3 --out shares.txt   # one share per line, owner-only\n  ms split --language japanese --in phrase-ja.txt -k 2 -n 3 --json | jq .shares"
+        after_help = EXIT_SPLIT,
+        after_long_help = format!("{}\n\n{}", "EXAMPLES:\n  ms split --in phrase.txt -k 2 -n 3\n  ms split --hex - -k 3 -n 5 < entropy.hex\n  ms split --in phrase.txt -k 2 -n 3 --out shares.txt   # one share per line, owner-only\n  ms split --language japanese --in phrase-ja.txt -k 2 -n 3 --json | jq .shares", EXIT_SPLIT)
     )]
     Split(cmd::split::SplitArgs),
 
@@ -176,7 +200,8 @@ enum Command {
     /// The secret-at-`s` share is NEVER a valid input. Recovered output is
     /// private key material (a stderr advisory is emitted).
     #[command(
-        after_long_help = "EXAMPLES:\n  ms combine --in shares.txt                # recover the BIP-39 phrase (one share per line)\n  ms combine - < shares.txt                 # the same shares on stdin\n  ms combine --in shares.txt --to ms1       # recover a single ms1 string\n  ms combine --in shares.txt --to entropy   # recover raw entropy hex\n  ms combine --in shares.txt --json | jq .phrase"
+        after_help = EXIT_COMBINE,
+        after_long_help = format!("{}\n\n{}", "EXAMPLES:\n  ms combine --in shares.txt                # recover the BIP-39 phrase (one share per line)\n  ms combine - < shares.txt                 # the same shares on stdin\n  ms combine --in shares.txt --to ms1       # recover a single ms1 string\n  ms combine --in shares.txt --to entropy   # recover raw entropy hex\n  ms combine --in shares.txt --json | jq .phrase", EXIT_COMBINE)
     )]
     Combine(cmd::combine::CombineArgs),
 }

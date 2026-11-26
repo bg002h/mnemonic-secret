@@ -108,10 +108,27 @@ fn future_format_is_invalid_2_and_verify_stops_saying_ok() {
 
 #[test]
 fn empty_input_is_invalid_2() {
-    assert_eq!(code(&ms(&["decode", "-"], "")), 2);
-    assert_eq!(code(&ms(&["encode", "--phrase", "-"], "")), 2);
-    assert_eq!(code(&ms(&["repair", "--ms1", "-"], "")), 2);
-    assert_eq!(code(&ms(&["combine", "-"], "")), 2);
+    let d = tempfile::tempdir().unwrap();
+    let empty = file(&d, "empty", "\n");
+    let runs: &[&[&str]] = &[
+        &["decode", "-"],
+        &["verify", "-"],
+        &["inspect", "-"],
+        &["derive", "-"],
+        &["encode", "--phrase", "-"],
+        &["encode", "--hex", "-"],
+        &["repair", "--ms1", "-"],
+        &["combine", "-"],
+        &["hashlock", "--hex", "-"],
+        &["decode", "--in", &empty],
+    ];
+    for args in runs {
+        let o = ms(args, "  \n");
+        assert_eq!(code(&o), 2, "{args:?}");
+        // Final review N-4: the message says the input is empty.
+        let err = String::from_utf8_lossy(&o.stderr);
+        assert!(err.contains("is empty"), "{args:?}: {err}");
+    }
 }
 
 #[test]
@@ -365,4 +382,107 @@ fn repair_of_a_corrected_non_card_is_22() {
     let o = ms(&["repair", "--ms1", "-"], &good);
     assert_eq!(code(&o), 2);
     assert!(o.stdout.is_empty());
+}
+
+/// Shares 0 and 1 of a 2-of-3 split of MS0's entropy (index order as encoded).
+fn shares() -> Vec<String> {
+    ms_codec::encode_shares(
+        ms_codec::Tag::ENTR,
+        ms_codec::Threshold::new(2).unwrap(),
+        3,
+        &ms_codec::Payload::Entr(vec![0u8; 16]),
+    )
+    .unwrap()
+    .into_iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+/// A share plate is a valid string of the format (final review I-2): a clean
+/// share is echoed at 0, a corrected one is printed, filed and exits 20 (no
+/// oracle), and the message names it a share. 22 stays for a non-card,
+/// non-share string (see `repair_of_a_corrected_non_card_is_22`).
+#[test]
+fn repair_of_a_share_plate_is_0_or_20() {
+    let set = shares();
+    let share = &set[0];
+    assert!(!share.starts_with("ms12s"), "a distributed share: {share}");
+    let o = ms(&["repair", "--ms1", "-"], share);
+    assert_eq!(code(&o), 0, "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(String::from_utf8_lossy(&o.stdout).contains(share.as_str()));
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(
+        err.contains("share") && !err.contains("NOT an ms1"),
+        "{err}"
+    );
+
+    let mut chars: Vec<char> = share.chars().collect();
+    chars[12] = if chars[12] == 'q' { 'p' } else { 'q' };
+    let damaged: String = chars.into_iter().collect();
+    let d = tempfile::tempdir().unwrap();
+    let out = d.path().join("share.ms1");
+    let o = ms(
+        &["repair", "--ms1", "-", "--out", &out.display().to_string()],
+        &damaged,
+    );
+    assert_eq!(code(&o), 20, "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(String::from_utf8_lossy(&o.stdout).contains(share.as_str()));
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(
+        err.contains("UNVERIFIED") && err.contains("share") && !err.contains("NOT an ms1"),
+        "{err}"
+    );
+    assert_eq!(std::fs::read_to_string(&out).unwrap(), format!("{share}\n"));
+    // JSON: the ordinary candidate envelope, marked as a share.
+    let o = ms(&["repair", "--ms1", "-", "--json"], &damaged);
+    assert_eq!(code(&o), 20);
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["verdict"], "candidate", "{v}");
+    assert!(v.get("not_a_card").is_none(), "{v}");
+    assert_eq!(v["share"]["threshold"], 2, "{v}");
+    // The corrected string combines with a second share to the original secret.
+    let o = ms(&["combine", "-"], &format!("{share}\n{}\n", set[1]));
+    assert_eq!(code(&o), 0, "{}", String::from_utf8_lossy(&o.stderr));
+}
+
+/// R11 per verb (final review M-4): each verb's help, short and long, has one
+/// `Exit status:` line naming the codes that verb can return.
+#[test]
+fn each_verb_help_states_its_exit_status() {
+    let want: &[(&str, &[&str])] = &[
+        ("derive", &["0 ", "2 ", "8 ", "32 ", "64 "]),
+        ("encode", &["0 ", "2 ", "8 ", "32 ", "64 "]),
+        ("decode", &["0 ", "2 ", "8 ", "32 ", "64 "]),
+        ("hashlock", &["0 ", "2 ", "8 ", "32 ", "64 "]),
+        ("inspect", &["0 ", "2 would not decode", "8 ", "32 ", "64 "]),
+        ("verify", &["0 ", "1 ", "2 ", "8 ", "32 ", "64 "]),
+        ("vectors", &["0 ", "32 ", "64 "]),
+        ("gui-schema", &["0 ", "32 ", "64 "]),
+        ("gen-man", &["0 ", "32 ", "64 "]),
+        (
+            "repair",
+            &["0 ", "20 ", "22 ", "2 ", "8 ", "32 ", "52 ", "64 "],
+        ),
+        ("split", &["0 ", "2 ", "8 ", "32 ", "64 "]),
+        ("combine", &["0 ", "2 ", "8 ", "32 ", "64 "]),
+    ];
+    for (verb, codes) in want {
+        for flag in ["-h", "--help"] {
+            let o = ms(&[verb, flag], "");
+            assert_eq!(code(&o), 0);
+            let out = String::from_utf8_lossy(&o.stdout);
+            let lines: Vec<&str> = out
+                .lines()
+                .filter(|l| l.starts_with("Exit status:"))
+                .collect();
+            assert_eq!(lines.len(), 1, "{verb} {flag}: {out}");
+            for c in *codes {
+                assert!(
+                    lines[0].contains(&format!(" {c}")),
+                    "{verb} {flag} lacks `{c}`: {}",
+                    lines[0]
+                );
+            }
+        }
+    }
 }
