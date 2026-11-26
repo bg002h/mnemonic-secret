@@ -200,6 +200,13 @@ impl From<ms_codec::Error> for CliError {
     fn from(e: ms_codec::Error) -> Self {
         match e {
             ms_codec::Error::Codex32(c) => CliError::Codex32(c),
+            ms_codec::Error::MnemUnknownLanguage(code) => CliError::FormatViolation {
+                underlying_kind: "MnemUnknownLanguage",
+                message: format!(
+                    "unknown mnem wordlist-language code {code} (known codes are 0-9)"
+                ),
+                details: Some(json!({ "got": code })),
+            },
             ms_codec::Error::WrongHrp { got } => CliError::FormatViolation {
                 underlying_kind: "WrongHrp",
                 message: format!("wrong HRP: got {:?}, expected \"ms\"", got),
@@ -398,26 +405,50 @@ mod tests {
             (CliError::VerifyPhraseMismatch, x::NO),
         ];
         for (e, want) in &rows {
-            // Exhaustiveness guard: every variant appears in `rows`.
-            match e {
-                CliError::BadInput(_)
-                | CliError::Usage(_)
-                | CliError::Refused(_)
-                | CliError::Io(_)
-                | CliError::Internal(_)
-                | CliError::OutputWrite(_)
-                | CliError::StdoutIsOut(_)
-                | CliError::Bip39(_)
-                | CliError::Codex32(_)
-                | CliError::UnexpectedStringLength { .. }
-                | CliError::PayloadLengthMismatch { .. }
-                | CliError::FormatViolation { .. }
-                | CliError::FutureFormat { .. }
-                | CliError::VerifyPhraseMismatch => {}
-            }
             assert_eq!(e.exit_code(), *want, "{e:?}");
+            assert_eq!(expected_class(e), *want, "{e:?}");
         }
-        assert_eq!(rows.len(), 14, "one row per variant");
+        // Every variant has a row: `expected_class` is exhaustive, so a new
+        // variant must be given a class there, and its discriminant set must
+        // equal the rows'.
+        for (i, (a, _)) in rows.iter().enumerate() {
+            for (b, _) in &rows[i + 1..] {
+                assert_ne!(
+                    std::mem::discriminant(a),
+                    std::mem::discriminant(b),
+                    "{a:?} has two rows"
+                );
+            }
+        }
+        let declared = enum_variants(include_str!("error.rs"), "pub enum CliError {");
+        assert_eq!(
+            rows.len(),
+            declared.len(),
+            "one row per variant: {declared:?}"
+        );
+    }
+
+    /// The spec's class for each `CliError` variant, written independently of
+    /// `exit_code()`. Exhaustive: a new variant does not compile until it is
+    /// classed here; the row count is checked against the declared enum.
+    fn expected_class(e: &CliError) -> u8 {
+        use crate::exit_code as x;
+        match e {
+            CliError::BadInput(_) => x::INVALID,
+            CliError::Usage(_) => x::USAGE,
+            CliError::Refused(_) => x::REFUSED,
+            CliError::Io(_) => x::IO,
+            CliError::Internal(_) => x::INTERNAL,
+            CliError::OutputWrite(_) => x::IO,
+            CliError::StdoutIsOut(_) => x::REFUSED,
+            CliError::Bip39(_) => x::INVALID,
+            CliError::Codex32(_) => x::INVALID,
+            CliError::UnexpectedStringLength { .. } => x::INVALID,
+            CliError::PayloadLengthMismatch { .. } => x::INVALID,
+            CliError::FormatViolation { .. } => x::INVALID,
+            CliError::FutureFormat { .. } => x::INVALID,
+            CliError::VerifyPhraseMismatch => x::NO,
+        }
     }
 
     /// R13: every `ms_codec::Error` variant ms-cli dispatches lands in its class.
@@ -430,6 +461,7 @@ mod tests {
                 E::Codex32(ms_codec::codex32::Error::InvalidChar('!')),
                 x::INVALID,
             ),
+            (E::MnemUnknownLanguage(10), x::INVALID),
             (E::WrongHrp { got: "mq".into() }, x::INVALID),
             (E::ThresholdNotZero { got: b'2' }, x::INVALID),
             (E::ShareIndexNotSecret { got: 'a' }, x::INVALID),
@@ -474,10 +506,74 @@ mod tests {
             ),
             (E::RandomnessUnavailable, x::IO),
         ];
+        let mut tabled: Vec<&'static str> = Vec::new();
         for (e, want) in rows {
+            tabled.push(codec_variant_name(&e));
             let c: CliError = e.into();
+            assert!(!matches!(c, CliError::Internal(_)), "{c:?}");
             assert_eq!(c.exit_code(), want, "{c:?}");
         }
+        // `ms_codec::Error` is `#[non_exhaustive]`, so no match here can be
+        // exhaustive. ms-codec is in this workspace: read its `pub enum Error`
+        // and require one row per variant, so a new codec variant fails this
+        // test instead of silently reaching the 101 wildcard.
+        tabled.sort_unstable();
+        let mut declared = codec_error_variants_from_source();
+        declared.sort_unstable();
+        assert_eq!(tabled, declared, "one row per ms_codec::Error variant");
+    }
+
+    /// The variant's name; the wildcard arm keeps this compiling on a new variant
+    /// (the source comparison above is what catches it).
+    fn codec_variant_name(e: &ms_codec::Error) -> &'static str {
+        use ms_codec::Error as E;
+        match e {
+            E::Codex32(_) => "Codex32",
+            E::MnemUnknownLanguage(_) => "MnemUnknownLanguage",
+            E::WrongHrp { .. } => "WrongHrp",
+            E::ThresholdNotZero { .. } => "ThresholdNotZero",
+            E::ShareIndexNotSecret { .. } => "ShareIndexNotSecret",
+            E::TagInvalidAlphabet { .. } => "TagInvalidAlphabet",
+            E::UnknownTag { .. } => "UnknownTag",
+            E::ReservedTagNotEmittedInV01 { .. } => "ReservedTagNotEmittedInV01",
+            E::PreimageLengthMismatch { .. } => "PreimageLengthMismatch",
+            E::TagKindMismatch { .. } => "TagKindMismatch",
+            E::RandomnessUnavailable => "RandomnessUnavailable",
+            E::ReservedPrefixViolation { .. } => "ReservedPrefixViolation",
+            E::UnexpectedStringLength { .. } => "UnexpectedStringLength",
+            E::PayloadLengthMismatch { .. } => "PayloadLengthMismatch",
+            E::TooManyErrors { .. } => "TooManyErrors",
+            E::InvalidShareCount { .. } => "InvalidShareCount",
+            E::InvalidThreshold(_) => "InvalidThreshold",
+            E::IsShareNotSingleString { .. } => "IsShareNotSingleString",
+            E::SecretShareSuppliedToCombine => "SecretShareSuppliedToCombine",
+            E::InconsistentShareSet => "InconsistentShareSet",
+            _ => "<untabled>",
+        }
+    }
+
+    fn codec_error_variants_from_source() -> Vec<&'static str> {
+        enum_variants(
+            include_str!("../../ms-codec/src/error.rs"),
+            "pub enum Error {",
+        )
+    }
+
+    /// Variant names of the enum opened by `head` in `src` (4-space-indented
+    /// identifiers inside the enum body, which closes at a column-0 `}`).
+    fn enum_variants(src: &'static str, head: &str) -> Vec<&'static str> {
+        let body = src.split_once(head).expect("enum declared").1;
+        let body = body.split_once("\n}").expect("enum body closes").0;
+        body.lines()
+            .filter_map(|l| l.strip_prefix("    "))
+            .filter(|l| l.starts_with(|c: char| c.is_ascii_uppercase()))
+            .map(|l| {
+                let end = l
+                    .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                    .unwrap_or(l.len());
+                &l[..end]
+            })
+            .collect()
     }
 
     #[test]

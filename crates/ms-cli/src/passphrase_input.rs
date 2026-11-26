@@ -505,6 +505,31 @@ fn is_valid_env_name(name: &str) -> bool {
     chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
 }
 
+/// The `--passphrase` checks judged from the command line alone (R2: 64
+/// before any input is read): one passphrase source, and an `@env:` NAME of
+/// the accepted form.
+pub(crate) fn check_usage(
+    value: Option<&str>,
+    stdin_flag: bool,
+    admitted: Option<&str>,
+) -> Result<()> {
+    if stdin_flag && value.is_some() {
+        return Err(CliError::Usage(
+            "--passphrase and --passphrase-stdin cannot both be given (one passphrase, one stdin)"
+                .into(),
+        ));
+    }
+    if source(value, stdin_flag, admitted) == PassphraseSource::Env {
+        let var = value.unwrap_or("").strip_prefix(ENV_PREFIX).unwrap_or("");
+        if !is_valid_env_name(var) {
+            return Err(CliError::Usage(format!(
+                "--passphrase: invalid env-var name `{var}`"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Resolve `--passphrase @env:VAR`. Unset is an ERROR naming `VAR`: treating
 /// it as the empty passphrase would silently derive a different wallet.
 fn resolve_env(value: &str) -> Result<Zeroizing<String>> {
@@ -552,12 +577,7 @@ pub(crate) fn resolve_or_empty(
     stdin_flag: bool,
     admitted: Option<&str>,
 ) -> Result<Zeroizing<String>> {
-    if stdin_flag && value.is_some() {
-        return Err(CliError::Usage(
-            "--passphrase and --passphrase-stdin cannot both be given (one passphrase, one stdin)"
-                .into(),
-        ));
-    }
+    check_usage(value, stdin_flag, admitted)?;
     match source(value, stdin_flag, admitted) {
         PassphraseSource::Absent => Ok(Zeroizing::new(String::new())),
         PassphraseSource::Stdin => read_stdin_passphrase(),

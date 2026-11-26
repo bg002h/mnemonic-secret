@@ -194,6 +194,52 @@ fn usage_is_64() {
     );
 }
 
+/// R2: a setting is judged before any input is read or any refusal runs.
+/// Each run below would otherwise read garbage (2) or meet a refusal (8).
+#[test]
+fn usage_is_judged_before_input_and_refusals() {
+    // An `@env:` NAME is part of the command line.
+    let o = ms(&["derive", "-", "--passphrase", "@env:bad-name"], "garbage");
+    assert_eq!(code(&o), 64, "{}", String::from_utf8_lossy(&o.stderr));
+    // An account index is a setting: hardened indices stop at 2^31 - 1.
+    let o = ms(
+        &[
+            "derive",
+            "-",
+            "--template",
+            "bip84",
+            "--account",
+            "2147483648",
+        ],
+        "garbage",
+    );
+    assert_eq!(code(&o), 64, "{}", String::from_utf8_lossy(&o.stderr));
+    let o = ms(
+        &[
+            "derive",
+            "-",
+            "--template",
+            "bip84",
+            "--account",
+            "2147483647",
+        ],
+        MS0,
+    );
+    assert_eq!(code(&o), 0, "{}", String::from_utf8_lossy(&o.stderr));
+    // Two hashlock sources with stdout aliasing `--out`: the count is a usage
+    // error (64) before the alias refusal (8).
+    let d = tempfile::tempdir().unwrap();
+    let out = d.path().join("o");
+    let f = std::fs::File::create(&out).unwrap();
+    let o = std::process::Command::new(env!("CARGO_BIN_EXE_ms"))
+        .args(["hashlock", "--hex", "-", "--random", "--out"])
+        .arg(&out)
+        .stdout(f)
+        .output()
+        .unwrap();
+    assert_eq!(code(&o), 64, "{}", String::from_utf8_lossy(&o.stderr));
+}
+
 // ── 32 IO ──
 
 #[test]
@@ -300,6 +346,21 @@ fn repair_of_a_corrected_non_card_is_22() {
         "{err}"
     );
     assert!(!out.exists(), "a non-card is never filed");
+    // The `--out` line follows its reason (cause, then consequence).
+    let reason = err.find("NOT an ms1 card").unwrap();
+    let not_written = err.find("was not written").expect("--out line");
+    assert!(reason < not_written, "{err}");
+    // R5 in JSON: the envelope says "not a card" too, not a bare candidate.
+    let o = ms(&["repair", "--ms1", "-", "--json"], &damaged);
+    assert_eq!(code(&o), 22);
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["verdict"], "candidate", "{v}");
+    assert_eq!(v["not_a_card"]["kind"], "UnknownTag", "{v}");
+    assert!(v["not_a_card"]["message"].as_str().is_some(), "{v}");
+    // A correction that decodes carries no such field (shape unchanged at 20).
+    let o = ms(&["repair", "--ms1", "-", "--json"], MS0_C1);
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert!(v.get("not_a_card").is_none(), "{v}");
     // The same string with a clean checksum fails atomically: 2, nothing printed.
     let o = ms(&["repair", "--ms1", "-"], &good);
     assert_eq!(code(&o), 2);

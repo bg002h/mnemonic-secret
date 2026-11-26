@@ -59,8 +59,8 @@ pub struct DeriveArgs {
     #[arg(long, value_enum)]
     pub template: Option<Template>,
 
-    /// Account index (with `--template`). Default 0.
-    #[arg(long, default_value_t = 0)]
+    /// Account index (with `--template`), 0 to 2147483647 (hardened). Default 0.
+    #[arg(long, default_value_t = 0, value_parser = clap::value_parser!(u32).range(..0x8000_0000))]
     pub account: u32,
 
     /// Network for the account xpub serialization + coin-type. Default mainnet.
@@ -424,6 +424,8 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
         pp_admitted,
         &mut stderr,
     );
+    // R2: the passphrase's command-line checks (64) before any input is read.
+    crate::passphrase_input::check_usage(pp_value, args.passphrase_stdin, pp_admitted)?;
 
     // Single-stdin guard: the ACTIVE entropy source + --passphrase-stdin cannot
     // both consume stdin.

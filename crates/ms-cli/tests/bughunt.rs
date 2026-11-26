@@ -331,11 +331,10 @@ fn bughunt_ms_08_cli_repair_message_claims_more_than_8() {
 }
 
 // ---------------------------------------------------------------------------
-// #9 MnemUnknownLanguage falls through to the catch-all BadInput (exit 1,
+// #9 MnemUnknownLanguage fell through to the catch-all (exit 1, later 101,
 // "unhandled ms_codec::Error variant"). Report: FormatViolation, exit 2.
 // ---------------------------------------------------------------------------
 #[test]
-#[ignore = "deferred-minor: ms-cli-mnem-unknown-language-catch-all"]
 fn bughunt_ms_09_mnem_unknown_language_unhandled() {
     // prefix 0x02 (mnem), language byte 10 (valid are 0..=9), 16 B entropy.
     let mut payload = vec![0x02u8, 10u8];

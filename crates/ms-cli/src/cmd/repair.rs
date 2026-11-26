@@ -48,7 +48,9 @@
 //! `schema_version`, `kind`, `verdict`, `corrected_chunks`, `repairs`) so
 //! cross-CLI parsers reuse the same struct. `verdict` (Cycle F
 //! `ms1-repair-demote-to-candidate`) is `"blessed"` for a clean (0-correction)
-//! decode, `"candidate"` for a touched substitution correction.
+//! decode, `"candidate"` for a touched substitution correction. A corrected
+//! string that does not decode (exit 22) adds `not_a_card: {kind, message}`
+//! after `verdict`; the field is absent otherwise.
 
 use clap::Args;
 use ms_codec::CorrectionDetail;
@@ -192,16 +194,11 @@ pub fn run(args: RepairArgs) -> Result<u8> {
     if let Some(path) = args.out.as_deref() {
         if not_a_card.is_none() {
             crate::out::write_artifact(path, &format!("{}\n", *corrected_chunk))?;
-        } else {
-            eprintln!(
-                "repair: --out {} was not written: the corrected string is not a card",
-                path.display()
-            );
         }
     }
 
     if args.json {
-        emit_json(corrected_chunks.as_slice(), &reports)?;
+        emit_json(corrected_chunks.as_slice(), &reports, not_a_card.as_ref())?;
     } else {
         emit_text(corrected_chunks.as_slice(), &reports)?;
     }
@@ -239,6 +236,13 @@ pub fn run(args: RepairArgs) -> Result<u8> {
             "repair: the corrected string is NOT an ms1 card this version decodes: {}",
             e.message()
         );
+        // Cause first, then its consequence for `--out`.
+        if let Some(path) = args.out.as_deref() {
+            eprintln!(
+                "repair: --out {} was not written: the corrected string is not a card",
+                path.display()
+            );
+        }
         bits |= Bits::INVALID;
     }
     Ok(bits.to_exit_code())
@@ -369,8 +373,19 @@ struct RepairJson<'a> {
     /// correction. Fixed position right after `kind` — byte-matches the
     /// toolkit's `RepairJson.verdict` field order (D27/D9).
     verdict: &'static str,
+    /// Present only when the corrected string does not decode (exit 22,
+    /// decision 6): why it is not a card. Absent otherwise, so the 0 and 20
+    /// envelopes are unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    not_a_card: Option<NotACardJson>,
     corrected_chunks: &'a [String],
     repairs: Vec<RepairJsonDetail<'a>>,
+}
+
+#[derive(Serialize)]
+struct NotACardJson {
+    kind: &'static str,
+    message: String,
 }
 
 #[derive(Serialize)]
@@ -388,7 +403,11 @@ struct RepairJsonPosition {
     now: String,
 }
 
-fn emit_json(corrected_chunks: &[String], reports: &[RepairDetail]) -> Result<()> {
+fn emit_json(
+    corrected_chunks: &[String],
+    reports: &[RepairDetail],
+    not_a_card: Option<&CliError>,
+) -> Result<()> {
     let any_correction = reports.iter().any(|r| !r.corrected_positions.is_empty());
     let envelope = RepairJson {
         schema_version: "1",
@@ -398,6 +417,10 @@ fn emit_json(corrected_chunks: &[String], reports: &[RepairDetail]) -> Result<()
         } else {
             "blessed"
         },
+        not_a_card: not_a_card.map(|e| NotACardJson {
+            kind: e.kind(),
+            message: e.message(),
+        }),
         corrected_chunks,
         repairs: reports
             .iter()
@@ -428,4 +451,57 @@ fn emit_json(corrected_chunks: &[String], reports: &[RepairDetail]) -> Result<()
     );
     println!("{}", *body);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::correct_only;
+    use ms_codec::{Payload, Tag};
+
+    /// Flip symbol `i` of `s` (after `ms1`) to a different alphabet symbol.
+    fn damage(s: &str, positions: &[usize]) -> String {
+        let mut b: Vec<u8> = s.bytes().collect();
+        for &i in positions {
+            let at = 3 + i;
+            b[at] = if b[at] == b'q' { b'p' } else { b'q' };
+        }
+        String::from_utf8(b).unwrap()
+    }
+
+    /// N2 drift guard: `correct_only` re-implements the codec's BCH steps, so
+    /// on strings the codec corrects AND decodes it must report the same
+    /// corrections, on clean strings none, and on uncorrectable ones fail too.
+    #[test]
+    fn correct_only_matches_decode_with_correction() {
+        let mut checked = 0;
+        for len in [16usize, 20, 24, 28, 32] {
+            let entropy: Vec<u8> = (0..len as u8).map(|i| i.wrapping_mul(37)).collect();
+            let card = ms_codec::encode(Tag::ENTR, &Payload::Entr(entropy)).unwrap();
+            let n = card.len() - 3;
+            for positions in [
+                vec![],
+                vec![0],
+                vec![n - 1],
+                vec![5, 9],
+                vec![1, n / 2, n - 2],
+                vec![2, 7, 11, n - 4],
+            ] {
+                let s = damage(&card, &positions);
+                let (_t, _p, want) = ms_codec::decode_with_correction(&s)
+                    .unwrap_or_else(|e| panic!("{positions:?}: {e:?}"));
+                assert_eq!(want.len(), positions.len());
+                assert_eq!(correct_only(&s), Some(want), "{len} B {positions:?}");
+                // Upper case is the same string to both.
+                let up = s.to_ascii_uppercase();
+                let (_t, _p, want) = ms_codec::decode_with_correction(&up).unwrap();
+                assert_eq!(correct_only(&up), Some(want));
+                checked += 1;
+            }
+            // Beyond the correction bound both give up.
+            let s = damage(&card, &[0, 3, 6, 9, 12, 15]);
+            assert!(ms_codec::decode_with_correction(&s).is_err());
+            assert_eq!(correct_only(&s), None, "{len} B, six errors");
+        }
+        assert_eq!(checked, 30);
+    }
 }

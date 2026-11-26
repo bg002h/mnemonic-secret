@@ -456,13 +456,13 @@ The root `ms --help` ends with the constellation legend.
 | 4 | UNVERIFIED | only with 16, from `repair` (a single ms1 has no oracle) | — |
 | 8 | REFUSED | a secret on argv (the pre-parser guard, `--allow-argv-secret`); `--out` is the file stdout is on; `--out` exists (`split`, `hashlock --random`); a digest-shaped hashlock phrase (`--phrase-looks-like-digest-ok`) | `Refused`, `StdoutIsOut` |
 | 16 | REPAIRED | `repair` applied a correction (always with 4: 20) | — |
-| 32 | IO | `--in` missing or unreadable; stdin unreadable; an unwritable `--out` or `gen-man --out`; an unset `@env:` variable; no OS randomness; a stdout write error or a closed stdout (ADDED to the other bits, R8) | `Io`, `OutputWrite` |
-| 64 | USAGE | clap's errors; the verb's own checks on the command line alone: two readers on one stdin, `--in` with an argument, K or N out of range, a source count, a flag gate, an invalid `@env:` name, non-UTF-8 argv | `Usage` |
-| 101 | INTERNAL | a panic, a serializer that cannot fail, an `ms_codec::Error` variant ms-cli has not dispatched (R13) | `Internal` |
+| 32 | IO | `--in` missing or unreadable; stdin unreadable; an unwritable `--out` or `gen-man --out`; an unset `@env:` variable; no OS randomness; a stdout write error or a closed stdout (ADDED to the other bits, R8; a closed stdout is detected on Linux, Android, macOS and the BSDs, not on Windows or other Unix) | `Io`, `OutputWrite` |
+| 64 | USAGE | clap's errors; the verb's own checks on the command line alone: two readers on one stdin, `--in` with an argument, K or N out of range, `derive --account` of 2^31 or more, a source count, a flag gate, an invalid `@env:` name, non-UTF-8 argv; all judged before any input is read or any refusal runs (R2) | `Usage` |
+| 101 | INTERNAL | a panic, a serializer or BIP-32 derivation that cannot fail, an `ms_codec::Error` variant newer than this build (R13: a test fails on any variant of the workspace's ms-codec that has no class) | `Internal` |
 
 `repair` sums: 0 clean; 20 a correction (16 + 4); 22 a correction whose result
 is not a card ms decodes (20 + 2: printed with the warning, `--out` not
-written; decision 6); 2 uncorrectable or a clean string that is not a card
+written; decision 6; `--json` adds `not_a_card: {kind, message}` after `verdict`); 2 uncorrectable or a clean string that is not a card
 (nothing printed). A failed stdout write adds 32 (a lost repair report: 52).
 
 **Note on exit 64.** Clap's default usage-error exit code is 2, but 2 is
@@ -535,6 +535,7 @@ For each variant of `ms_codec::Error`, the table below specifies the CliError va
 |---|---|---|---|
 | `Codex32(e)` | `Codex32(e)` | 2 | `null` (`message` carries `friendly_codex32(&e)` text) |
 | `WrongHrp { got }` | `FormatViolation { underlying_kind: "WrongHrp", … }` | 2 | `{"got": "<hrp-string>"}` |
+| `MnemUnknownLanguage(code)` | `FormatViolation { underlying_kind: "MnemUnknownLanguage", … }` | 2 | `{"got": <u8-as-number>}` |
 | `ThresholdNotZero { got }` | `FormatViolation { underlying_kind: "ThresholdNotZero", … }` | 2 | `{"got": "<ASCII-digit-as-string>"}` |
 | `ShareIndexNotSecret { got }` | `FormatViolation { underlying_kind: "ShareIndexNotSecret", … }` | 2 | `{"got": "<char>"}` |
 | `TagInvalidAlphabet { got }` | `FormatViolation { underlying_kind: "TagInvalidAlphabet", … }` | 2 | `{"got_hex": "<8-hex-chars>"}` (bytes may not be UTF-8) |
@@ -546,7 +547,7 @@ For each variant of `ms_codec::Error`, the table below specifies the CliError va
 | `TooManyErrors { bound }`, the K-of-N share variants, `PreimageLengthMismatch`, `TagKindMismatch` | `FormatViolation { … }` | 2 | per variant |
 | `InvalidThreshold`, `InvalidShareCount` | `Usage` (K and N are settings) | 64 | `null` |
 | `RandomnessUnavailable` | `Io` | 32 | `null` |
-| any variant not dispatched above (`#[non_exhaustive]`) | `Internal` | 101 | `null` |
+| any variant not dispatched above (`#[non_exhaustive]`; only a newer ms-codec than the build's, since `from_ms_codec_every_variant_has_its_class` reads the workspace's enum) | `Internal` | 101 | `null` |
 
 CliError-only variants (no ms-codec source):
 

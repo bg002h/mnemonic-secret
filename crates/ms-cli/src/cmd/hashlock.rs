@@ -390,11 +390,8 @@ fn method_line(d: &Derived) -> String {
 }
 
 pub fn run(args: HashlockArgs) -> Result<u8> {
-    // bh-ms-I1: hashlock always prints the record or the JSON on stdout, so stdout
-    // must not be the `--out` file (`--random` included); before anything is read.
-    if let Some(path) = args.out.as_deref() {
-        crate::out::refuse_stdout_alias(path)?;
-    }
+    // R2: the source count and the `--emit-record` gates are usage (64), judged
+    // from the command line alone, so they run before any refusal.
     let source = pick_source(&args)?;
     // Refused here rather than ignored: a flag that asks for a record and
     // silently produces none sends the operator looking for output that was
@@ -415,6 +412,11 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
             "--emit-record has nowhere to print the `phrase:` record under --no-engraving-card: in text mode the record goes on the card, and stdout carries only the public digest. Add --json to get it in the JSON object (phrase_record), or drop --no-engraving-card to get it on the card."
                 .into(),
         ));
+    }
+    // bh-ms-I1: hashlock always prints the record or the JSON on stdout, so stdout
+    // must not be the `--out` file (`--random` included); before anything is read.
+    if let Some(path) = args.out.as_deref() {
+        crate::out::refuse_stdout_alias(path)?;
     }
     let is_random = matches!(source, SourceKind::Random);
     let d = derive(&args, source)?;
