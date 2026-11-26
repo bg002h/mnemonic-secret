@@ -344,8 +344,9 @@ satisfies the gate; `--random --out FILE --json` is fine. **This narrows L21 and
 is OPERATOR RULING L25 (2026-09-05): `--out FILE` required — kept over
 "`--out` or `--json`" and "bare `--random`".**
 
-**Under `--random`, `--out` refuses to overwrite** (`create_new`; exit 64 naming
-the existing file). The 2026-08-26 overwrite ruling was made for artifacts that
+**Under `--random`, `--out` refuses to overwrite** (`create_new`; exit 8,
+REFUSED, naming the existing file; 64 before the constellation exit-code spec,
+2026-11-26). The 2026-08-26 overwrite ruling was made for artifacts that
 are a function of the operator's input, where a clobbered file is one re-run
 away; a random preimage exists nowhere else, and the spec's own acceptance
 filename (`--out X.txt`) is the shape a second policy would reuse on Tuesday
@@ -792,7 +793,7 @@ twice gives two different records; **zero sources exits 64 listing five**;
 **every one of the ten two-source pairs exits 64**, the stdin-contention pair
 (`--hashlock-phrase-stdin` with `-`) by name (tests M-4); `--random` without
 `--out` exits 64 naming `--out` — **including with `--json`** — and `--random
---out FILE` succeeds; `--random --out` onto an existing file exits 64 and
+--out FILE` succeeds; `--random --out` onto an existing file exits 8 (64 before the exit-code spec) and
 leaves the file's bytes unchanged, while the other four sources overwrite;
 `--method` with each of `--hex`, `--random` and `<ms1>` exits 64 (tests M-3).
 
