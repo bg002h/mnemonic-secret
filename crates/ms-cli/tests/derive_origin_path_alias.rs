@@ -69,6 +69,7 @@ fn a_bad_value_exits_the_same_under_either_spelling() {
     assert_ne!(new.status.code(), Some(0));
     assert_eq!(old.status.code(), new.status.code());
     assert_eq!(old.stdout, new.stdout);
+    assert_eq!(old.stderr, new.stderr);
 }
 
 /// `ms derive --help` names `--origin-path`, calls its values derivation
