@@ -1,5 +1,5 @@
 //! `ms derive` — read-only public derivation: the master fingerprint (always)
-//! and, with `--template`, an account xpub. No master seed / root xprv / private
+//! and, with `--origin-path`, an account xpub. No master seed / root xprv / private
 //! keys on stdout, no signing. The wordlist `--language` is load-bearing (the
 //! seed = PBKDF2 over the language-specific mnemonic string), so the master
 //! fingerprint depends on it — `ms decode`'s "DEFAULT" annotation is carried.
@@ -55,11 +55,12 @@ pub struct DeriveArgs {
     #[arg(long)]
     pub phrase: Option<String>,
 
-    /// Account-path template — emits an account xpub. Without it, only the master fingerprint.
-    #[arg(long, value_enum)]
-    pub template: Option<Template>,
+    /// Account origin path, by derivation scheme name — emits an account
+    /// xpub. Without it, only the master fingerprint.
+    #[arg(long, alias = "template", value_enum, value_name = "NAME")]
+    pub origin_path: Option<OriginPathName>,
 
-    /// Account index (with `--template`). Default 0.
+    /// Account index (with `--origin-path`). Default 0.
     #[arg(long, default_value_t = 0)]
     pub account: u32,
 
@@ -100,7 +101,7 @@ pub struct DeriveArgs {
     pub json: bool,
 }
 
-/// Account-path template: the BIP-defined default keypath for a script type.
+/// Named derivation scheme: the BIP-defined default account path for a script type.
 ///
 /// An operator knows their wallet's SCRIPT TYPE, not its derivation path. These
 /// names let them say the former and get the latter, which is the whole point —
@@ -123,11 +124,11 @@ pub struct DeriveArgs {
 /// composer declares exactly this origin for its seed-derived taproot slots
 /// (mnemonic-engrave SPEC_wallet_policy_composer.md C28), so a host-derived
 /// `key:` record must be able to match it. This is where permissiveness still
-/// STOPS: no bare `bip48` assumes taproot, and no template invents a path no
+/// STOPS: no bare `bip48` assumes taproot, and no scheme invents a path no
 /// wallet reads.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
 #[clap(rename_all = "lower")]
-pub enum Template {
+pub enum OriginPathName {
     Bip44,
     Bip49,
     Bip84,
@@ -156,7 +157,7 @@ pub enum Template {
     /// constellation's own alternative for a layout that can never be mistaken
     /// for BIP-48. (md admits account xpubs at depth 3 OR 4 --
     /// descriptor-mnemonic `parse/keys.rs`, `matches!(depth, 3 | 4)` -- so
-    /// depth is not the reason for either template.)
+    /// depth is not the reason for either scheme.)
     /// Purpose `270028'` reads as `bg002h` in a single
     /// component (`27`->bg, `00`, `2`, `8`->h) and sits permanently outside
     /// any plausible BIP number, so it cannot collide with a future
@@ -173,22 +174,22 @@ pub enum Template {
     Bg002hWsh,
 }
 
-impl Template {
+impl OriginPathName {
     fn purpose(self) -> u32 {
         match self {
-            Template::Bip44 => 44,
-            Template::Bip49 => 49,
-            Template::Bip84 => 84,
-            Template::Bip86 => 86,
-            Template::Bip48P2wsh
-            | Template::Bip48P2shP2wsh
-            | Template::Bip48
-            | Template::Bip48P2tr => 48,
-            Template::Bg002hTr | Template::Bg002hWsh => 270_028,
+            OriginPathName::Bip44 => 44,
+            OriginPathName::Bip49 => 49,
+            OriginPathName::Bip84 => 84,
+            OriginPathName::Bip86 => 86,
+            OriginPathName::Bip48P2wsh
+            | OriginPathName::Bip48P2shP2wsh
+            | OriginPathName::Bip48
+            | OriginPathName::Bip48P2tr => 48,
+            OriginPathName::Bg002hTr | OriginPathName::Bg002hWsh => 270_028,
         }
     }
 
-    /// The BIP-48 `script_type'` level, or `None` for the single-sig templates
+    /// The BIP-48 `script_type'` level, or `None` for the single-sig schemes
     /// whose account path stops at `account'`.
     ///
     /// BIP-48: `m / purpose' / coin_type' / account' / script_type' / change /
@@ -198,14 +199,14 @@ impl Template {
             // A bare bip48 lands on the SAME path as bip48-p2wsh; the only
             // difference is that this one was assumed rather than chosen, which
             // is what script_type_defaulted reports.
-            Template::Bip48P2wsh | Template::Bip48 => Some(2),
-            Template::Bip48P2shP2wsh => Some(1),
-            Template::Bip48P2tr => Some(3),
+            OriginPathName::Bip48P2wsh | OriginPathName::Bip48 => Some(2),
+            OriginPathName::Bip48P2shP2wsh => Some(1),
+            OriginPathName::Bip48P2tr => Some(3),
             // The constellation's own level-4 script values: 0' = tr, 1' = wsh.
             // Not BIP-48's 1'/2' -- reusing those would let the layout be
             // mistaken for BIP-48.
-            Template::Bg002hTr => Some(0),
-            Template::Bg002hWsh => Some(1),
+            OriginPathName::Bg002hTr => Some(0),
+            OriginPathName::Bg002hWsh => Some(1),
             _ => None,
         }
     }
@@ -216,25 +217,25 @@ impl Template {
     /// assumption and must not be annotated as one — a tool that cries
     /// "DEFAULT" when the operator chose is a tool whose warnings get ignored.
     fn script_type_defaulted(self) -> bool {
-        matches!(self, Template::Bip48)
+        matches!(self, OriginPathName::Bip48)
     }
 
     /// Human label for the script type, for the assumption notice.
     fn script_type_label(self) -> &'static str {
-        // Matches on the TEMPLATE, not on script_type()'s number: bg002h-wsh
+        // Matches on the SCHEME NAME, not on script_type()'s number: bg002h-wsh
         // and bip48-p2sh-p2wsh both sit at level-4 value 1', and labelling by
         // the number alone would describe one as the other.
         match self {
-            Template::Bip48P2wsh | Template::Bip48 => "2' p2wsh (native segwit)",
-            Template::Bip48P2shP2wsh => "1' p2sh-p2wsh (nested segwit)",
-            Template::Bip48P2tr => "3' p2tr (taproot multisig; Coldcard/Liana convention)",
-            Template::Bg002hTr => "0' tr (taproot)",
-            Template::Bg002hWsh => "1' wsh (native segwit multisig)",
+            OriginPathName::Bip48P2wsh | OriginPathName::Bip48 => "2' p2wsh (native segwit)",
+            OriginPathName::Bip48P2shP2wsh => "1' p2sh-p2wsh (nested segwit)",
+            OriginPathName::Bip48P2tr => "3' p2tr (taproot multisig; Coldcard/Liana convention)",
+            OriginPathName::Bg002hTr => "0' tr (taproot)",
+            OriginPathName::Bg002hWsh => "1' wsh (native segwit multisig)",
             _ => "",
         }
     }
 
-    /// The full account path for this template.
+    /// The full account path for this scheme.
     ///
     /// SINGLE source of the path string. It used to be `format!`-ed twice —
     /// once to derive and once to print — which is a standing invitation for
@@ -381,7 +382,7 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
              only:\n      \
              \n      \
              \x20\x20ms encode --in phrase.txt --out card.ms1\n      \
-             \x20\x20ms derive --in card.ms1 --template <TEMPLATE>"
+             \x20\x20ms derive --in card.ms1 --origin-path <NAME>"
                 .into(),
         ));
     }
@@ -537,7 +538,7 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
     );
     let master_fp = master.fingerprint(&secp);
 
-    let account: Option<(String, String)> = if let Some(t) = args.template {
+    let account: Option<(String, String)> = if let Some(t) = args.origin_path {
         // Derived and printed from ONE string, so the path shown can never
         // describe a different key than the xpub beside it.
         let path_str = t.account_path(args.network.coin(), args.account);
@@ -561,7 +562,7 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
             network: args.network.as_str(),
             account_path: account.as_ref().map(|(p, _)| p.clone()),
             account_xpub: account.as_ref().map(|(_, x)| x.clone()),
-            script_type_defaulted: args.template.is_some_and(|t| t.script_type_defaulted()),
+            script_type_defaulted: args.origin_path.is_some_and(|t| t.script_type_defaulted()),
             language: effective_lang.as_str(),
             language_defaulted: effective_lang_defaulted,
         };
@@ -578,7 +579,7 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
         // The ASSUMPTION notice, mirroring --language's. Loud on purpose: the
         // operator asked for "a BIP-48 multisig" and got a specific script type
         // they did not name, and that choice decides where their funds live.
-        if let Some(t) = args.template.filter(|t| t.script_type_defaulted()) {
+        if let Some(t) = args.origin_path.filter(|t| t.script_type_defaulted()) {
             writeln!(
                 stdout,
                 "script_type:         {} (DEFAULT)",
@@ -587,8 +588,8 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
             .ok();
             let _ = writeln!(
                 stderr,
-                "note: --template bip48 named no script type, so script_type {} was ASSUMED \
-                 (BIP-48 recommends it). The other registered choice is --template \
+                "note: --origin-path bip48 named no script type, so script_type {} was ASSUMED \
+                 (BIP-48 recommends it). The other registered choice is --origin-path \
                  bip48-p2sh-p2wsh; a cosigner key derived at the wrong script type will not \
                  match your wallet, so record which one this backup used",
                 t.script_type_label()

@@ -186,14 +186,14 @@ fn ms_derive_emits_watch_only_json_mode() {
 }
 
 #[test]
-fn ms_derive_emits_watch_only_with_template() {
-    // --template path: still W (account xpub is public key, cannot spend).
+fn ms_derive_emits_watch_only_with_origin_path() {
+    // --origin-path path: still W (account xpub is public key, cannot spend).
     let out = support::run(&[
         "derive",
         ABANDON_MS1,
         "--language",
         "english",
-        "--template",
+        "--origin-path",
         "bip84",
     ]);
     assert!(
@@ -204,7 +204,7 @@ fn ms_derive_emits_watch_only_with_template() {
     let stderr = String::from_utf8(out.stderr).expect("stderr utf-8");
     assert!(
         stderr.contains(WATCH_ONLY_LINE),
-        "ms derive --template must emit W advisory; got stderr={stderr:?}"
+        "ms derive --origin-path must emit W advisory; got stderr={stderr:?}"
     );
 }
 

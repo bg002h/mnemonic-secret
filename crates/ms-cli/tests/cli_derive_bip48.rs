@@ -1,11 +1,11 @@
-//! `ms derive --template bip48-*` — multisig account xpubs (BIP-48).
+//! `ms derive --origin-path bip48-*` — multisig account xpubs (BIP-48).
 //!
-//! # Why these templates exist
+//! # Why these schemes exist
 //!
 //! An operator building a multisig backup knows one thing about their key:
 //! which SCRIPT TYPE the wallet uses. They should not also have to know that
 //! native segwit multisig lives at `m/48'/0'/0'/2'` and nested segwit at
-//! `.../1'`. Before this landed, `ms derive --template` offered only
+//! `.../1'`. Before this landed, `ms derive --origin-path` offered only
 //! bip44/49/84/86 — all single-sig — and accepted no literal path, so there was
 //! NO way to get a multisig account xpub out of `ms` at all. The one tool in
 //! the constellation that turns a seed into an account xpub could not serve the
@@ -79,7 +79,7 @@ fn code(o: &Output) -> i32 {
 
 #[test]
 fn bip48_p2wsh_matches_the_independent_oracle() {
-    let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip48-p2wsh"]);
+    let o = ms(&["derive", "--hex", ZEROS_HEX, "--origin-path", "bip48-p2wsh"]);
     assert_eq!(code(&o), 0, "{}", err(&o));
     let s = out(&o);
     assert!(s.contains(MASTER_FP), "{s}");
@@ -93,7 +93,7 @@ fn bip48_p2sh_p2wsh_matches_the_independent_oracle() {
         "derive",
         "--hex",
         ZEROS_HEX,
-        "--template",
+        "--origin-path",
         "bip48-p2sh-p2wsh",
     ]);
     assert_eq!(code(&o), 0, "{}", err(&o));
@@ -110,14 +110,14 @@ fn the_two_script_types_derive_different_keys() {
         "derive",
         "--hex",
         ZEROS_HEX,
-        "--template",
+        "--origin-path",
         "bip48-p2wsh",
     ]));
     let b = out(&ms(&[
         "derive",
         "--hex",
         ZEROS_HEX,
-        "--template",
+        "--origin-path",
         "bip48-p2sh-p2wsh",
     ]));
     assert!(a.contains(P2WSH_ACCT0) && b.contains(P2SH_P2WSH_ACCT0));
@@ -132,7 +132,7 @@ fn account_index_moves_the_account_level_not_the_script_type() {
         "derive",
         "--hex",
         ZEROS_HEX,
-        "--template",
+        "--origin-path",
         "bip48-p2wsh",
         "--account",
         "1",
@@ -149,7 +149,7 @@ fn testnet_uses_coin_type_one() {
         "derive",
         "--hex",
         ZEROS_HEX,
-        "--template",
+        "--origin-path",
         "bip48-p2wsh",
         "--network",
         "testnet",
@@ -164,14 +164,20 @@ fn testnet_uses_coin_type_one() {
 /// account — the path a real operator takes is the phrase.
 #[test]
 fn a_phrase_derives_the_same_account_as_the_hex() {
-    let o = ms(&["derive", "--phrase", ABANDON, "--template", "bip48-p2wsh"]);
+    let o = ms(&[
+        "derive",
+        "--phrase",
+        ABANDON,
+        "--origin-path",
+        "bip48-p2wsh",
+    ]);
     assert_eq!(code(&o), 0, "{}", err(&o));
     assert!(out(&o).contains(P2WSH_ACCT0), "{}", out(&o));
 }
 
 /// BIP-48 registers only 1' and 2', but the constellation's taproot multisig
 /// origin is `m/48'/coin'/account'/3'` (composer spec C28; Coldcard's `bip48_3`,
-/// Liana's `p2tr_deriv`), so the template exists and derives there. Oracle:
+/// Liana's `p2tr_deriv`), so the scheme exists and derives there. Oracle:
 /// two independent BIP-32 implementations (fork Go hdkeychain, Python ecdsa),
 /// 2026-09-02, recorded in mnemonic-engrave's
 /// IMPLEMENTATION_PLAN_composer_S1_host_inputs.md Task 5.
@@ -180,7 +186,7 @@ const P2TR_ACCT1: &str = "xpub6DzhyrnFFYQ1KXnhK7D7U1sD9jf9Cq2E5Ut5HhXdXZFVgEpjz4
 
 #[test]
 fn bip48_p2tr_derives_the_composer_taproot_origin() {
-    let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip48-p2tr"]);
+    let o = ms(&["derive", "--hex", ZEROS_HEX, "--origin-path", "bip48-p2tr"]);
     assert_eq!(code(&o), 0, "{}", err(&o));
     let s = out(&o);
     assert!(s.contains(MASTER_FP), "{s}");
@@ -195,7 +201,7 @@ fn bip48_p2tr_derives_the_composer_taproot_origin() {
         "derive",
         "--hex",
         ZEROS_HEX,
-        "--template",
+        "--origin-path",
         "bip48-p2tr",
         "--account",
         "1",
@@ -211,7 +217,7 @@ fn bip48_p2tr_json_names_the_path_and_no_assumption() {
         "derive",
         "--hex",
         ZEROS_HEX,
-        "--template",
+        "--origin-path",
         "bip48-p2tr",
         "--json",
     ]);
@@ -222,13 +228,13 @@ fn bip48_p2tr_json_names_the_path_and_no_assumption() {
     assert_eq!(v["script_type_defaulted"], false);
 }
 
-/// The existing single-sig template names must not have been renamed as
+/// The existing single-sig scheme names must not have been renamed as
 /// collateral damage of adding a hyphenated variant.
 #[test]
-fn the_single_sig_template_names_are_unchanged() {
+fn the_single_sig_scheme_names_are_unchanged() {
     for t in ["bip44", "bip49", "bip84", "bip86"] {
-        let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", t]);
-        assert_eq!(code(&o), 0, "template {t} stopped working: {}", err(&o));
+        let o = ms(&["derive", "--hex", ZEROS_HEX, "--origin-path", t]);
+        assert_eq!(code(&o), 0, "scheme {t} stopped working: {}", err(&o));
     }
 }
 
@@ -254,7 +260,7 @@ const P2WSH_SCRIPT_TYPE_NOTE: &str = "script_type";
 
 #[test]
 fn a_bare_bip48_is_accepted_and_assumes_the_bip_recommended_default() {
-    let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip48"]);
+    let o = ms(&["derive", "--hex", ZEROS_HEX, "--origin-path", "bip48"]);
     assert_eq!(
         code(&o),
         0,
@@ -269,7 +275,7 @@ fn a_bare_bip48_is_accepted_and_assumes_the_bip_recommended_default() {
 
 #[test]
 fn the_assumption_is_announced_on_stdout_and_stderr() {
-    let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip48"]);
+    let o = ms(&["derive", "--hex", ZEROS_HEX, "--origin-path", "bip48"]);
     let s = out(&o);
     let e = err(&o);
     assert!(
@@ -293,7 +299,7 @@ fn the_assumption_is_announced_on_stdout_and_stderr() {
 /// get ignored.
 #[test]
 fn an_explicit_script_type_announces_nothing() {
-    let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip48-p2wsh"]);
+    let o = ms(&["derive", "--hex", ZEROS_HEX, "--origin-path", "bip48-p2wsh"]);
     let s = out(&o);
     let e = err(&o);
     assert!(
@@ -314,7 +320,7 @@ fn json_carries_the_assumption_flag() {
         "derive",
         "--hex",
         ZEROS_HEX,
-        "--template",
+        "--origin-path",
         "bip48",
         "--json",
     ]));
@@ -326,7 +332,7 @@ fn json_carries_the_assumption_flag() {
         "derive",
         "--hex",
         ZEROS_HEX,
-        "--template",
+        "--origin-path",
         "bip48-p2wsh",
         "--json",
     ]));
@@ -336,15 +342,15 @@ fn json_carries_the_assumption_flag() {
     );
 }
 
-/// Single-sig templates make no script-type assumption at all, so the flag must
+/// Single-sig schemes make no script-type assumption at all, so the flag must
 /// be false rather than vacuously true.
 #[test]
-fn single_sig_templates_report_no_script_type_assumption() {
+fn single_sig_schemes_report_no_script_type_assumption() {
     let s = out(&ms(&[
         "derive",
         "--hex",
         ZEROS_HEX,
-        "--template",
+        "--origin-path",
         "bip84",
         "--json",
     ]));
@@ -355,12 +361,12 @@ fn single_sig_templates_report_no_script_type_assumption() {
 ///
 /// `m/270028'/coin'/account'/script'` was ruled 2026-08-18 with `0'` = tr and
 /// `1'` = wsh, and for a while nothing could derive at it: `ms derive` offered
-/// only the BIP templates and `mk derive --path` is unhardened-only. A ruled
+/// only the BIP schemes and `mk derive --path` is unhardened-only. A ruled
 /// path no tool implements is a ruling in name only.
 #[test]
-fn bg002h_templates_derive_the_ruled_path() {
+fn bg002h_schemes_derive_the_ruled_path() {
     const PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-    for (template, want) in [
+    for (scheme, want) in [
         ("bg002h-tr", "m/270028'/0'/0'/0'"),
         ("bg002h-wsh", "m/270028'/0'/0'/1'"),
     ] {
@@ -370,24 +376,24 @@ fn bg002h_templates_derive_the_ruled_path() {
                 "derive",
                 "--phrase",
                 "-",
-                "--template",
-                template,
+                "--origin-path",
+                scheme,
                 "--account",
                 "0",
             ])
             .write_stdin((PHRASE).to_string())
             .output()
             .unwrap();
-        assert!(out.status.success(), "{template} must derive");
+        assert!(out.status.success(), "{scheme} must derive");
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(
             stdout.contains(want),
-            "{template} must derive at {want}, got: {stdout}"
+            "{scheme} must derive at {want}, got: {stdout}"
         );
         // An explicitly chosen script type is a choice, not an assumption.
         assert!(
             !String::from_utf8_lossy(&out.stderr).contains("ASSUMED"),
-            "{template} names its script type explicitly and must not be annotated as assumed"
+            "{scheme} names its script type explicitly and must not be annotated as assumed"
         );
     }
 }
@@ -403,7 +409,7 @@ fn bg002h_wsh_is_not_labelled_as_nested_segwit() {
             "derive",
             "--phrase",
             "-",
-            "--template",
+            "--origin-path",
             "bg002h-wsh",
             "--account",
             "0",
