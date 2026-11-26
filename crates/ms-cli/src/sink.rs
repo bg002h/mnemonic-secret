@@ -45,9 +45,60 @@ impl Write for Out {
     }
 }
 
+#[cfg(unix)]
+static STDOUT_WAS_CLOSED: AtomicBool = AtomicBool::new(false);
+
+/// A closed fd 0, 1 or 2 at exec (`ms ... >&-`). std's runtime opens
+/// `/dev/null` read-write on each closed standard fd before `main`, so by
+/// `main` a closed stdout looks like a writable one and its output is lost
+/// with exit 0. This runs earlier, from the executable's initializer list:
+/// it records a closed fd 1 and plugs each closed fd with `/dev/null` itself
+/// (the lowest free fd, so it lands on that number and stays open for the
+/// whole run), so no file `ms` opens later (an `--out` file) can become
+/// stdout. A target without such a list keeps std's plug only.
+#[cfg(any(
+    target_os = "linux",
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd",
+    target_os = "dragonfly",
+    target_os = "macos"
+))]
+mod closed_fds {
+    use std::sync::atomic::Ordering;
+
+    extern "C" fn probe() {
+        for fd in 0..=2 {
+            // SAFETY: fcntl(F_GETFD) and open() of a NUL-terminated literal
+            // take no other pointer; a bad fd or failed open returns -1.
+            unsafe {
+                if libc::fcntl(fd, libc::F_GETFD) != -1
+                    || std::io::Error::last_os_error().raw_os_error() != Some(libc::EBADF)
+                {
+                    continue;
+                }
+                if fd == 1 {
+                    super::STDOUT_WAS_CLOSED.store(true, Ordering::Relaxed);
+                }
+                let n = libc::open(c"/dev/null".as_ptr(), libc::O_RDWR);
+                if n >= 0 && n != fd {
+                    libc::close(n);
+                }
+            }
+        }
+    }
+
+    #[used]
+    #[cfg_attr(not(target_os = "macos"), link_section = ".init_array")]
+    #[cfg_attr(target_os = "macos", link_section = "__DATA,__mod_init_func")]
+    static PROBE: extern "C" fn() = probe;
+}
+
 /// std's stdout reports EBADF as a successful write, so a stdout that cannot
-/// write (opened read-only, `1</dev/null`, as O_PATH, or with Linux's access
-/// mode 3) would lose the output with exit 0. Checked once,
+/// write (closed at exec, see `closed_fds`; opened read-only, `1</dev/null`,
+/// as O_PATH, or with Linux's access mode 3) would lose the output with
+/// exit 0. Checked once,
 /// at the first write (or clap's `--help`/`--version`): then EBADF is recorded
 /// as the write error. A verb that writes nothing to stdout is not touched.
 pub(crate) fn read_only() -> bool {
@@ -57,7 +108,8 @@ pub(crate) fn read_only() -> bool {
         {
             // SAFETY: fcntl(F_GETFL) takes no pointer; a bad fd returns -1.
             let fl = unsafe { libc::fcntl(1, libc::F_GETFL) };
-            let ro = fl >= 0 && !matches!(fl & libc::O_ACCMODE, libc::O_WRONLY | libc::O_RDWR);
+            let ro = STDOUT_WAS_CLOSED.load(Ordering::Relaxed)
+                || (fl >= 0 && !matches!(fl & libc::O_ACCMODE, libc::O_WRONLY | libc::O_RDWR));
             if ro {
                 failed(&std::io::Error::from_raw_os_error(libc::EBADF));
             }

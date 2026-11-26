@@ -7,6 +7,9 @@
 //!   "ms: cannot write the output: <error>" on stderr, exit 1; a verb that
 //!   was already failing keeps its code. A success code (0, and `repair`'s
 //!   4 = VERIFY-ME candidate) becomes 1.
+//! - A stdout that cannot write (read-only, access mode 3, or closed at exec,
+//!   `>&-`) is the same: EBADF, exit 1; a verb that writes nothing to stdout
+//!   is not touched, and nothing meant for stdout lands in an `--out` file.
 //! - No file of the crate but `src/sink.rs` names stdout.
 #![cfg(target_os = "linux")]
 
@@ -404,4 +407,89 @@ fn read_write_stdout_keeps_the_output_and_exits_0() {
     assert_eq!(o.status.code(), Some(0), "{err}");
     assert!(!err.contains("cannot write"), "{err}");
     assert!(std::fs::metadata(&p).unwrap().len() > 0, "output lost");
+}
+
+/// Runs ms with fd 1 really closed at exec (`>&-`). std's runtime plugs a
+/// closed standard fd with `/dev/null` before `main`, so this lost the output
+/// and exited 0 (Defect 1 of the 2026-11-26 exit-code survey).
+fn on_closed_stdout(a: &[String]) -> Output {
+    Command::new("sh")
+        .arg("-c")
+        .arg(r#"exec "$0" "$@" >&-"#)
+        .arg(env!("CARGO_BIN_EXE_ms"))
+        .args(a)
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn closed_stdout_exits_1_with_the_line() {
+    const BADF: &str = "ms: cannot write the output: Bad file descriptor (os error 9)";
+    for a in [
+        s(&["vectors"]),
+        s(&["gui-schema"]),
+        s(&["decode", A, MS1]),
+        s(&["encode", A, "--phrase", PHRASE]),
+        s(&["repair", A, "--ms1", DAMAGED]),
+        s(&["--help"]),
+        s(&["--version"]),
+    ] {
+        let o = on_closed_stdout(&a);
+        let err = String::from_utf8_lossy(&o.stderr);
+        assert!(!err.contains("panicked"), "{a:?}: {err}");
+        assert_eq!(o.status.code(), Some(1), "{a:?}: {err}");
+        assert_eq!(err.lines().last(), Some(BADF), "{a:?}: {err}");
+    }
+}
+
+/// With stdout closed, a verb whose output goes to `--out` succeeds and the
+/// file holds exactly that output: no stdout write lands in it.
+#[test]
+fn closed_stdout_with_out_file_succeeds_and_nothing_goes_astray() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = dir.path().join("card.ms1");
+    let o = on_closed_stdout(&s(&[
+        "encode",
+        A,
+        "--phrase",
+        PHRASE,
+        "--out",
+        f.to_str().unwrap(),
+    ]));
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code(), Some(0), "{err}");
+    assert!(!err.contains("cannot write"), "{err}");
+    assert_eq!(
+        std::fs::read_to_string(&f).unwrap().trim_end(),
+        MS1,
+        "the --out file"
+    );
+
+    // hashlock writes the plate to --out AND its `hash:` record to stdout:
+    // the record is lost (exit 1, the line) and never reaches the file.
+    let f = dir.path().join("preimage.ms1");
+    let o = on_closed_stdout(&s(&[
+        "hashlock",
+        A,
+        "--hashlock-phrase",
+        "correct horse battery staple long enough",
+        "--kind",
+        "sha256",
+        "--out",
+        f.to_str().unwrap(),
+    ]));
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code(), Some(1), "{err}");
+    assert_eq!(
+        err.lines().last(),
+        Some("ms: cannot write the output: Bad file descriptor (os error 9)"),
+        "{err}"
+    );
+    let body = std::fs::read_to_string(&f).unwrap();
+    assert!(body.starts_with("ms10hash"), "the --out file: {body:?}");
+    assert!(
+        !body.contains("hash:"),
+        "a stdout record went astray: {body:?}"
+    );
 }
