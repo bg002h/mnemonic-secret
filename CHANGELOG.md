@@ -42,6 +42,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   indices keep the K-share advice; exit 2 unchanged (bh-ms-R11).
 
 ### Changed
+- **`ms derive --template NAME` is now `ms derive --origin-path NAME`.** In the constellation "template"
+  means a BIP 388 wallet descriptor template; what `derive` takes is a named derivation scheme that picks
+  the account's key-origin path (`bip84` is `m/84'/coin'/account'`). Same values (`bip44`, `bip49`,
+  `bip84`, `bip86`, `bip48-p2wsh`, `bip48-p2sh-p2wsh`, `bip48`, `bip48-p2tr`, `bg002h-tr`, `bg002h-wsh`),
+  same output and exit codes; a literal `m/...` path is still not accepted. `--template` stays accepted as a
+  hidden alias for several releases and gives byte-identical output, but `--help` no longer shows it. Text
+  `ms` prints now names `--origin-path`: the `--help` lines for `derive`, `--origin-path` and `--account`,
+  the `note: --origin-path bip48 named no script type ...` notice, and the `--phrase-stdin` refusal's
+  recipe (`ms derive --in card.ms1 --origin-path <NAME>`). `ms gui-schema` lists `--origin-path` in place of
+  `--template`. No JSON key changes.
 - **ms-cli takes `mnemonic-io-lib` from crates.io** (was a git rev of mnemonic-engrave), so a rebuilder's `[source]` activation is the two-block form (`docs/verify-reproducibility.md`).
 
 ## ms-cli [0.21.0] — 2026-11-22

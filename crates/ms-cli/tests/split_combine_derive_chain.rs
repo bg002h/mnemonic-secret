@@ -57,9 +57,9 @@ fn field(out: &str, key: &str) -> String {
         .to_string()
 }
 
-/// `ms derive --template bip84` → (master_fingerprint, account_xpub).
+/// `ms derive --origin-path bip84` → (master_fingerprint, account_xpub).
 fn derive(phrase: &str) -> (String, String) {
-    let out = ms(&["derive", "--phrase", phrase, "--template", "bip84"]);
+    let out = ms(&["derive", "--phrase", phrase, "--origin-path", "bip84"]);
     (
         field(&out, "master_fingerprint:"),
         field(&out, "account_xpub:"),

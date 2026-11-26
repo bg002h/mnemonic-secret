@@ -147,7 +147,7 @@ fn a_literal_changes_stderr_only() {
         c.arg("derive")
             .arg("--in")
             .arg(card.path())
-            .args(["--template", "bip84"]);
+            .args(["--origin-path", "bip84"]);
         c
     };
     let stdin_out = base()

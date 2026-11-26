@@ -182,7 +182,7 @@ fn the_phrase_stdin_trap_refuses_and_its_remedy_runs() {
     fs::write(&phrase, PHRASE).unwrap();
 
     let out = ms()
-        .args(["derive", "--phrase-stdin", "--template", "bg002h-tr"])
+        .args(["derive", "--phrase-stdin", "--origin-path", "bg002h-tr"])
         .output()
         .expect("ms runs");
     assert!(!out.status.success(), "--phrase-stdin was ACCEPTED");
@@ -218,7 +218,7 @@ fn the_phrase_stdin_trap_refuses_and_its_remedy_runs() {
     let derived = ms()
         .args(["derive", "--in"])
         .arg(&card)
-        .args(["--template", "bg002h-tr"])
+        .args(["--origin-path", "bg002h-tr"])
         .assert()
         .success();
     let stdout = String::from_utf8(derived.get_output().stdout.clone()).unwrap();

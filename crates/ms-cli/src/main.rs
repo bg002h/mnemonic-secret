@@ -75,7 +75,7 @@ pub(crate) struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Derive the master fingerprint (+ account xpub with --template) — read-only public derivation.
+    /// Derive the master fingerprint (+ account xpub with --origin-path) — read-only public derivation.
     Derive(cmd::derive::DeriveArgs),
 
     /// Encode a BIP-39 mnemonic (or hex entropy) as an ms1 string for engraving.

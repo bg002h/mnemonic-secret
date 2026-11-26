@@ -134,7 +134,7 @@ fn full_stdout_exits_1_with_the_line() {
         s(&["combine", A, SHARE_A, SHARE_B, "--to", "entropy"]),
         s(&["combine", A, SHARE_A, SHARE_B, "--to", "ms1"]),
         s(&["combine", A, SHARE_A, SHARE_B, "--json"]),
-        s(&["derive", A, "--phrase", PHRASE, "--template", "bip84"]),
+        s(&["derive", A, "--phrase", PHRASE, "--origin-path", "bip84"]),
         s(&["derive", A, "--phrase", PHRASE, "--json"]),
         s(&[
             "hashlock",
@@ -170,7 +170,7 @@ fn full_stdout_is_not_a_silent_success() {
     let h = "correct horse battery staple long enough";
     let cases = [
         s(&["split", A, "-k", "2", "-n", "3", "--phrase", PHRASE]),
-        s(&["derive", A, "--phrase", PHRASE, "--template", "bip84"]),
+        s(&["derive", A, "--phrase", PHRASE, "--origin-path", "bip84"]),
         s(&["hashlock", A, "--hashlock-phrase", h, "--kind", "sha256"]),
         s(&[
             "hashlock",
@@ -271,7 +271,7 @@ fn closed_reader_exits_with_the_verbs_code() {
         s(&["vectors", "--pretty"]),
         s(&["encode", A, "--phrase", PHRASE]),
         s(&["decode", A, MS1]),
-        s(&["derive", A, "--phrase", PHRASE, "--template", "bip84"]),
+        s(&["derive", A, "--phrase", PHRASE, "--origin-path", "bip84"]),
         s(&["split", A, "-k", "2", "-n", "3", "--phrase", PHRASE]),
         s(&[
             "hashlock",

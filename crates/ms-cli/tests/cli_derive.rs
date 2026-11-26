@@ -77,7 +77,7 @@ fn hex_and_phrase_parity() {
 
 #[test]
 fn account_xpub_bip84_matches_oracle() {
-    let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip84"]);
+    let o = ms(&["derive", "--hex", ZEROS_HEX, "--origin-path", "bip84"]);
     assert_eq!(code(&o), 0, "{}", err(&o));
     let s = out(&o);
     assert!(s.contains(MASTER_FP_EN), "{s}");
@@ -88,13 +88,13 @@ fn account_xpub_bip84_matches_oracle() {
 /// T1-b (#10, funds-safety): pin the bip44 end-to-end derive result (master
 /// fingerprint + account xpub + path) against an INDEPENDENT oracle (see
 /// BIP44_ACCT_XPUB doc comment) — NOT computed via this crate's `purpose()`.
-/// `Template::purpose()` is private; this e2e pin is the load-bearing check
+/// `OriginPathName::purpose()` is private; this e2e pin is the load-bearing check
 /// per SPEC T1-b (a wrong constant corrupts the derived xpub, which this test
 /// catches; a wrong constant does NOT corrupt the path string, which mirrors
 /// whatever `purpose()` returns — so the xpub is what actually matters).
 #[test]
 fn account_xpub_bip44_matches_independent_oracle() {
-    let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip44"]);
+    let o = ms(&["derive", "--hex", ZEROS_HEX, "--origin-path", "bip44"]);
     assert_eq!(code(&o), 0, "{}", err(&o));
     let s = out(&o);
     assert!(s.contains(MASTER_FP_EN), "{s}");
@@ -106,7 +106,7 @@ fn account_xpub_bip44_matches_independent_oracle() {
 /// BIP49_ACCT_XPUB doc comment).
 #[test]
 fn account_xpub_bip49_matches_independent_oracle() {
-    let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip49"]);
+    let o = ms(&["derive", "--hex", ZEROS_HEX, "--origin-path", "bip49"]);
     assert_eq!(code(&o), 0, "{}", err(&o));
     let s = out(&o);
     assert!(s.contains(MASTER_FP_EN), "{s}");
@@ -119,7 +119,7 @@ fn account_xpub_bip49_matches_independent_oracle() {
 /// (an official BIP test vector, not a third-party re-derivation).
 #[test]
 fn account_xpub_bip86_matches_bip86_spec_vector() {
-    let o = ms(&["derive", "--hex", ZEROS_HEX, "--template", "bip86"]);
+    let o = ms(&["derive", "--hex", ZEROS_HEX, "--origin-path", "bip86"]);
     assert_eq!(code(&o), 0, "{}", err(&o));
     let s = out(&o);
     assert!(s.contains(MASTER_FP_EN), "{s}");
@@ -133,7 +133,7 @@ fn account_index_changes_xpub() {
         "derive",
         "--hex",
         ZEROS_HEX,
-        "--template",
+        "--origin-path",
         "bip84",
         "--account",
         "0",
@@ -143,7 +143,7 @@ fn account_index_changes_xpub() {
         "derive",
         "--hex",
         ZEROS_HEX,
-        "--template",
+        "--origin-path",
         "bip84",
         "--account",
         "1",
@@ -156,7 +156,7 @@ fn account_index_changes_xpub() {
 }
 
 #[test]
-fn no_template_no_account_line() {
+fn no_origin_path_no_account_line() {
     let o = ms(&["derive", "--hex", ZEROS_HEX]);
     let s = out(&o);
     assert!(s.contains(MASTER_FP_EN));
@@ -259,7 +259,7 @@ fn network_testnet_tpub_same_fingerprint() {
         "derive",
         "--hex",
         ZEROS_HEX,
-        "--template",
+        "--origin-path",
         "bip84",
         "--json",
     ]);
@@ -267,7 +267,7 @@ fn network_testnet_tpub_same_fingerprint() {
         "derive",
         "--hex",
         ZEROS_HEX,
-        "--template",
+        "--origin-path",
         "bip84",
         "--network",
         "testnet",
@@ -301,7 +301,7 @@ fn json_shape() {
         "derive",
         "--hex",
         ZEROS_HEX,
-        "--template",
+        "--origin-path",
         "bip84",
         "--json",
     ]);
@@ -311,12 +311,12 @@ fn json_shape() {
     assert_eq!(v["network"], "mainnet");
     assert_eq!(v["account_xpub"], BIP84_ACCT_XPUB);
     assert_eq!(v["language_defaulted"], true);
-    // no-template → account fields omitted (skip_serializing_if)
+    // no --origin-path → account fields omitted (skip_serializing_if)
     let nt = ms(&["derive", "--hex", ZEROS_HEX, "--json"]);
     let vnt: serde_json::Value = serde_json::from_str(&out(&nt)).unwrap();
     assert!(
         vnt.get("account_xpub").is_none(),
-        "omitted without --template"
+        "omitted without --origin-path"
     );
 }
 
@@ -327,7 +327,7 @@ fn no_secret_on_stdout() {
         "derive",
         "--hex",
         ZEROS_HEX,
-        "--template",
+        "--origin-path",
         "bip84",
         "--network",
         "testnet",
@@ -403,7 +403,7 @@ fn scrub_rewire_leaves_output_byte_identical() {
     assert_eq!(vj["master_fingerprint"], MASTER_FP_EN);
     assert!(
         vj.get("account_xpub").is_none(),
-        "no account without --template: {}",
+        "no account without --origin-path: {}",
         out(&fp_json)
     );
 
@@ -414,7 +414,7 @@ fn scrub_rewire_leaves_output_byte_identical() {
         ZEROS_HEX,
         "--language",
         "english",
-        "--template",
+        "--origin-path",
         "bip84",
     ]);
     assert_eq!(code(&acct_text), 0, "{}", err(&acct_text));
@@ -432,7 +432,7 @@ fn scrub_rewire_leaves_output_byte_identical() {
         ZEROS_HEX,
         "--language",
         "english",
-        "--template",
+        "--origin-path",
         "bip84",
         "--json",
     ]);
