@@ -922,7 +922,7 @@ can never be mistaken for BIP-48.
 - **RED row:** `crates/ms-cli/tests/bughunt.rs::bughunt_ms_09_mnem_unknown_language_unhandled` (un-ignored by the fix).
 - **Why deferred:** Minor; the FIX PR carries only C and I.
 - **Update 2026-11-26:** the constellation exit codes moved the catch-all to 101 (INTERNAL), so this became an Important (exit-codes impl review I1). The arm landed as prescribed, and `error.rs` `from_ms_codec_every_variant_has_its_class` now reads ms-codec's `pub enum Error` and fails on any variant without a row.
-- **Status:** `resolved (exit-code fold, fx/mnemonic-secret)`
+- **Status:** `resolved ce20d5a`
 - **Tier:** text / exit code (non-gating)
 
 ### `ms-repair-accepts-mixed-case-with-typo` — `decode_with_correction` repairs a mixed-case string that also has an error, though the same string without the error is refused (repo: **mnemonic-secret**; owning phase: **none — ownerless residue**)
