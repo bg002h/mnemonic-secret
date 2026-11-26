@@ -31,7 +31,7 @@ pub struct SplitArgs {
     ///
     /// FILE must not exist: each run draws a new share set, so a set it
     /// overwrote could not be re-made. Any existing FILE (a directory, a
-    /// symlink, /dev/null) is refused with exit 64 before the secret is read,
+    /// symlink, /dev/null) is refused with exit 8 before the secret is read,
     /// and the file is created with O_CREAT|O_EXCL, so one that appears after
     /// that check is refused too.
     ///
@@ -142,7 +142,7 @@ pub fn run(mut args: SplitArgs) -> Result<u8> {
     )?;
 
     // K-of-N split. `Threshold::new` rejects k ∉ 2..=9 (→ InvalidThreshold →
-    // BadInput exit 1); `encode_shares` rejects n ∉ k..=31 (→ InvalidShareCount).
+    // Usage exit 64); `encode_shares` rejects n ∉ k..=31 (→ InvalidShareCount).
     let shares = ms_codec::encode_shares(Tag::ENTR, threshold, args.n, &payload)?;
 
     // Each share carries the share-set's shared random id + threshold char;
@@ -195,7 +195,7 @@ pub fn run(mut args: SplitArgs) -> Result<u8> {
     Ok(0)
 }
 
-/// What `split --out` refuses to overwrite, in the exit-64 message.
+/// What `split --out` refuses to overwrite, in the exit-8 message.
 const SPLIT_OUT_WHAT: &str = "a new share set";
 
 /// Create-new, never truncate: the early check in `run` is not atomic.
@@ -247,7 +247,7 @@ fn emit_json(
     // cycle-15 Lane M (slug #8, defense-in-depth): the serialized JSON carries
     // the secret share strings — scrub the buffer on drop.
     let s: Zeroizing<String> = Zeroizing::new(
-        to_string(&json).map_err(|e| CliError::BadInput(format!("json serialization: {e}")))?,
+        to_string(&json).map_err(|e| CliError::Internal(format!("json serialization: {e}")))?,
     );
     println!("{}", *s);
     Ok(())
@@ -286,7 +286,7 @@ mod tests {
         let p = dir.path().join("shares.txt");
         std::fs::write(&p, "planted\n").unwrap();
         let e = super::write_shares(&p, "new\n").unwrap_err();
-        assert_eq!(e.exit_code(), 64);
+        assert_eq!(e.exit_code(), 8);
         assert_eq!(
             e.message(),
             format!(

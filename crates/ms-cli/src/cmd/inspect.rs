@@ -14,6 +14,7 @@ use serde_json::to_string;
 use zeroize::Zeroizing;
 
 use crate::error::Result;
+use crate::exit_code;
 use crate::format::{InspectJson, InspectReportJson};
 use crate::parse::{read_input, Source};
 
@@ -48,8 +49,9 @@ pub struct InspectArgs {
     pub json: bool,
 }
 
-/// Run `ms inspect`. Lenient: returns a report even when the string would fail
-/// decoder rules. If BIP-93 parse itself fails, treats the error per §6.
+/// Run `ms inspect`. Lenient: prints the whole report even when the string
+/// would fail decoder rules, and then exits 2, INVALID (exit-code spec R5,
+/// decision 8). If BIP-93 parse itself fails, treats the error per §6.
 pub fn run(args: InspectArgs) -> Result<u8> {
     // cycle-15 Lane M (slug #5): the ms1 intake IS secret material (BIP-39
     // entropy) — scrub it on drop. `inspect()` borrows `&str` (Deref).
@@ -71,7 +73,11 @@ pub fn run(args: InspectArgs) -> Result<u8> {
         } else {
             emit_share_text(&report, ms1.len());
         }
-        return Ok(0);
+        return Ok(if share_reasons(&report, ms1.len()).is_empty() {
+            exit_code::OK
+        } else {
+            exit_code::INVALID
+        });
     }
 
     let (would_decode, reasons) = analyze(&report, ms1.len());
@@ -81,7 +87,11 @@ pub fn run(args: InspectArgs) -> Result<u8> {
     } else {
         emit_text(&report, would_decode, &reasons);
     }
-    Ok(0)
+    Ok(if would_decode {
+        exit_code::OK
+    } else {
+        exit_code::INVALID
+    })
 }
 
 /// True iff the inspected string is one share of a K-of-N set: the codex32

@@ -92,10 +92,10 @@ pub(crate) fn refuse_stdout_alias(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The exit-64 refusal for an existing `--out` path. `what` names the artifact
+/// The exit-8 (REFUSED) refusal for an existing `--out` path. `what` names the artifact
 /// that cannot be re-made ("a --random preimage", "a new share set").
 fn exists_refusal(path: &std::path::Path, what: &str) -> CliError {
-    CliError::Usage(format!(
+    CliError::Refused(format!(
         "--out {} already exists; {what} will not overwrite it (choose another file, or move the old one first)",
         path.display()
     ))
@@ -113,7 +113,7 @@ pub(crate) fn refuse_existing_out(path: &std::path::Path, what: &str) -> Result<
     }
 }
 
-/// Like `write_artifact`, but REFUSES an existing path (exit 64, naming it)
+/// Like `write_artifact`, but REFUSES an existing path (exit 8, naming it)
 /// instead of truncating. For artifacts that are a function of nothing and
 /// cannot be re-made: `hashlock --random` (SPEC_ms_hashlock §4.1) and `split`.
 ///

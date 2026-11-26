@@ -8,7 +8,8 @@ use serde_json::json;
 use crate::bip39_friendly::friendly_bip39;
 use crate::codex32_friendly::friendly_codex32;
 
-/// All CLI failure modes. `exit_code()` maps each to the SPEC §6 table.
+/// All CLI failure modes. `exit_code()` maps each to its class in the
+/// constellation exit-code spec's §3 (SPEC §6 here).
 ///
 /// L5: `Debug` is hand-rolled (NOT derived) — `Codex32(ms_codec::codex32::Error)` carries
 /// the raw inner error, and `ms_codec::codex32::Error::InvalidChecksum { string }` echoes
@@ -18,16 +19,28 @@ use crate::codex32_friendly::friendly_codex32;
 /// `InvalidChecksum.string`).
 #[non_exhaustive]
 pub enum CliError {
-    /// User-input error: bad hex, missing args, runtime input failure.
+    /// An input is wrong for this verb (bad hex, bad phrase, empty input, the
+    /// wrong kind of plate): exit 2, INVALID.
     BadInput(String),
-    /// A usage error the verb itself detects (source arithmetic, a gate a flag
-    /// must satisfy): exit 64, the same code clap uses for its own.
+    /// A usage error the verb itself detects from the command line alone
+    /// (source arithmetic, a gate a flag must satisfy, two readers on stdin):
+    /// exit 64, the same code clap's errors get.
     Usage(String),
-    /// A failed `--out` write (R2 of FIX_bughunt1119_ms_out_writes): exit 1, printed
+    /// A safety or policy refusal a flag, channel or destination would waive
+    /// (a digest-shaped phrase, an `--out` that exists): exit 8, REFUSED.
+    Refused(String),
+    /// Something needed from the system failed or is missing (an input file,
+    /// stdin, an unset `@env:` variable, OS randomness, a `gen-man` directory):
+    /// exit 32, IO.
+    Io(String),
+    /// A failure no class covers (a serializer that cannot fail, a codec
+    /// variant ms-cli has not dispatched): exit 101, INTERNAL (R13).
+    Internal(String),
+    /// A failed `--out` write (R2 of FIX_bughunt1119_ms_out_writes): exit 32, printed
     /// on stderr as `ms: cannot write the output: <FILE>: <error>` plus the state
     /// sentence when a second look confirms it, in both modes (never an envelope).
     OutputWrite(String),
-    /// `--out` names the file standard output is on (R3 of the same FIX): exit 64,
+    /// `--out` names the file standard output is on (R3 of the same FIX): exit 8,
     /// printed on stderr in both modes, because an envelope on stdout would be
     /// written into that very file.
     StdoutIsOut(String),
@@ -56,27 +69,33 @@ pub enum CliError {
 }
 
 impl CliError {
-    /// SPEC §6 exit-code mapping.
+    /// SPEC §6 exit-code mapping: the constellation classes of §3.
     pub fn exit_code(&self) -> u8 {
+        use crate::exit_code as x;
         match self {
             CliError::BadInput(_)
             | CliError::Bip39(_)
             | CliError::Codex32(_)
             | CliError::UnexpectedStringLength { .. }
-            | CliError::PayloadLengthMismatch { .. } => 1,
-            CliError::Usage(_) | CliError::StdoutIsOut(_) => 64,
-            CliError::OutputWrite(_) => 1,
-            CliError::FormatViolation { .. } => 2,
-            CliError::FutureFormat { .. } => 3,
-            CliError::VerifyPhraseMismatch => 4,
+            | CliError::PayloadLengthMismatch { .. }
+            | CliError::FormatViolation { .. }
+            | CliError::FutureFormat { .. } => x::INVALID,
+            CliError::Usage(_) => x::USAGE,
+            CliError::Refused(_) | CliError::StdoutIsOut(_) => x::REFUSED,
+            CliError::Io(_) | CliError::OutputWrite(_) => x::IO,
+            CliError::Internal(_) => x::INTERNAL,
+            CliError::VerifyPhraseMismatch => x::NO,
         }
     }
 
     /// Stable kebab-case-style discriminant for JSON `kind` field (SPEC §5.4).
     pub fn kind(&self) -> &'static str {
         match self {
-            CliError::BadInput(_) | CliError::OutputWrite(_) => "BadInput",
-            CliError::Usage(_) | CliError::StdoutIsOut(_) => "Usage",
+            CliError::BadInput(_) => "BadInput",
+            CliError::Usage(_) => "Usage",
+            CliError::Refused(_) | CliError::StdoutIsOut(_) => "Refused",
+            CliError::Io(_) | CliError::OutputWrite(_) => "Io",
+            CliError::Internal(_) => "Internal",
             CliError::Bip39(_) => "Bip39",
             CliError::Codex32(_) => "Codex32",
             CliError::UnexpectedStringLength { .. } => "UnexpectedStringLength",
@@ -93,7 +112,12 @@ impl CliError {
     pub fn message(&self) -> String {
         match self {
             CliError::BadInput(m) => m.clone(),
-            CliError::Usage(m) | CliError::StdoutIsOut(m) | CliError::OutputWrite(m) => m.clone(),
+            CliError::Usage(m)
+            | CliError::Refused(m)
+            | CliError::Io(m)
+            | CliError::Internal(m)
+            | CliError::StdoutIsOut(m)
+            | CliError::OutputWrite(m) => m.clone(),
             CliError::Bip39(e) => friendly_bip39(e),
             CliError::Codex32(e) => friendly_codex32(e),
             CliError::UnexpectedStringLength { got } => {
@@ -282,7 +306,7 @@ impl From<ms_codec::Error> for CliError {
             // not lie on the polynomial the first k define. A funds-safety /
             // format violation (exit 2): combining it would yield a SILENT WRONG
             // secret. Routed explicitly so it does NOT fall through to the
-            // `other =>` BadInput (exit 1) wildcard below.
+            // `other =>` Internal (exit 101) wildcard below.
             ms_codec::Error::InconsistentShareSet => CliError::FormatViolation {
                 underlying_kind: "InconsistentShareSet",
                 message: "one or more shares are not from the same split; the \
@@ -291,15 +315,14 @@ impl From<ms_codec::Error> for CliError {
                     .to_string(),
                 details: None,
             },
-            // Bad `-k` / `-n` arguments to `ms split` — user-input errors
-            // (exit 1, the BadInput class). There is no exit-64 `CliError`
-            // variant (clap parse-level 64s never reach `From<ms_codec::Error>`);
-            // the BadInput user-input class is the existing-taxonomy fit.
-            ms_codec::Error::InvalidThreshold(k) => CliError::BadInput(format!(
+            // Bad `-k` / `-n` arguments to `ms split`: K and N are SETTINGS,
+            // judged from the command line alone, so a usage error (64;
+            // exit-code spec decision 2).
+            ms_codec::Error::InvalidThreshold(k) => CliError::Usage(format!(
                 "invalid threshold {}; K-of-N shares require k in 2..=9",
                 k
             )),
-            ms_codec::Error::InvalidShareCount { k, n } => CliError::BadInput(format!(
+            ms_codec::Error::InvalidShareCount { k, n } => CliError::Usage(format!(
                 "invalid share count n={} for threshold k={}; require k <= n <= 31",
                 n, k
             )),
@@ -317,13 +340,14 @@ impl From<ms_codec::Error> for CliError {
                 ),
                 details: Some(json!({ "tag": std::str::from_utf8(&tag).unwrap_or("<non-utf8>"), "prefix": prefix })),
             },
-            ms_codec::Error::RandomnessUnavailable => CliError::BadInput(
+            ms_codec::Error::RandomnessUnavailable => CliError::Io(
                 "the OS random source is unavailable; no preimage was produced".to_string(),
             ),
             // ms_codec::Error is #[non_exhaustive]; v0.2+ may add variants.
             // If you hit this in production, ms-codec added a variant ms-cli
             // hasn't dispatched yet — add an arm above for the new variant.
-            other => CliError::BadInput(format!("unhandled ms_codec::Error variant: {:?}", other)),
+            // Unclassified, so INTERNAL (101, R13).
+            other => CliError::Internal(format!("unhandled ms_codec::Error variant: {:?}", other)),
         }
     }
 }
@@ -335,29 +359,125 @@ pub type Result<T> = std::result::Result<T, CliError>;
 mod tests {
     use super::*;
 
+    /// R13: every variant maps to its constellation class (exit-code spec §3).
+    /// The match is exhaustive on purpose: a new variant fails to compile here
+    /// until it is given a class.
     #[test]
     fn exit_code_table_per_variant() {
-        assert_eq!(CliError::BadInput("x".into()).exit_code(), 1);
-        assert_eq!(CliError::UnexpectedStringLength { got: 51 }.exit_code(), 1);
-        assert_eq!(
-            CliError::PayloadLengthMismatch {
-                got: 17,
-                tag: *b"entr"
+        use crate::exit_code as x;
+        let rows: Vec<(CliError, u8)> = vec![
+            (CliError::BadInput("x".into()), x::INVALID),
+            (CliError::Usage("x".into()), x::USAGE),
+            (CliError::Refused("x".into()), x::REFUSED),
+            (CliError::Io("x".into()), x::IO),
+            (CliError::Internal("x".into()), x::INTERNAL),
+            (CliError::OutputWrite("x".into()), x::IO),
+            (CliError::StdoutIsOut("x".into()), x::REFUSED),
+            (CliError::Bip39(bip39::Error::BadWordCount(0)), x::INVALID),
+            (
+                CliError::Codex32(ms_codec::codex32::Error::InvalidChar('!')),
+                x::INVALID,
+            ),
+            (CliError::UnexpectedStringLength { got: 51 }, x::INVALID),
+            (
+                CliError::PayloadLengthMismatch {
+                    got: 17,
+                    tag: *b"entr",
+                },
+                x::INVALID,
+            ),
+            (
+                CliError::FormatViolation {
+                    underlying_kind: "WrongHrp",
+                    message: "x".into(),
+                    details: None,
+                },
+                x::INVALID,
+            ),
+            (CliError::FutureFormat { tag: *b"seed" }, x::INVALID),
+            (CliError::VerifyPhraseMismatch, x::NO),
+        ];
+        for (e, want) in &rows {
+            // Exhaustiveness guard: every variant appears in `rows`.
+            match e {
+                CliError::BadInput(_)
+                | CliError::Usage(_)
+                | CliError::Refused(_)
+                | CliError::Io(_)
+                | CliError::Internal(_)
+                | CliError::OutputWrite(_)
+                | CliError::StdoutIsOut(_)
+                | CliError::Bip39(_)
+                | CliError::Codex32(_)
+                | CliError::UnexpectedStringLength { .. }
+                | CliError::PayloadLengthMismatch { .. }
+                | CliError::FormatViolation { .. }
+                | CliError::FutureFormat { .. }
+                | CliError::VerifyPhraseMismatch => {}
             }
-            .exit_code(),
-            1
-        );
-        assert_eq!(
-            CliError::FormatViolation {
-                underlying_kind: "WrongHrp",
-                message: "x".into(),
-                details: None,
-            }
-            .exit_code(),
-            2
-        );
-        assert_eq!(CliError::FutureFormat { tag: *b"seed" }.exit_code(), 3);
-        assert_eq!(CliError::VerifyPhraseMismatch.exit_code(), 4);
+            assert_eq!(e.exit_code(), *want, "{e:?}");
+        }
+        assert_eq!(rows.len(), 14, "one row per variant");
+    }
+
+    /// R13: every `ms_codec::Error` variant ms-cli dispatches lands in its class.
+    #[test]
+    fn from_ms_codec_every_variant_has_its_class() {
+        use crate::exit_code as x;
+        use ms_codec::Error as E;
+        let rows: Vec<(E, u8)> = vec![
+            (
+                E::Codex32(ms_codec::codex32::Error::InvalidChar('!')),
+                x::INVALID,
+            ),
+            (E::WrongHrp { got: "mq".into() }, x::INVALID),
+            (E::ThresholdNotZero { got: b'2' }, x::INVALID),
+            (E::ShareIndexNotSecret { got: 'a' }, x::INVALID),
+            (E::TagInvalidAlphabet { got: [b'A'; 4] }, x::INVALID),
+            (E::UnknownTag { got: *b"zzzz" }, x::INVALID),
+            (E::ReservedTagNotEmittedInV01 { got: *b"seed" }, x::INVALID),
+            (E::ReservedPrefixViolation { got: 1 }, x::INVALID),
+            (
+                E::UnexpectedStringLength {
+                    got: 51,
+                    allowed: &[],
+                },
+                x::INVALID,
+            ),
+            (
+                E::PayloadLengthMismatch {
+                    got: 17,
+                    tag: *b"entr",
+                    expected: &[],
+                },
+                x::INVALID,
+            ),
+            (E::TooManyErrors { bound: 8 }, x::INVALID),
+            (
+                E::IsShareNotSingleString {
+                    threshold: '2',
+                    index: 'a',
+                },
+                x::INVALID,
+            ),
+            (E::SecretShareSuppliedToCombine, x::INVALID),
+            (E::InconsistentShareSet, x::INVALID),
+            (E::InvalidThreshold(1), x::USAGE),
+            (E::InvalidShareCount { k: 2, n: 1 }, x::USAGE),
+            (E::PreimageLengthMismatch { got: 31 }, x::INVALID),
+            (
+                E::TagKindMismatch {
+                    tag: *b"hash",
+                    prefix: 0,
+                },
+                x::INVALID,
+            ),
+            (E::RandomnessUnavailable, x::IO),
+        ];
+        for (e, want) in rows {
+            let c: CliError = e.into();
+            assert_eq!(c.exit_code(), want, "{c:?}");
+        }
     }
 
     #[test]
@@ -368,7 +488,7 @@ mod tests {
 
         let e: CliError = ms_codec::Error::ReservedTagNotEmittedInV01 { got: *b"seed" }.into();
         assert_eq!(e.kind(), "FutureFormat");
-        assert_eq!(e.exit_code(), 3);
+        assert_eq!(e.exit_code(), 2);
 
         let e: CliError = ms_codec::Error::UnexpectedStringLength {
             got: 51,
@@ -376,7 +496,7 @@ mod tests {
         }
         .into();
         assert_eq!(e.kind(), "UnexpectedStringLength");
-        assert_eq!(e.exit_code(), 1);
+        assert_eq!(e.exit_code(), 2);
     }
 
     #[test]
@@ -438,8 +558,8 @@ mod tests {
     #[test]
     fn inconsistent_share_set_maps_to_format_violation_exit_2() {
         // M6: a same-id cross-polynomial set must surface as an exit-2 format/
-        // funds-safety violation — NOT fall through the wildcard to BadInput
-        // (exit 1).
+        // funds-safety violation — NOT fall through the wildcard to Internal
+        // (exit 101).
         let e: CliError = ms_codec::Error::InconsistentShareSet.into();
         assert_eq!(e.kind(), "InconsistentShareSet");
         assert_eq!(e.exit_code(), 2);
@@ -447,18 +567,18 @@ mod tests {
     }
 
     #[test]
-    fn invalid_threshold_maps_to_bad_input_exit_1() {
+    fn invalid_threshold_maps_to_usage_exit_64() {
         let e: CliError = ms_codec::Error::InvalidThreshold(1).into();
-        assert_eq!(e.kind(), "BadInput");
-        assert_eq!(e.exit_code(), 1);
+        assert_eq!(e.kind(), "Usage");
+        assert_eq!(e.exit_code(), 64);
         assert!(e.message().contains("2..=9"));
     }
 
     #[test]
-    fn invalid_share_count_maps_to_bad_input_exit_1() {
+    fn invalid_share_count_maps_to_usage_exit_64() {
         let e: CliError = ms_codec::Error::InvalidShareCount { k: 2, n: 1 }.into();
-        assert_eq!(e.kind(), "BadInput");
-        assert_eq!(e.exit_code(), 1);
+        assert_eq!(e.kind(), "Usage");
+        assert_eq!(e.exit_code(), 64);
         assert!(e.message().contains("k <= n <= 31"));
     }
 
@@ -510,7 +630,7 @@ mod tests {
         })
         .into();
         assert_eq!(e.kind(), "Codex32");
-        assert_eq!(e.exit_code(), 1);
+        assert_eq!(e.exit_code(), 2);
         assert!(e.message().contains("not enough shares"));
     }
 }

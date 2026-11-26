@@ -369,7 +369,8 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
     // before anything else so the answer is the recipe, not a downstream
     // complaint about a missing ms1.
     if args.phrase_stdin {
-        return Err(CliError::BadInput(
+        // A flag that exists only to be refused: a usage error (64).
+        return Err(CliError::Usage(
             "there is no --phrase-stdin: on `derive`, stdin carries the ms1, not a BIP-39 \
              phrase.\n      \
              \n      \
@@ -454,7 +455,7 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
     if crate::passphrase_input::reads_stdin(pp_value, args.passphrase_stdin, pp_admitted)
         && entropy_reads_stdin
     {
-        return Err(CliError::BadInput(
+        return Err(CliError::Usage(
             "cannot read both the entropy source and --passphrase from stdin (one stdin per invocation)".into(),
         ));
     }
@@ -533,7 +534,7 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
     // upstream`. The `seed` itself IS `Zeroizing` + mlock-pinned (above).
     let master = ScrubbedXpriv::new(
         Xpriv::new_master(args.network.kind(), &seed[..])
-            .map_err(|e| CliError::BadInput(format!("master derive: {e}")))?,
+            .map_err(|e| CliError::Internal(format!("master derive: {e}")))?,
     );
     let master_fp = master.fingerprint(&secp);
 
@@ -546,7 +547,7 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
         let acct_xpriv = ScrubbedXpriv::new(
             master
                 .derive_priv(&secp, &path)
-                .map_err(|e| CliError::BadInput(format!("account derive: {e}")))?,
+                .map_err(|e| CliError::Internal(format!("account derive: {e}")))?,
         );
         let acct_xpub = acct_xpriv.xpub(&secp);
         Some((path_str, acct_xpub.to_string()))
@@ -566,7 +567,7 @@ pub fn run(mut args: DeriveArgs) -> Result<u8> {
             language_defaulted: effective_lang_defaulted,
         };
         let s = serde_json::to_string(&dj)
-            .map_err(|e| CliError::BadInput(format!("json serialization: {e}")))?;
+            .map_err(|e| CliError::Internal(format!("json serialization: {e}")))?;
         println!("{s}");
     } else {
         let mut stdout = crate::sink::Out;

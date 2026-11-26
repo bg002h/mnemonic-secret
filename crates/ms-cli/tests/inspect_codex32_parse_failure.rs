@@ -1,11 +1,11 @@
-//! Inspect on a string that fails BIP-93 parse → exit 1 with Codex32 error
+//! Inspect on a string that fails BIP-93 parse → exit 2 with Codex32 error
 //! per SPEC §2.3.1.
 
 use assert_cmd::Command;
 use predicates::prelude::*;
 
 #[test]
-fn inspect_bad_checksum_exits_1_with_friendly_error() {
+fn inspect_bad_checksum_exits_2_with_friendly_error() {
     // Take a valid string and flip the last char to break BCH.
     let mut bytes = b"ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f".to_vec();
     let last = bytes.len() - 1;
@@ -18,7 +18,7 @@ fn inspect_bad_checksum_exits_1_with_friendly_error() {
         .write_stdin(bad.to_string())
         .assert()
         .failure()
-        .code(1)
+        .code(2)
         .stderr(predicate::str::contains("BCH checksum invalid"));
 }
 
@@ -35,7 +35,7 @@ fn inspect_bad_checksum_json_envelope() {
         .write_stdin(bad.to_string())
         .assert()
         .failure()
-        .code(1)
+        .code(2)
         .stdout(predicate::str::contains("\"kind\":\"Codex32\""))
         .stdout(predicate::str::contains("\"schema_version\":\"1\""));
 }

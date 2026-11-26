@@ -21,7 +21,7 @@ fn bad_input_json_envelope() {
     let v = run_and_parse(&["encode", "--hex", "0", "--json"]);
     assert_eq!(v["schema_version"], "1");
     assert_eq!(v["error"]["kind"], "BadInput");
-    assert_eq!(v["error"]["exit_code"], 1);
+    assert_eq!(v["error"]["exit_code"], 2);
 }
 
 #[test]
@@ -33,7 +33,7 @@ fn bip39_json_envelope() {
         "--json",
     ]);
     assert_eq!(v["error"]["kind"], "Bip39");
-    assert_eq!(v["error"]["exit_code"], 1);
+    assert_eq!(v["error"]["exit_code"], 2);
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn codex32_json_envelope() {
         "--json",
     ]);
     assert_eq!(v["error"]["kind"], "Codex32");
-    assert_eq!(v["error"]["exit_code"], 1);
+    assert_eq!(v["error"]["exit_code"], 2);
 }
 
 #[test]
@@ -57,7 +57,7 @@ fn unexpected_string_length_json_envelope() {
         "--json",
     ]);
     assert_eq!(v["error"]["kind"], "UnexpectedStringLength");
-    assert_eq!(v["error"]["exit_code"], 1);
+    assert_eq!(v["error"]["exit_code"], 2);
     assert_eq!(v["error"]["details"]["got"], 52);
 }
 
@@ -83,6 +83,6 @@ fn future_format_json_envelope() {
         .to_string();
     let v = run_and_parse(&["verify", &s, "--json"]);
     assert_eq!(v["error"]["kind"], "FutureFormat");
-    assert_eq!(v["error"]["exit_code"], 3);
+    assert_eq!(v["error"]["exit_code"], 2);
     assert_eq!(v["error"]["details"]["tag"], "seed");
 }

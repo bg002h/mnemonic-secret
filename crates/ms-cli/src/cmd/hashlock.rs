@@ -72,7 +72,7 @@ pub struct HashlockArgs {
     /// Phrase -> preimage method (phrase sources only).
     #[arg(long, value_enum)]
     pub method: Option<Method>,
-    /// Write the preimage ms1 string here, owner-only; a failed write leaves an existing file unchanged. Never suppresses stdout, so stdout must not be this file (refused, exit 64).
+    /// Write the preimage ms1 string here, owner-only; a failed write leaves an existing file unchanged. Never suppresses stdout, so stdout must not be this file (refused, exit 8).
     #[arg(long, value_name = "FILE")]
     pub out: Option<PathBuf>,
     /// One JSON object on stdout in place of the record line. Carries the secret.
@@ -261,7 +261,8 @@ fn derive(args: &HashlockArgs, source: SourceKind) -> Result<Derived> {
                 // preimage and a sha256 digest are both 64 hex characters and
                 // are indistinguishable by shape. The message is the whole of
                 // the fix, which is why it has to be right.
-                return Err(CliError::BadInput(format!(
+                // An override exists (--phrase-looks-like-digest-ok): REFUSED, 8.
+                return Err(CliError::Refused(format!(
                     "that phrase is {chars} hex characters, the width of a digest. \
                      Hashing it commits the wallet to the ASCII of those characters, \
                      NOT to the digest they spell.\n\

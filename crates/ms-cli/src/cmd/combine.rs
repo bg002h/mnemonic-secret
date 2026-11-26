@@ -79,7 +79,7 @@ fn read_shares(
     // SAME loop the `-` path runs, so a grouped card re-ingests either way.
     if let Some(p) = in_path {
         if !args.is_empty() {
-            return Err(CliError::BadInput(format!(
+            return Err(CliError::Usage(format!(
                 "cannot read shares from both --in {} and the argument channel \
                  (one input source per invocation)",
                 p.display()
@@ -244,7 +244,7 @@ fn emit_phrase(
         // cycle-15 Lane M (slug #8, defense-in-depth): scrub the serialized
         // secret-bearing JSON buffer on drop.
         let s: Zeroizing<String> = Zeroizing::new(
-            to_string(&json).map_err(|e| CliError::BadInput(format!("json serialization: {e}")))?,
+            to_string(&json).map_err(|e| CliError::Internal(format!("json serialization: {e}")))?,
         );
         println!("{}", *s);
     } else {
@@ -271,7 +271,7 @@ fn emit_entropy(entropy: &[u8], kind: &'static str, json: bool) -> Result<()> {
         // cycle-15 Lane M (slug #8, defense-in-depth): scrub the serialized
         // secret-bearing JSON buffer on drop.
         let s: Zeroizing<String> = Zeroizing::new(
-            to_string(&json).map_err(|e| CliError::BadInput(format!("json serialization: {e}")))?,
+            to_string(&json).map_err(|e| CliError::Internal(format!("json serialization: {e}")))?,
         );
         println!("{}", *s);
     } else {
@@ -296,7 +296,7 @@ fn emit_ms1(payload: &Payload, entropy: &[u8], kind: &'static str, json: bool) -
         // cycle-15 Lane M (slug #8, defense-in-depth): scrub the serialized
         // secret-bearing JSON buffer on drop.
         let s: Zeroizing<String> = Zeroizing::new(
-            to_string(&json).map_err(|e| CliError::BadInput(format!("json serialization: {e}")))?,
+            to_string(&json).map_err(|e| CliError::Internal(format!("json serialization: {e}")))?,
         );
         println!("{}", *s);
     } else {

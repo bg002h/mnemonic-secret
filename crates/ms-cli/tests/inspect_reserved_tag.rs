@@ -17,7 +17,9 @@ fn inspect_reserved_seed_tag_reports_rule_7() {
         .args(["inspect", "-"])
         .write_stdin(s.to_string())
         .assert()
-        .success()
+        // The report is printed whole, and the code says it would not decode
+        // (exit-code spec R5: 2, INVALID).
+        .code(2)
         .stdout(predicate::str::contains("FAIL"))
         .stdout(predicate::str::contains("reserved-tag-not-emitted"));
 }

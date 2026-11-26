@@ -13,25 +13,27 @@
 //! internally against `"ms"`. HRP mismatches surface as exit 2 (via
 //! `From<ms_codec::Error>` mapping `WrongHrp` → `CliError::FormatViolation`).
 //!
-//! Exit codes (D26 cross-CLI parity; Cycle F `ms1-repair-demote-to-candidate`
-//! demotes the correction-applied case from 5 to 4 — see below):
+//! Exit codes (the constellation exit-code spec's bits; D26's meanings, Cycle F
+//! `ms1-repair-demote-to-candidate`):
 //!   - 0 — input was already valid (no corrections applied)
-//!   - 4 — VERIFY-ME candidate: a substitution correction was applied. An
+//!   - 20 — 16 REPAIRED + 4 UNVERIFIED, a VERIFY-ME candidate: a substitution
+//!     correction was applied. An
 //!     ms1 is a single-string bearer secret with no cross-chunk hash and no
 //!     internal redundancy, so a bounded-distance BCH substitution-correction
 //!     spends the checksum's error-detection budget and can alias to a
 //!     DIFFERENT valid seed undetectably (BIP-93: implementations SHOULD NOT
 //!     automatically proceed with a corrected codex32 string without user
 //!     confirmation). `ms repair` therefore NEVER silently "recovers" an
-//!     ms1 — any correction is surfaced as an unverified candidate (exit 4),
+//!     ms1 — any correction is surfaced as an unverified candidate (exit 20),
 //!     mirroring the toolkit's `mnemonic repair --ms1` demotion (same
-//!     `ms_codec` engine). ms-cli has no indel recovery path, so exit 5 is
-//!     effectively unreachable for `ms repair` — a corrected ms1 is always
-//!     a candidate.
-//!   - 2 — unrepairable input (`CliError::FormatViolation`) — propagated
-//!     by `?`. The new v0.2.0 `ms_codec::Error::TooManyErrors` is mapped
-//!     to `FormatViolation` in `error.rs` for parity with mk-cli's
-//!     `CliError::Codec(_) → 2` rule.
+//!     `ms_codec` engine). A single ms1 has no oracle, so 16 never comes
+//!     without 4 here.
+//!   - 22 — 20 + 2 INVALID: a correction was applied but the corrected
+//!     string is not an ms1 card this version decodes (exit-code spec
+//!     decision 6). The corrected string is still printed, with the warning,
+//!     for a person repairing by hand.
+//!   - 2 — unrepairable input (`TooManyErrors`), or a string with a clean
+//!     checksum that is not a card: nothing is printed (`?`).
 //!
 //! D9 secret-on-stdout: ms1 IS the seed-secret (BIP-39 entropy), so this
 //! subcommand ALWAYS emits a stderr advisory when invoked (regardless of
@@ -55,6 +57,7 @@ use zeroize::Zeroizing;
 
 use crate::advisory::{emit_output_class_advisory, OutputClass};
 use crate::error::{CliError, Result};
+use crate::exit_code::Bits;
 use crate::parse::{read_input, Source};
 
 /// `ms repair` arguments.
@@ -69,7 +72,7 @@ pub struct RepairArgs {
     /// FILE's directory (its target's, for a symlink) must be writable, and a run
     /// killed mid-write can leave that owner-only temporary behind. It OVERWRITES
     /// (§6b); a symlink is followed and its target replaced. If ms would also
-    /// print on stdout and stdout is FILE, the run is refused (exit 64).
+    /// print on stdout and stdout is FILE, the run is refused (exit 8).
     ///
     /// **Not to be confused with `ms gen-man --out <DIR>`**, which is shipped,
     /// exampled, driven by this repo's `man-release.yml` and by
@@ -144,7 +147,19 @@ pub fn run(args: RepairArgs) -> Result<u8> {
     // length / BCH-uncorrectable rejections surface as `ms_codec::Error`
     // and route to the appropriate exit code via `From<ms_codec::Error>`
     // in error.rs (`TooManyErrors` → `FormatViolation` → exit 2 per D26).
-    let (_tag, _payload, corrections) = ms_codec::decode_with_correction(&original)?;
+    //
+    // Exit-code spec decision 6: a CORRECTED string that does not decode is
+    // still printed (a person repairing by hand needs to see it), and the run
+    // adds 2. A clean string that does not decode fails atomically (2).
+    let (corrections, not_a_card): (Vec<CorrectionDetail>, Option<CliError>) =
+        match ms_codec::decode_with_correction(&original) {
+            Ok((_tag, _payload, corrections)) => (corrections, None),
+            Err(e @ ms_codec::Error::TooManyErrors { .. }) => return Err(e.into()),
+            Err(e) => match correct_only(&original) {
+                Some(c) if !c.is_empty() => (c, Some(CliError::from(e))),
+                _ => return Err(e.into()),
+            },
+        };
 
     // The corrected ms1 is itself a valid decodable secret — hold it as Zeroizing.
     let (corrected_chunk, corrected_positions) =
@@ -169,11 +184,20 @@ pub fn run(args: RepairArgs) -> Result<u8> {
     // the correction record is what an operator needs to SEE before trusting a
     // repaired card, so it belongs on the stream they are reading rather than
     // buried in a file they will feed to an engraver. It is also the one verb
-    // that writes `--out` while exiting non-zero (4, VERIFY-ME) -- the file is
+    // that writes `--out` while exiting non-zero (20, VERIFY-ME) -- the file is
     // written all the same, because a correction the operator must confirm is
     // still the artifact they asked for.
+    // A corrected string that is not a card is shown, never filed: `--out`
+    // feeds an engraver, so it is not written (exit-code spec decision 6).
     if let Some(path) = args.out.as_deref() {
-        crate::out::write_artifact(path, &format!("{}\n", *corrected_chunk))?;
+        if not_a_card.is_none() {
+            crate::out::write_artifact(path, &format!("{}\n", *corrected_chunk))?;
+        } else {
+            eprintln!(
+                "repair: --out {} was not written: the corrected string is not a card",
+                path.display()
+            );
+        }
     }
 
     if args.json {
@@ -194,8 +218,8 @@ pub fn run(args: RepairArgs) -> Result<u8> {
     let any_correction = reports.iter().any(|r| !r.corrected_positions.is_empty());
 
     // Cycle F (`ms1-repair-demote-to-candidate`) Option B demotion: a touched
-    // substitution correction is a VERIFY-ME candidate (exit 4), never a
-    // silent exit-5 "recovered" — an ms1 is a single-string bearer secret
+    // substitution correction is a VERIFY-ME candidate (16 + 4 = 20), never
+    // a silent "recovered" — an ms1 is a single-string bearer secret
     // with no cross-chunk hash / internal redundancy, so the correction
     // cannot self-verify. The reason BODY mirrors the toolkit engine's ms1
     // `SetVerify::Unverified` reason text (prefixed `repair: ` here) (D27/D9 parity).
@@ -206,8 +230,57 @@ pub fn run(args: RepairArgs) -> Result<u8> {
              copy before use; BIP-93 recommends confirming a corrected codex32 string"
         );
     }
+    let mut bits = Bits::NONE;
+    if any_correction {
+        bits |= Bits::REPAIRED | Bits::UNVERIFIED;
+    }
+    if let Some(e) = not_a_card {
+        eprintln!(
+            "repair: the corrected string is NOT an ms1 card this version decodes: {}",
+            e.message()
+        );
+        bits |= Bits::INVALID;
+    }
+    Ok(bits.to_exit_code())
+}
 
-    Ok(if any_correction { 4 } else { 0 })
+/// BCH correction alone, for a string `decode_with_correction` corrected and
+/// then refused at decode: the same steps as the codec's (symbols, residue,
+/// `decode_regular_errors`, re-verify), without the decode. `None` when the
+/// string does not parse or is uncorrectable; an empty vector when its
+/// checksum is already clean.
+fn correct_only(s: &str) -> Option<Vec<CorrectionDetail>> {
+    const ALPHABET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+    let lower = Zeroizing::new(s.to_ascii_lowercase());
+    let rest = lower.strip_prefix("ms1")?;
+    let mut symbols: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::with_capacity(rest.len()));
+    for c in rest.bytes() {
+        symbols.push(ALPHABET.iter().position(|&b| b == c)? as u8);
+    }
+    let residue = |data: &[u8]| {
+        let mut input = ms_codec::bch::hrp_expand("ms");
+        input.extend_from_slice(data);
+        let r = ms_codec::bch::polymod_run(&input) ^ ms_codec::bch::MS_REGULAR_CONST;
+        zeroize::Zeroize::zeroize(&mut input);
+        r
+    };
+    let r = residue(&symbols);
+    if r == 0 {
+        return Some(Vec::new());
+    }
+    let (positions, magnitudes) = ms_codec::bch_decode::decode_regular_errors(r, symbols.len())?;
+    let mut details = Vec::with_capacity(positions.len());
+    for (&pos, &mag) in positions.iter().zip(&magnitudes) {
+        let was = *symbols.get(pos)?;
+        let now = was ^ mag;
+        details.push(CorrectionDetail {
+            position: pos,
+            was: ALPHABET[(was & 0x1F) as usize] as char,
+            now: ALPHABET[(now & 0x1F) as usize] as char,
+        });
+        symbols[pos] = now;
+    }
+    (residue(&symbols) == 0).then_some(details)
 }
 
 /// Build the corrected ms1 string + `(position, was, now)` triples from
@@ -351,7 +424,7 @@ fn emit_json(corrected_chunks: &[String], reports: &[RepairDetail]) -> Result<()
     // carries the corrected secret ms1 — scrub the buffer on drop.
     let body: Zeroizing<String> = Zeroizing::new(
         serde_json::to_string(&envelope)
-            .map_err(|e| CliError::BadInput(format!("repair JSON serialize: {e}")))?,
+            .map_err(|e| CliError::Internal(format!("repair JSON serialize: {e}")))?,
     );
     println!("{}", *body);
     Ok(())

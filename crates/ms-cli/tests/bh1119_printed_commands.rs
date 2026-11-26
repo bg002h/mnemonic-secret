@@ -42,7 +42,7 @@ fn share_text(t: char, i: char) -> String {
     )
 }
 
-/// Run `ms <args>` in `dir` (rc 1 expected), take the stderr line starting with
+/// Run `ms <args>` in `dir` (rc 2 expected: an invalid input), take the stderr line starting with
 /// `ms `, assert it equals `want`, run it in `sh -c` in `dir`; return the run.
 fn remedy(dir: &Path, name: &str, want: &str, args: &[&str]) -> std::process::Output {
     std::fs::write(dir.join(name), format!("{ZERO}\n")).unwrap();
@@ -52,7 +52,7 @@ fn remedy(dir: &Path, name: &str, want: &str, args: &[&str]) -> std::process::Ou
         .write_stdin("")
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(1), "first run exit");
+    assert_eq!(out.status.code(), Some(2), "first run exit");
     let err = String::from_utf8(out.stderr).unwrap();
     let line = err
         .lines()
@@ -313,7 +313,8 @@ fn range_row(want: &str, args: &[&str]) {
         .write_stdin("")
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(1));
+    // K and N are settings: a bad one is a usage error (exit-code spec decision 2).
+    assert_eq!(out.status.code(), Some(64));
     assert_eq!(
         String::from_utf8(out.stderr)
             .unwrap()

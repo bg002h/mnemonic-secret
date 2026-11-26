@@ -50,7 +50,7 @@ fn bh1119_ms_i12_combine_oracle() {
     // The bad pair: 40 data bytes (string length 86); combine refuses it.
     let bad = format!("{}\n{}\n", share(40, Fe::A), share(40, Fe::C));
     let c = ms(&["combine", "--to", "entropy", "-"], &bad);
-    assert_eq!(c.status.code(), Some(1), "{}", err_s(&c));
+    assert_eq!(c.status.code(), Some(2), "{}", err_s(&c));
     assert_eq!(out_s(&c), "");
     assert_eq!(
         err_s(&c),
@@ -85,7 +85,7 @@ fn bh1119_ms_i12_inspect_share_length_json() {
     let s = share(40, Fe::A);
     eprintln!("share len {} : {s}", s.len());
     let o = ms(&["inspect", "--json", "-"], &s);
-    assert_eq!(o.status.code(), Some(0), "{}", err_s(&o));
+    assert_eq!(o.status.code(), Some(2), "{}", err_s(&o));
     assert_eq!(out_s(&o), BAD_LEN_JSON_A);
 }
 
@@ -93,7 +93,7 @@ fn bh1119_ms_i12_inspect_share_length_json() {
 fn bh1119_ms_i12_inspect_share_length_text() {
     let s = share(40, Fe::A);
     let o = ms(&["inspect", "-"], &s);
-    assert_eq!(o.status.code(), Some(0), "{}", err_s(&o));
+    assert_eq!(o.status.code(), Some(2), "{}", err_s(&o));
     assert_eq!(out_s(&o), BAD_LEN_TEXT_A);
 }
 
@@ -101,10 +101,10 @@ fn bh1119_ms_i12_inspect_share_length_text() {
 fn bh1119_ms_i12_inspect_secret_share_bad_length_both_reasons() {
     let s = share(40, Fe::S);
     let j = ms(&["inspect", "--json", "-"], &s);
-    assert_eq!(j.status.code(), Some(0), "{}", err_s(&j));
+    assert_eq!(j.status.code(), Some(2), "{}", err_s(&j));
     assert_eq!(out_s(&j), BAD_LEN_JSON_S);
     let t = ms(&["inspect", "-"], &s);
-    assert_eq!(t.status.code(), Some(0), "{}", err_s(&t));
+    assert_eq!(t.status.code(), Some(2), "{}", err_s(&t));
     assert_eq!(out_s(&t), BAD_LEN_TEXT_S);
 }
 
@@ -112,15 +112,17 @@ fn bh1119_ms_i12_inspect_secret_share_bad_length_both_reasons() {
 fn bh1119_ms_i12_inspect_share_verdict_tracks_length() {
     let mut wrong = Vec::new();
     // Data sizes whose share string has a codex32 length (48-93 short, 125-127
-    // long); other lengths are refused at parse (exit 1), unchanged.
+    // long); other lengths are refused at parse (exit 2), unchanged. A share
+    // that would not combine is reported and exits 2 (exit-code spec R5).
     for n in (16..=44usize).chain(63..=64) {
         let s = share(n, Fe::A);
         let want = SECRET_LENGTHS.contains(&s.len());
         let jo = ms(&["inspect", "--json", "-"], &s);
         let to = ms(&["inspect", "-"], &s);
+        let rc = Some(if want { 0 } else { 2 });
         assert_eq!(
             (jo.status.code(), to.status.code()),
-            (Some(0), Some(0)),
+            (rc, rc),
             "n={n} len={}",
             s.len()
         );

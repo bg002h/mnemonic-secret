@@ -55,11 +55,11 @@ fn bughunt_ms_t2_inspect_unknown_language_says_ok() {
     );
 
     let j = ms(&["inspect", "--json", "-"], &s);
-    assert_eq!(j.status.code(), Some(0), "inspect --json: {}", err_s(&j));
+    assert_eq!(j.status.code(), Some(2), "inspect --json: {}", err_s(&j));
     assert_eq!(out_s(&j), T2_JSON);
 
     let t = ms(&["inspect", "-"], &s);
-    assert_eq!(t.status.code(), Some(0), "inspect: {}", err_s(&t));
+    assert_eq!(t.status.code(), Some(2), "inspect: {}", err_s(&t));
     assert_eq!(out_s(&t), T2_TEXT);
 }
 

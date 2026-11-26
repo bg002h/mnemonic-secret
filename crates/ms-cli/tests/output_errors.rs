@@ -4,11 +4,11 @@
 //! - A reader that closed the pipe only stops the output: no text, no
 //!   signal, the exit code is the verb's own.
 //! - Any other write error (`/dev/full`, ENOSPC), from a verb or `--help`:
-//!   "ms: cannot write the output: <error>" on stderr, exit 1; a verb that
-//!   was already failing keeps its code. A success code (0, and `repair`'s
-//!   4 = VERIFY-ME candidate) becomes 1.
+//!   "ms: cannot write the output: <error>" on stderr, and 32 (IO) is ADDED to
+//!   the verb's own code (the constellation exit-code spec's R8): 0 becomes
+//!   32, `repair`'s 20 becomes 52, a failing 2 becomes 34. 64 never combines.
 //! - A stdout that cannot write (read-only, access mode 3, or closed at exec,
-//!   `>&-`) is the same: EBADF, exit 1; a verb that writes nothing to stdout
+//!   `>&-`) is the same: EBADF, exit 32; a verb that writes nothing to stdout
 //!   is not touched, and nothing meant for stdout lands in an `--out` file.
 //! - No file of the crate but `src/sink.rs` names stdout.
 #![cfg(target_os = "linux")]
@@ -112,7 +112,7 @@ fn closed_case(a: &[String], code: i32, stderr_too: bool) {
 }
 
 #[test]
-fn full_stdout_exits_1_with_the_line() {
+fn full_stdout_exits_32_with_the_line() {
     for a in [
         s(&["gui-schema"]),
         s(&["vectors"]),
@@ -161,7 +161,7 @@ fn full_stdout_exits_1_with_the_line() {
         s(&["decode", "--help"]),
         s(&["help"]),
     ] {
-        full_case(&a, 1);
+        full_case(&a, 32);
     }
 }
 
@@ -193,42 +193,42 @@ fn full_stdout_is_not_a_silent_success() {
     let mut wrong = Vec::new();
     for a in &cases {
         let o = on_full(a);
-        if o.status.code() != Some(1) {
+        if o.status.code() != Some(32) {
             wrong.push(format!("{a:?} -> {:?}", o.status.code()));
         }
     }
-    assert!(wrong.is_empty(), "stdout lost without exit 1: {wrong:#?}");
+    assert!(wrong.is_empty(), "stdout lost without exit 32: {wrong:#?}");
 }
 
 #[test]
-fn full_stdout_after_a_repair_exits_1_not_4() {
+fn full_stdout_after_a_repair_adds_32_to_20() {
     let a = s(&["repair", A, "--ms1", DAMAGED]);
     let o = ms().args(&a).output().unwrap();
-    assert_eq!(o.status.code(), Some(4), "fixture: repair should exit 4");
-    full_case(&a, 1);
+    assert_eq!(o.status.code(), Some(20), "fixture: repair should exit 20");
+    full_case(&a, 52);
 }
 
 #[test]
-fn full_stdout_keeps_a_failing_code() {
-    // A --json failure prints its envelope on stdout; the failing code stays.
-    full_case(&s(&["decode", A, "--json", "ms1notastring"]), 1);
-    // verify's phrase mismatch is a failing 4 (an Err), unlike repair's
-    // candidate 4 (an Ok): it stays 4.
+fn full_stdout_adds_32_to_a_failing_code() {
+    // A --json failure prints its envelope on stdout; 32 is added to its 2.
+    full_case(&s(&["decode", A, "--json", "ms1notastring"]), 34);
+    // verify's phrase mismatch is 1, NO: the lost envelope makes it 33.
     let other = "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong";
     let a = s(&["verify", A, "--json", MS1, "--phrase", other]);
     let o = ms().args(&a).output().unwrap();
     assert_eq!(
         o.status.code(),
-        Some(4),
-        "fixture: a phrase mismatch exits 4"
+        Some(1),
+        "fixture: a phrase mismatch exits 1"
     );
-    full_case(&a, 4);
-    // A reserved-tag (future format) ms1: verify's text OK line is lost, the 3 stays.
-    let a = s(&["verify", A, &reserved_tag_ms1()]);
+    full_case(&a, 33);
+    // A reserved-tag (future format) ms1 under --json: the envelope is lost, 2 + 32.
+    let a = s(&["verify", A, "--json", &reserved_tag_ms1()]);
     let o = ms().args(&a).output().unwrap();
-    assert_eq!(o.status.code(), Some(3), "fixture: a future format exits 3");
-    full_case(&a, 3);
-    // A usage error in --json mode prints its envelope on stdout: 64 stays.
+    assert_eq!(o.status.code(), Some(2), "fixture: a future format exits 2");
+    full_case(&a, 34);
+    // A usage error in --json mode prints its envelope on stdout: 64 never
+    // combines, so it stays.
     let a = s(&["hashlock", "--random", "--json"]);
     let o = ms().args(&a).output().unwrap();
     assert_eq!(o.status.code(), Some(64), "fixture: {o:?}");
@@ -240,9 +240,9 @@ fn full_stdout_keeps_a_failing_code() {
 }
 
 /// A verb whose `--out FILE` artifact was written and whose stdout record was
-/// then lost exits 1; the file stays.
+/// then lost exits 32; the file stays.
 #[test]
-fn full_stdout_after_an_out_file_exits_1_and_keeps_the_file() {
+fn full_stdout_after_an_out_file_exits_32_and_keeps_the_file() {
     let f = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("output_errors_hashlock.ms1");
     let _ = std::fs::remove_file(&f);
     let a = s(&[
@@ -261,7 +261,7 @@ fn full_stdout_after_an_out_file_exits_1_and_keeps_the_file() {
         err.contains("THE PREIMAGE -- the secret -- is in "),
         "the stderr card is still printed: {err}"
     );
-    full_case(&a, 1);
+    full_case(&a, 32);
     let body = std::fs::read_to_string(&f).unwrap();
     assert!(body.starts_with("ms10hash"), "the --out file: {body:?}");
 }
@@ -289,17 +289,18 @@ fn closed_reader_exits_with_the_verbs_code() {
     ] {
         closed_case(&a, 0, false);
     }
-    closed_case(&s(&["repair", A, "--ms1", DAMAGED]), 4, false);
-    closed_case(&s(&["verify", A, "--json", MS1, "--phrase", "x"]), 1, false);
+    closed_case(&s(&["repair", A, "--ms1", DAMAGED]), 20, false);
+    // "x" is not a BIP-39 phrase: an invalid input, 2.
+    closed_case(&s(&["verify", A, "--json", MS1, "--phrase", "x"]), 2, false);
 }
 
 #[test]
 fn closed_reader_on_stdout_and_stderr_exits_the_verbs_code() {
-    // encode and decode print stderr advisories after stdout; repair 4 prints
+    // encode and decode print stderr advisories after stdout; repair 20 prints
     // its UNVERIFIED line on stderr. Both streams go to a pipe with no reader.
     closed_case(&s(&["encode", A, "--phrase", PHRASE]), 0, true);
     closed_case(&s(&["decode", A, MS1]), 0, true);
-    closed_case(&s(&["repair", A, "--ms1", DAMAGED]), 4, true);
+    closed_case(&s(&["repair", A, "--ms1", DAMAGED]), 20, true);
 }
 
 #[test]
@@ -328,7 +329,7 @@ fn only_the_sink_names_stdout() {
 /// std's stdout reports EBADF as a successful write, so a stdout opened
 /// read-only (`ms vectors 1</dev/null`) lost the output and exited 0.
 #[test]
-fn read_only_stdout_exits_1_with_the_line() {
+fn read_only_stdout_exits_32_with_the_line() {
     const BADF: &str = "ms: cannot write the output: Bad file descriptor (os error 9)";
     let on_read_only = |a: &[String]| {
         let ro = std::fs::File::open("/dev/null").unwrap();
@@ -347,7 +348,7 @@ fn read_only_stdout_exits_1_with_the_line() {
     ] {
         let o = on_read_only(&a);
         let err = String::from_utf8_lossy(&o.stderr);
-        assert_eq!(o.status.code(), Some(1), "{a:?}: {err}");
+        assert_eq!(o.status.code(), Some(32), "{a:?}: {err}");
         assert_eq!(err.lines().last(), Some(BADF), "{a:?}: {err}");
     }
     // A verb that writes nothing to stdout keeps its code and prints no line.
@@ -369,7 +370,7 @@ fn read_only_stdout_exits_1_with_the_line() {
 /// Linux accepts access mode 3 (`O_WRONLY | O_RDWR`): the fd can neither read
 /// nor write, and a write gets EBADF, which std reports as a success.
 #[test]
-fn no_access_mode_stdout_exits_1_with_the_line() {
+fn no_access_mode_stdout_exits_32_with_the_line() {
     const BADF: &str = "ms: cannot write the output: Bad file descriptor (os error 9)";
     let fd = unsafe { libc::open(c"/dev/null".as_ptr(), libc::O_ACCMODE) };
     assert!(fd >= 0);
@@ -380,7 +381,7 @@ fn no_access_mode_stdout_exits_1_with_the_line() {
         .output()
         .unwrap();
     let err = String::from_utf8_lossy(&o.stderr);
-    assert_eq!(o.status.code(), Some(1), "{err}");
+    assert_eq!(o.status.code(), Some(32), "{err}");
     assert_eq!(err.lines().last(), Some(BADF), "{err}");
 }
 
@@ -424,7 +425,7 @@ fn on_closed_stdout(a: &[String]) -> Output {
 }
 
 #[test]
-fn closed_stdout_exits_1_with_the_line() {
+fn closed_stdout_exits_32_with_the_line() {
     const BADF: &str = "ms: cannot write the output: Bad file descriptor (os error 9)";
     for a in [
         s(&["vectors"]),
@@ -438,7 +439,9 @@ fn closed_stdout_exits_1_with_the_line() {
         let o = on_closed_stdout(&a);
         let err = String::from_utf8_lossy(&o.stderr);
         assert!(!err.contains("panicked"), "{a:?}: {err}");
-        assert_eq!(o.status.code(), Some(1), "{a:?}: {err}");
+        // R8: 32 is added to the verb's own code (repair's 20 becomes 52).
+        let want = if a[0] == "repair" { 52 } else { 32 };
+        assert_eq!(o.status.code(), Some(want), "{a:?}: {err}");
         assert_eq!(err.lines().last(), Some(BADF), "{a:?}: {err}");
     }
 }
@@ -467,7 +470,7 @@ fn closed_stdout_with_out_file_succeeds_and_nothing_goes_astray() {
     );
 
     // hashlock writes the plate to --out AND its `hash:` record to stdout:
-    // the record is lost (exit 1, the line) and never reaches the file.
+    // the record is lost (exit 32, the line) and never reaches the file.
     let f = dir.path().join("preimage.ms1");
     let o = on_closed_stdout(&s(&[
         "hashlock",
@@ -480,7 +483,7 @@ fn closed_stdout_with_out_file_succeeds_and_nothing_goes_astray() {
         f.to_str().unwrap(),
     ]));
     let err = String::from_utf8_lossy(&o.stderr);
-    assert_eq!(o.status.code(), Some(1), "{err}");
+    assert_eq!(o.status.code(), Some(32), "{err}");
     assert_eq!(
         err.lines().last(),
         Some("ms: cannot write the output: Bad file descriptor (os error 9)"),

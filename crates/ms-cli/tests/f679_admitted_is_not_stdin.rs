@@ -116,7 +116,7 @@ fn verify_genuine_stdin_twice_is_still_refused() {
         vec!["verify", "--allow-argv-secret", "--phrase", "-"],
     ] {
         let o = run(&args, MS1);
-        assert_eq!(o.status.code(), Some(1), "{args:?}");
+        assert_eq!(o.status.code(), Some(64), "{args:?}");
         assert!(
             String::from_utf8_lossy(&o.stderr)
                 .contains("cannot read both ms1 and --phrase from stdin"),
@@ -224,7 +224,7 @@ fn derive_genuine_stdin_twice_is_still_refused() {
         ],
     ] {
         let o = run(&args, MS1);
-        assert_eq!(o.status.code(), Some(1), "{args:?}");
+        assert_eq!(o.status.code(), Some(64), "{args:?}");
         assert!(
             String::from_utf8_lossy(&o.stderr).contains("one stdin per invocation"),
             "{args:?}: {}",

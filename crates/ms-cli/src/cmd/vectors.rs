@@ -22,9 +22,9 @@ pub struct VectorsArgs {
 pub fn run(args: VectorsArgs) -> Result<u8> {
     if args.pretty {
         let parsed: serde_json::Value = serde_json::from_str(VECTORS_V0_1_JSON)
-            .map_err(|e| CliError::BadInput(format!("vector corpus parse: {}", e)))?;
+            .map_err(|e| CliError::Internal(format!("vector corpus parse: {}", e)))?;
         let pretty = serde_json::to_string_pretty(&parsed)
-            .map_err(|e| CliError::BadInput(format!("vector corpus serialize: {}", e)))?;
+            .map_err(|e| CliError::Internal(format!("vector corpus serialize: {}", e)))?;
         println!("{}", pretty);
     } else {
         // Compact: print as-is.

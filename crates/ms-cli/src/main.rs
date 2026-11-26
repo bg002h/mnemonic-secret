@@ -15,6 +15,7 @@ mod bip39_friendly;
 mod cmd;
 mod codex32_friendly;
 mod error;
+mod exit_code;
 mod format;
 mod hashlock_phrase;
 mod language;
@@ -66,7 +67,8 @@ RECOVERING A FORGOTTEN BIP-39 PASSPHRASE:
     name = "ms",
     version,
     about = "ms — engrave-friendly BIP-39 entropy backups (the ms1 format)",
-    after_help = PASSPHRASE_RECOVERY_HELP
+    // The exit-status legend comes last (exit-code spec R11).
+    after_help = format!("{PASSPHRASE_RECOVERY_HELP}\n\n{}", exit_code::HELP_LEGEND)
 )]
 pub(crate) struct Cli {
     #[command(subcommand)]
@@ -104,7 +106,7 @@ enum Command {
 
     /// Verify an ms1 string is valid (and optionally round-trips against a phrase).
     #[command(
-        after_long_help = "EXAMPLES:\n  ms verify --in card.ms1                                # exit 0 = valid v0.1\n  ms verify --in card.ms1 --phrase - < phrase.txt        # round-trip; exit 4 on mismatch\n  ms verify --in card.ms1 --phrase - --json < phrase.txt # structured outcome"
+        after_long_help = "EXAMPLES:\n  ms verify --in card.ms1                                # exit 0 = valid v0.1\n  ms verify --in card.ms1 --phrase - < phrase.txt        # round-trip; exit 1 on mismatch\n  ms verify --in card.ms1 --phrase - --json < phrase.txt # structured outcome"
     )]
     Verify(cmd::verify::VerifyArgs),
 
@@ -140,16 +142,17 @@ enum Command {
     )]
     GenMan(cmd::gen_man::GenManArgs),
 
-    /// Repair an ms1 string via BCH error correction (exit 4 = VERIFY-ME candidate).
+    /// Repair an ms1 string via BCH error correction (exit 20 = corrected, VERIFY before use).
     ///
     /// Single-HRP context: no `--hrp` flag. Up to BCH(93,80,8) t=4 single-chunk
     /// correction capacity via `ms_codec::decode_with_correction`. The corrected
     /// ms1 is emitted on stdout (with a stderr `PrivateKeyMaterial` advisory
-    /// per D9 — ms1 is BIP-39 entropy and sensitive). Exit 4 on
-    /// correction-applied (Cycle F demotion — a corrected ms1 is an UNVERIFIED
+    /// per D9 — ms1 is BIP-39 entropy and sensitive). Exit 20 (16 corrected +
+    /// 4 unverified) on correction-applied (a corrected ms1 is an UNVERIFIED
     /// candidate that cannot self-verify; confirm independently before use; D26);
     /// exit 0 if input was already valid; exit 2 if BCH-uncorrectable
-    /// (`TooManyErrors`).
+    /// (`TooManyErrors`) or the input is not an ms1 card; 22 (20 + 2) if a
+    /// correction was applied but the corrected string is not a card.
     #[command(
         after_long_help = "EXAMPLES:\n  ms repair --in broken.txt                    # text-form report on stdout\n  ms repair --ms1 - < broken.txt               # read the ms1 from stdin\n  ms repair --in broken.txt --json             # JSON envelope on stdout\n  ms repair --in broken.txt --out repaired.ms1 # the repaired ms1 alone, to an owner-only file"
     )]
@@ -189,9 +192,8 @@ fn main() -> ExitCode {
     // place while refusing it. `ms encode --nosuchflag --phrase <seed>` is the
     // invocation that tells the two apart.
     //
-    // Exit 1 is `ms`'s user-input code (SPEC §6). No code is renumbered here:
-    // §6f rules `mk`'s invalid-artifact 2 the only code this cycle changes, and
-    // that is P3's.
+    // A refusal is exit 8, REFUSED (the exit-code spec's R2: this guard runs
+    // before the parser, so a secret on argv plus a bad flag is 8, not 64).
     // F-687 fold 1 (review N1): `std::env::args()` PANICS (exit 101) on a
     // non-UTF-8 argument. Refuse it as a usage error instead, naming only the
     // position -- the bytes may be a secret, so they are never echoed.
@@ -206,7 +208,7 @@ fn main() -> ExitCode {
                 "error: argument {i} on argv (0 is `ms` itself) is not valid UTF-8; \
                  refused (the value is not shown)"
             );
-            return ExitCode::from(64);
+            return ExitCode::from(exit_code::USAGE);
         }
     };
     // `--allow-argv-secret` is a CHANNEL, not a flag: its own parse happens
@@ -218,11 +220,11 @@ fn main() -> ExitCode {
     let parse_argv: Vec<String> = match argv_guard::decide(&argv) {
         argv_guard::Decision::Refuse(msg) => {
             eprintln!("ms: {msg}");
-            return ExitCode::from(1);
+            return ExitCode::from(exit_code::REFUSED);
         }
         argv_guard::Decision::Usage(msg) => {
             eprintln!("error: {msg}");
-            return ExitCode::from(64);
+            return ExitCode::from(exit_code::USAGE);
         }
         argv_guard::Decision::Proceed(v) => v,
     };
@@ -247,15 +249,14 @@ fn main() -> ExitCode {
             }
             return match e.kind() {
                 clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
-                    ExitCode::from(sink::exit_code(0, true))
+                    ExitCode::from(sink::exit_code(exit_code::OK))
                 }
-                _ => ExitCode::from(64),
+                _ => ExitCode::from(exit_code::USAGE),
             };
         }
     };
 
     let json_mode = is_json_mode(&cli.command);
-    let verify_mode = matches!(cli.command, Command::Verify(_));
 
     let result: Result<u8> = match cli.command {
         Command::Derive(args) => cmd::derive::run(args),
@@ -272,11 +273,11 @@ fn main() -> ExitCode {
         Command::Combine(args) => cmd::combine::run(args),
     };
 
-    let (code, success) = match result {
-        Ok(code) => (code, true),
+    let code = match result {
+        Ok(code) => code,
         Err(e) => {
-            emit_error(&e, json_mode, verify_mode);
-            (e.exit_code(), false)
+            emit_error(&e, json_mode);
+            e.exit_code()
         }
     };
 
@@ -285,7 +286,7 @@ fn main() -> ExitCode {
     // when failure_count == 0. Runs on both Ok and Err paths.
     mlock::report_at_exit();
 
-    ExitCode::from(sink::exit_code(code, success))
+    ExitCode::from(sink::exit_code(code))
 }
 
 fn is_json_mode(cmd: &Command) -> bool {
@@ -305,20 +306,7 @@ fn is_json_mode(cmd: &Command) -> bool {
     }
 }
 
-fn emit_error(e: &CliError, json_mode: bool, verify_mode: bool) {
-    // Special case: FutureFormat is a "success-shaped" exit-3 path used by
-    // verify. In text mode, cmd::verify::emit_future_format already wrote the
-    // "OK: valid future format" line to stdout; emitting an "error: ..."
-    // message to stderr here would contradict that. Skip the stderr write.
-    // Only verify prints that line: decode, derive, hashlock and repair print
-    // nothing, so for them the error line is the only output (E4,
-    // `ms-future-format-silent-exit-3`).
-    // In JSON mode we DO want the error envelope (cmd handler suppressed its
-    // own stdout output specifically so this path produces the envelope).
-    if matches!(e, CliError::FutureFormat { .. }) && !json_mode && verify_mode {
-        return;
-    }
-
+fn emit_error(e: &CliError, json_mode: bool) {
     if json_mode && !e.stderr_only() {
         // JSON-mode errors go to stdout (one stream) per SPEC §6.3.
         let envelope = ErrorEnvelopeJson {

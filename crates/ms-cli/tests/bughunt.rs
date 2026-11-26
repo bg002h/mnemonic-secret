@@ -213,11 +213,11 @@ fn bughunt_ms_05_inspect_would_combine_unchecked() {
     );
 
     let j = ms(&["inspect", "--json", "-"], &s);
-    assert_eq!(j.status.code(), Some(0), "{}", err_s(&j));
+    assert_eq!(j.status.code(), Some(2), "{}", err_s(&j));
     assert_eq!(out_s(&j), SECRET_SHARE_JSON);
 
     let t = ms(&["inspect", "-"], &s);
-    assert_eq!(t.status.code(), Some(0), "{}", err_s(&t));
+    assert_eq!(t.status.code(), Some(2), "{}", err_s(&t));
     assert_eq!(out_s(&t), SECRET_SHARE_TEXT);
 }
 
@@ -225,7 +225,7 @@ fn bughunt_ms_05_inspect_would_combine_unchecked() {
 fn bughunt_ms_05b_inspect_uppercase_secret_share() {
     let s = secret_share_k2().to_uppercase();
     let j = ms(&["inspect", "--json", "-"], &s);
-    assert_eq!(j.status.code(), Some(0), "{}", err_s(&j));
+    assert_eq!(j.status.code(), Some(2), "{}", err_s(&j));
     assert_eq!(out_s(&j), SECRET_SHARE_JSON);
     let t = ms(&["inspect", "-"], &s);
     assert_eq!(out_s(&t), SECRET_SHARE_TEXT);
@@ -238,7 +238,7 @@ fn bughunt_ms_05b_inspect_uppercase_secret_share() {
 // reachable through `ms repair` on a right-length string with a non-alphabet
 // character (decode.rs parse_ms1_symbols used UnexpectedStringLength as a
 // stand-in). Ruling (FIX_bughunt_ms.md): `invalid character '<c>'`, the
-// character as typed, exit 1, JSON kind Codex32.
+// character as typed, exit 2 (was 1 before the exit-code spec), JSON kind Codex32.
 // ---------------------------------------------------------------------------
 /// `ms repair --json` on `input`: (exit code, error kind, message, details).
 fn repair_error(input: &str) -> (Option<i32>, Value, Value, Value) {
@@ -258,7 +258,7 @@ fn bughunt_ms_07_string_length_error_contradicts_itself() {
     let bad = "ms10entrsqz4b42424242424242424242424q8lurdrzjnyn08";
     assert_eq!(bad.len(), 50, "precondition: a length in the valid set");
     let (code, kind, msg, details) = repair_error(bad);
-    assert_eq!(code, Some(1));
+    assert_eq!(code, Some(2));
     assert_eq!(kind, "Codex32");
     assert_eq!(msg, "invalid character 'b' (not in codex32 alphabet)");
     assert_eq!(details, Value::Null);
@@ -283,7 +283,7 @@ fn bughunt_ms_07b_repair_names_char_as_typed() {
         let (code, kind, msg, _) = repair_error(input);
         assert_eq!(
             (code, kind.as_str(), msg.as_str()),
-            (Some(1), Some("Codex32"), Some(want)),
+            (Some(2), Some("Codex32"), Some(want)),
             "{input:?}"
         );
     }
@@ -292,7 +292,7 @@ fn bughunt_ms_07b_repair_names_char_as_typed() {
         &["repair", "--ms1", "-"],
         "ms10entrsqz4?42424242424242424242424q8lurdrzjnyn08",
     );
-    assert_eq!(o.status.code(), Some(1));
+    assert_eq!(o.status.code(), Some(2));
     assert_eq!(
         err_s(&o),
         "error: invalid character '?' (not in codex32 alphabet)\n"

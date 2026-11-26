@@ -473,7 +473,7 @@ pub(crate) fn read_stdin_passphrase() -> Result<Zeroizing<String>> {
                     }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(e) => return Err(CliError::BadInput(format!("failed to read stdin: {e}"))),
+                Err(e) => return Err(CliError::Io(format!("failed to read stdin: {e}"))),
             }
         }
         if bytes.last() != Some(&b'\n') {
@@ -510,21 +510,24 @@ fn is_valid_env_name(name: &str) -> bool {
 fn resolve_env(value: &str) -> Result<Zeroizing<String>> {
     let var = value.strip_prefix(ENV_PREFIX).unwrap_or(value);
     if !is_valid_env_name(var) {
-        return Err(CliError::BadInput(format!(
+        // Judged from the command line alone: a usage error (64).
+        return Err(CliError::Usage(format!(
             "--passphrase: invalid env-var name `{var}`"
         )));
     }
-    let mut v = std::env::var(var).map(Zeroizing::new).map_err(|e| {
-        CliError::BadInput(match e {
-            // F-687 fold 1 (review N1): set-but-not-UTF-8 is not "not set".
-            std::env::VarError::NotUnicode(_) => format!(
+    let mut v = std::env::var(var)
+        .map(Zeroizing::new)
+        .map_err(|e| match e {
+            // F-687 fold 1 (review N1): set-but-not-UTF-8 is not "not set". The
+            // value is a malformed input (2); an unset variable is something the
+            // environment lacks (32, the exit-code spec's `@env:NAME` row).
+            std::env::VarError::NotUnicode(_) => CliError::BadInput(format!(
                 "--passphrase: env-var {var} referenced by sentinel is set but not valid UTF-8"
-            ),
-            std::env::VarError::NotPresent => {
-                format!("--passphrase: env-var {var} referenced by sentinel is not set")
-            }
-        })
-    })?;
+            )),
+            std::env::VarError::NotPresent => CliError::Io(format!(
+                "--passphrase: env-var {var} referenced by sentinel is not set"
+            )),
+        })?;
     strip_one_newline(&mut v);
     warn_if_empty(&format!("environment variable {var}"), &v);
     Ok(v)

@@ -34,7 +34,7 @@ pub struct EncodeArgs {
     /// FILE's directory (its target's, for a symlink) must be writable, and a run
     /// killed mid-write can leave that owner-only temporary behind. It OVERWRITES
     /// (§6b); a symlink is followed and its target replaced. If ms would also
-    /// print on stdout and stdout is FILE, the run is refused (exit 64).
+    /// print on stdout and stdout is FILE, the run is refused (exit 8).
     ///
     /// **Not to be confused with `ms gen-man --out <DIR>`**, which is shipped,
     /// exampled, driven by this repo's `man-release.yml` and by
@@ -173,7 +173,7 @@ pub(crate) fn resolve_secret_payload(
             (bytes, None)
         } else {
             // clap's required-group should have caught this; defensive.
-            return Err(CliError::BadInput(
+            return Err(CliError::Usage(
                 "exactly one of --phrase or --hex is required".into(),
             ));
         };
@@ -401,7 +401,7 @@ fn emit_json(ms1: &str, language: Option<&str>, word_count: usize, entropy: &[u8
     // cycle-15 Lane M (slug #8, defense-in-depth): scrub the serialized
     // entropy-bearing JSON buffer on drop.
     let s: zeroize::Zeroizing<String> = zeroize::Zeroizing::new(
-        to_string(&json).map_err(|e| CliError::BadInput(format!("json serialization: {}", e)))?,
+        to_string(&json).map_err(|e| CliError::Internal(format!("json serialization: {}", e)))?,
     );
     println!("{}", *s);
     Ok(())

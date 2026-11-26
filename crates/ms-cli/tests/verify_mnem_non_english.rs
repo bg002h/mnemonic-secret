@@ -137,19 +137,20 @@ fn round_trip_label_shows_wire_language() {
 /// `emit_future_format` (the Err-leg is preserved verbatim; the Ok-arm refactor
 /// did NOT drop it). Built like the existing `verify_future_format.rs` fixture.
 #[test]
-fn reserved_tag_still_exits_3() {
+fn reserved_tag_exits_2() {
     let mut data = vec![0x00u8];
     data.extend_from_slice(&[0xAAu8; 16]);
     let s = Codex32String::from_seed("ms", 0, "seed", Fe::S, &data)
         .unwrap()
         .to_string();
     let o = ms(&["verify", &s]);
-    assert_eq!(code(&o), 3, "reserved tag must exit 3; stderr: {}", err(&o));
+    assert_eq!(code(&o), 2, "reserved tag must exit 2; stderr: {}", err(&o));
     assert!(
-        out(&o).contains("OK: valid future format (v0.2+, tag seed)"),
-        "exit-3 future-format message: {}",
+        !out(&o).contains("OK"),
+        "no OK line beside a failing code (exit-code spec R5): {}",
         out(&o)
     );
+    assert!(err(&o).contains("reserved-not-emitted"), "{}", err(&o));
 }
 
 /// Positive control: English entr ms1 (no --phrase, and with --phrase) → exit 0,

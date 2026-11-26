@@ -225,8 +225,8 @@ fn every_help_example_runs_and_none_puts_material_on_argv() {
                     !stderr.contains("on ARGV"),
                     "`{line}` is refused by ms's own argv guard ({mode}):\n{stderr}"
                 );
-                // `ms repair` on a damaged card is exit 4 (VERIFY-ME) by design.
-                let ok = code == Some(0) || (verb == "repair" && code == Some(4));
+                // `ms repair` on a damaged card is exit 20 (VERIFY-ME) by design.
+                let ok = code == Some(0) || (verb == "repair" && code == Some(20));
                 assert!(ok, "`{line}` ({mode}) exited {code:?}:\n{stderr}");
                 if let Some(filter) = &jq {
                     let v: serde_json::Value = serde_json::from_slice(&out.stdout)

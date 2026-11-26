@@ -20,7 +20,9 @@ fn inspect_non_zero_prefix_reports_rule_8() {
         .args(["inspect", "-"])
         .write_stdin(s.to_string())
         .assert()
-        .success()
+        // The report is printed whole, and the code says it would not decode
+        // (exit-code spec R5: 2, INVALID).
+        .code(2)
         .stdout(predicate::str::starts_with("FAIL: would NOT decode v0.1"))
         .stdout(predicate::str::contains("non-zero-prefix"));
 }

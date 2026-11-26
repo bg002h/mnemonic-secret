@@ -128,7 +128,7 @@ fn refusals_in_four_spellings_on_both_channels_name_the_ms1_route() {
         ),
     ] {
         let (code, _, se) = record_via_stdin(s.as_bytes(), "sha256");
-        assert_eq!(code, Some(1), "stdin {name}: {se}");
+        assert_eq!(code, Some(2), "stdin {name}: {se}");
         assert!(
             se.contains("--in"),
             "stdin {name} must name the ms1 route:\n{se}"
@@ -143,7 +143,7 @@ fn refusals_in_four_spellings_on_both_channels_name_the_ms1_route() {
             .args(["hashlock", "--hashlock-phrase", &s])
             .output()
             .unwrap();
-        assert_eq!(out.status.code(), Some(1), "argv {name}");
+        assert_eq!(out.status.code(), Some(8), "argv {name}");
         assert!(
             String::from_utf8_lossy(&out.stderr).contains("--in"),
             "argv {name} must name the ms1 route"
@@ -156,7 +156,7 @@ fn hex64_either_case_is_redirected_to_hex_on_stdin_and_short_hex_is_accepted() {
     let lower = "c3e97525442520da4cffd5f57aae3f6273990017f2e0fa30c056e32172e22016";
     for s in [lower.to_string(), lower.to_ascii_uppercase()] {
         let (code, _, se) = record_via_stdin(s.as_bytes(), "sha256");
-        assert_eq!(code, Some(1), "{se}");
+        assert_eq!(code, Some(8), "{se}");
         assert!(
             se.contains("--hex") && se.contains("64 hex characters"),
             "{se}"
@@ -188,7 +188,7 @@ fn printable_ascii_boundary_and_cap() {
         "caf\u{e9}".as_bytes().to_vec(),
     ] {
         let (code, _, se) = record_via_stdin(&bad, "sha256");
-        assert_eq!(code, Some(1), "{bad:?}: {se}");
+        assert_eq!(code, Some(2), "{bad:?}: {se}");
         assert!(
             se.contains("printable ASCII"),
             "the rule must be named:\n{se}"
@@ -199,10 +199,10 @@ fn printable_ascii_boundary_and_cap() {
         Some(0)
     );
     let (code, _, se) = record_via_stdin("a".repeat(101).as_bytes(), "sha256");
-    assert_eq!(code, Some(1));
+    assert_eq!(code, Some(2));
     assert!(se.contains("100"), "{se}");
     let (code, _, se) = record_via_stdin(b"", "sha256");
-    assert_eq!(code, Some(1));
+    assert_eq!(code, Some(2));
     assert!(se.contains("empty"), "{se}");
 }
 
@@ -239,7 +239,7 @@ fn lockstep_100_and_101() {
     );
 
     let (code, so, se) = record_via_stdin(P101.as_bytes(), "hardened");
-    assert_eq!(code, Some(1), "101 characters must be refused: {se}");
+    assert_eq!(code, Some(2), "101 characters must be refused: {se}");
     assert!(so.is_empty(), "a refused phrase produced a record:\n{so}");
     assert!(se.contains("101") && se.contains("100"), "{se}");
     // The CODEC still derives it -- the cap lives in the CLI. The corpus row
