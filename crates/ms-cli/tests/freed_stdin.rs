@@ -78,7 +78,7 @@ fn verify_can_read_a_card_and_a_phrase_in_one_invocation() {
         .write_stdin(MS1.to_string())
         .output()
         .unwrap();
-    assert_eq!(contended.status.code(), Some(1));
+    assert_eq!(contended.status.code(), Some(64));
     assert!(String::from_utf8_lossy(&contended.stderr)
         .contains("cannot read both ms1 and --phrase from stdin"));
 }
@@ -123,7 +123,7 @@ fn both_channels_on_stdin_are_still_refused() {
         .write_stdin(MS1.to_string())
         .output()
         .unwrap();
-    assert_eq!(both_ms1.status.code(), Some(1));
+    assert_eq!(both_ms1.status.code(), Some(64));
     assert!(String::from_utf8_lossy(&both_ms1.stderr)
         .contains("cannot read both ms1 and --phrase from stdin"));
 
@@ -132,7 +132,7 @@ fn both_channels_on_stdin_are_still_refused() {
         .write_stdin(MS1.to_string())
         .output()
         .unwrap();
-    assert_eq!(both_derive.status.code(), Some(1));
+    assert_eq!(both_derive.status.code(), Some(64));
     assert!(String::from_utf8_lossy(&both_derive.stderr).contains("one stdin per invocation"));
 }
 

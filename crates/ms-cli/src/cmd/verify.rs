@@ -2,8 +2,8 @@
 //!
 //! Realizes SPEC §2.4 (full command), §2.4.1 (locked validation order:
 //! decode -> exit on failure -> parse phrase -> compare -> exit), §6 exit
-//! codes 0 (valid) / 1 (user-input) / 2 (format) / 3 (future format) /
-//! 4 (round-trip mismatch).
+//! codes 0 (valid) / 2 (an invalid input, a future format included) /
+//! 1 (round-trip mismatch).
 
 use bip39::{Language, Mnemonic};
 use clap::Args;
@@ -41,7 +41,7 @@ pub struct VerifyArgs {
     pub in_path: Option<std::path::PathBuf>,
 
     /// Original BIP-39 phrase to round-trip-check against the decoded entropy.
-    /// When supplied, exit 4 on mismatch. Use `-` to read phrase from stdin.
+    /// When supplied, exit 1 on mismatch. Use `-` to read phrase from stdin.
     #[arg(long)]
     pub phrase: Option<String>,
 
@@ -78,7 +78,8 @@ pub fn run(mut args: VerifyArgs) -> Result<u8> {
             .reads_stdin()
     });
     if ms1_src.reads_stdin() && phrase_reads_stdin {
-        return Err(CliError::BadInput(
+        // Two readers on one stdin: the command line alone is wrong (64).
+        return Err(CliError::Usage(
             "cannot read both ms1 and --phrase from stdin".into(),
         ));
     }
@@ -93,8 +94,8 @@ pub fn run(mut args: VerifyArgs) -> Result<u8> {
     };
 
     // Step 2: decode the ms1 string. On failure, dispatch per §6.1.1 — phrase
-    // is NEVER parsed in this branch. The two `Err` arms (exit-3 future-format +
-    // generic) are preserved verbatim; ONLY the `Ok((tag,payload))` arm is routed
+    // is NEVER parsed in this branch. Every `Err` (a future format included)
+    // goes through `From<ms_codec::Error>`; ONLY the `Ok((tag,payload))` arm is routed
     // through the helper, which honors the WIRE language byte for Payload::Mnem
     // (H5) and carries the #[non_exhaustive] guard + disagreement note.
     let mut stderr = std::io::stderr().lock();
@@ -109,13 +110,9 @@ pub fn run(mut args: VerifyArgs) -> Result<u8> {
             defaulted,
             &mut stderr,
         )?,
-        Err(ms_codec::Error::ReservedTagNotEmittedInV01 { got }) => {
-            // Exit 3 path: print the success-shaped "valid future format" message.
-            // emit_future_format always returns Err(FutureFormat), so propagate
-            // via `?`; the Ok arm is unreachable but the compiler can't prove that.
-            emit_future_format(&got, args.json)?;
-            return Ok(0);
-        }
+        // A future format is an input this version cannot use: exit 2 like any
+        // other, with the error line naming the tag (exit-code spec R5: the
+        // message agrees with the code, so no "OK" line).
         Err(e) => return Err(e.into()),
     };
     drop(stderr);
@@ -179,25 +176,6 @@ fn emit_simple_ok(word_count: usize, str_len: usize, json: bool) -> Result<()> {
         );
     }
     Ok(())
-}
-
-fn emit_future_format(tag: &[u8; 4], json: bool) -> Result<()> {
-    let tag_str = std::str::from_utf8(tag).unwrap_or("<non-utf8>");
-    // Text mode: print success-shaped OK line. JSON mode: do NOT print here —
-    // main.rs's ExitCode dispatch invokes emit_error which prints the error
-    // envelope; printing a success line here would yield two outputs on stdout.
-    if !json {
-        println!("OK: valid future format (v0.2+, tag {})", tag_str);
-    }
-    // Either way, return Err(FutureFormat) so main.rs lands exit 3. In JSON
-    // mode the error envelope (with kind="FutureFormat", exit_code=3) becomes
-    // the sole stdout output; text-mode users see the OK line above + (since
-    // ExitCode != 0) any stderr emit_error would write — but main.rs's
-    // emit_error writes to stdout in --json mode and to stderr in text mode,
-    // so text mode emits "error: ..." stderr alongside the OK stdout line.
-    // That's intentionally redundant — exit-3 is "OK semantically" but the
-    // err-path-with-stderr-display flags it for users who only watch stderr.
-    Err(CliError::FutureFormat { tag: *tag })
 }
 
 fn emit_round_trip_ok(_mnemonic: &Mnemonic, language: &str, json: bool) -> Result<()> {

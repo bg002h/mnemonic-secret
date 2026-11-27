@@ -262,7 +262,7 @@ pub fn admitted(channel: &str) -> Option<&'static [String]> {
 
 /// What the guard decided.
 pub enum Decision {
-    /// Refuse, with this message. Exit 1.
+    /// Refuse, with this message. Exit 8 (REFUSED).
     Refuse(String),
     /// A USAGE error the guard itself detects on raw argv, with this message.
     /// Exit 64, the same code clap gives for its own. Distinct from `Refuse`

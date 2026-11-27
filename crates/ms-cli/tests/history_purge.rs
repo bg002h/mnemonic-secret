@@ -128,7 +128,7 @@ fn refusal_stderr(argv: &[&str]) -> String {
         .unwrap();
     assert_eq!(
         out.status.code(),
-        Some(1),
+        Some(8),
         "expected the argv refusal for {argv:?}"
     );
     String::from_utf8_lossy(&out.stderr).to_string()

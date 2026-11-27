@@ -79,24 +79,24 @@ Defaults:
 
 **Encoder pre-checks:**
 
-- `--hex <bytes>`: odd-length input rejected with friendly error "expected even-length hex (one byte = 2 chars)" (exit 1, `CliError::BadInput`).
+- `--hex <bytes>`: odd-length input rejected with friendly error "expected even-length hex (one byte = 2 chars)" (exit 2, `CliError::BadInput`).
 - `--language <name>`: must be one of the 10 BIP-39 wordlists (see §8). clap value-enum rejects unknowns with usage error (exit 64).
-- BIP-39 checksum mismatch: `CliError::Bip39(bip39::Error::InvalidChecksum)` → exit 1 with friendly message.
-- BIP-39 wordlist mismatch: `bip39::Mnemonic::parse_in` is language-strict — `--language japanese` with English words yields `CliError::Bip39(bip39::Error::UnknownWord)` (exit 1). The CLI does not silently transcode across wordlists.
+- BIP-39 checksum mismatch: `CliError::Bip39(bip39::Error::InvalidChecksum)` → exit 2 with friendly message.
+- BIP-39 wordlist mismatch: `bip39::Mnemonic::parse_in` is language-strict — `--language japanese` with English words yields `CliError::Bip39(bip39::Error::UnknownWord)` (exit 2). The CLI does not silently transcode across wordlists.
 
-**Edge-case enumeration** (locked at v0.1; tests must cover each row):
+**Edge-case enumeration** (locked at v0.1; tests must cover each row; exit codes per §6, the constellation scheme since 2026-11-26):
 
 | input | resulting error | exit |
 |---|---|---|
-| `--phrase ""` (empty) | `Bip39(BadWordCount)` "expected 12/15/18/21/24 words, got 0" | 1 |
-| `--phrase " "` (whitespace only) | `Bip39(BadWordCount)` (post-trim, 0 words) | 1 |
-| `--phrase "abandon"` (1 word) | `Bip39(BadWordCount)` | 1 |
-| `--phrase "abandon abandon … about " + 13th word` | `Bip39(BadWordCount)` (only 12/15/18/21/24 accepted) | 1 |
+| `--phrase ""` (empty) | `Bip39(BadWordCount)` "expected 12/15/18/21/24 words, got 0" | 2 |
+| `--phrase " "` (whitespace only) | `Bip39(BadWordCount)` (post-trim, 0 words) | 2 |
+| `--phrase "abandon"` (1 word) | `Bip39(BadWordCount)` | 2 |
+| `--phrase "abandon abandon … about " + 13th word` | `Bip39(BadWordCount)` (only 12/15/18/21/24 accepted) | 2 |
 | `--phrase "abandon  abandon  about"` (extra spaces) | OK if word count is valid (`bip39::Mnemonic::parse_in` uses `split_whitespace` which collapses runs); reaches checksum check | depends |
-| `--hex ""` (empty) | `BadInput("expected hex of length 32/40/48/56/64 chars")` | 1 |
-| `--hex "ZZ"` (non-hex chars) | `BadInput` (e.g., `"invalid character 'Z' at position 0"` — exact wording is the underlying `hex` crate's; the CLI may paraphrase) | 1 |
-| `--hex "00"` (too short, even) | `BadInput("hex decodes to 1 byte; expected 16/20/24/28/32")` | 1 |
-| `--hex "0".repeat(31)` (odd length) | `BadInput("expected even-length hex…")` | 1 |
+| `--hex ""` (empty) | `BadInput("expected hex of length 32/40/48/56/64 chars")` | 2 |
+| `--hex "ZZ"` (non-hex chars) | `BadInput` (e.g., `"invalid character 'Z' at position 0"` — exact wording is the underlying `hex` crate's; the CLI may paraphrase) | 2 |
+| `--hex "00"` (too short, even) | `BadInput("hex decodes to 1 byte; expected 16/20/24/28/32")` | 2 |
+| `--hex "0".repeat(31)` (odd length) | `BadInput("expected even-length hex…")` | 2 |
 | both `--phrase` and `--hex` supplied | clap usage error (mutually-exclusive group) | 64 |
 | neither `--phrase` nor `--hex` supplied | clap usage error (required group) | 64 |
 
@@ -187,12 +187,12 @@ Multiple `failure_reasons` may be reported in a single FAIL response (e.g., wron
 
 When this happens, ms-cli `inspect` treats the error like any other CliError per §6:
 
-- **Text mode:** stderr emits `error: <friendly_codex32(...)>`; exit 1; stdout silent.
-- **`--json` mode:** stdout emits the §5.4 error envelope (`{"schema_version": "1", "error": {"kind": "Codex32", ...}}`); exit 1.
+- **Text mode:** stderr emits `error: <friendly_codex32(...)>`; exit 2; stdout silent.
+- **`--json` mode:** stdout emits the §5.4 error envelope (`{"schema_version": "1", "error": {"kind": "Codex32", ...}}`); exit 2.
 
 This is consistent with the audit's C3 "decode vs inspect routing" — `inspect` is more lenient than `decode` only over the *post-BIP-93-parse* surface. A string that fails BIP-93 parsing has no inspectable structure for either command.
 
-**Note on exit-3 routing:** `inspect` cannot route exit 3 (`FutureFormat` / `ReservedTagNotEmittedInV01`). Reaching that signal requires a full `ms_codec::decode()` pass, which only `verify` does post-decode. A string that fails BIP-93 parsing because (e.g.) it uses a long-checksum framing reserved for v0.2+ surfaces here as exit 1 (`Codex32`) — the user must run `ms verify <string>` to learn whether it's a recognizable future format or genuinely malformed.
+**Note on future formats:** a string `inspect` parses but that would not decode (a reserved tag included) is reported in full on stdout (`FAIL: would NOT decode v0.1` plus its reasons and fields) and exits 2 (§6; the constellation exit-code spec's decision 8 — before 2026-11-26 this exited 0). A string that fails BIP-93 parsing because (e.g.) it uses a long-checksum framing reserved for v0.2+ surfaces here as exit 2 (`Codex32`) with no report.
 
 ### §2.4 `ms verify` — exit-code-only validity (and optional round-trip)
 
@@ -205,25 +205,25 @@ ms verify [<ms1>] [--phrase <words>] [--language <lang>] [--json]
 1. Read input. Run inspect-style validation.
 2. **Without `--phrase`:**
    - Valid v0.1 → exit 0; stdout `OK: valid v0.1 entr (<N> words, <M> chars)` (text mode) or success JSON object (`--json`).
-   - Reserved-not-emitted (rule 7) → exit 3; stdout `OK: valid future format (v0.2+, tag <tag>)`.
-   - Otherwise invalid → exit 2 (format violation) or exit 1 (user-input error per the §6 table); stdout `FAIL: <reason>`.
+   - Reserved-not-emitted (rule 7) → exit 2; stderr `error: tag "<tag>" reserved-not-emitted in v0.1; deferred to v0.2+`, stdout empty (until 2026-11-26 this exited 3 beside a stdout `OK:` line, which the exit-code spec's R5 removed: a message agrees with its code).
+   - Otherwise invalid → exit 2; the error on stderr (`error: <reason>`), or the §5.4 envelope under `--json`.
 3. **With `--phrase`:**
    - Same validation first; if invalid, behaves as above.
    - If valid: decode → re-derive phrase via `bip39::Mnemonic::from_entropy_in(language, &entropy)` → compare `phrase.to_string()` against the supplied `--phrase`.
    - Match → exit 0; stdout `OK: round-trip valid (<N> words, language=<lang>)`.
-   - Mismatch → exit 4 (`CliError::VerifyPhraseMismatch`); stdout `FAIL: phrase mismatch (decoded does not match --phrase)`. **Never echo either phrase to stdout** (both are secrets — the diff is exit-code only).
+   - Mismatch → exit 1, NO (`CliError::VerifyPhraseMismatch`); stderr `error: phrase mismatch (decoded does not match --phrase)`. **Never echo either phrase to stdout** (both are secrets — the diff is exit-code only).
 4. `--json` mode mirrors the text outcomes structurally.
 
 #### §2.4.1 Validation order (locked)
 
 Verify executes in a strict order so behavior is deterministic regardless of how many inputs are bad simultaneously:
 
-1. **Read ms1 input** (arg or stdin per §3.2). On stdin read failure → exit 1, `CliError::BadInput`. **Concurrent stdin guard:** if both the ms1 positional arg AND `--phrase` resolve to stdin (i.e., user wrote `ms verify - --phrase -` or both omitted), exit 1 immediately with `CliError::BadInput("cannot read both ms1 and --phrase from stdin")` — clap can't catch this, so it's a runtime check before reading either.
-2. **Decode the ms1 string** via `ms_codec::decode(&ms1)`. On failure: dispatch per §6.1.1 (so e.g. `Codex32` → exit 1; `WrongHrp` / `ThresholdNotZero` / `ShareIndexNotSecret` / `ReservedPrefixViolation` / `UnknownTag` / `TagInvalidAlphabet` → exit 2; `ReservedTagNotEmittedInV01` → exit 3 with `OK: valid future format`; `UnexpectedStringLength` / `PayloadLengthMismatch` → exit 1). **`--phrase` is NOT parsed in this branch** — verify exits before touching the phrase.
-3. **Parse `--phrase` if present** via `bip39::Mnemonic::parse_in(language, phrase)`. On bip39 failure → exit 1, `CliError::Bip39` with friendly message.
-4. **Compare** the decoded entropy's re-derivation against the parsed phrase. Match → exit 0; mismatch → exit 4, `CliError::VerifyPhraseMismatch`.
+1. **Read ms1 input** (arg or stdin per §3.2). On stdin read failure → exit 32, `CliError::Io`. **Concurrent stdin guard:** if both the ms1 positional arg AND `--phrase` resolve to stdin (i.e., user wrote `ms verify - --phrase -` or both omitted), exit 64 immediately with `CliError::Usage("cannot read both ms1 and --phrase from stdin")` — clap can't catch this, so it's a runtime check before reading either; it is judged from the command line alone.
+2. **Decode the ms1 string** via `ms_codec::decode(&ms1)`. On failure: dispatch per §6.1.1 — every decode failure is exit 2, a reserved-not-emitted tag included. **`--phrase` is NOT parsed in this branch** — verify exits before touching the phrase.
+3. **Parse `--phrase` if present** via `bip39::Mnemonic::parse_in(language, phrase)`. On bip39 failure → exit 2, `CliError::Bip39` with friendly message.
+4. **Compare** the decoded entropy's re-derivation against the parsed phrase. Match → exit 0; mismatch → exit 1, `CliError::VerifyPhraseMismatch`.
 
-The order matters: an engraver who typed back a corrupt ms1 AND supplied a wrong-language phrase should see the ms1-side error first (i.e., **before** phrase parsing — "first" here means "earlier in the validation pipeline," not "higher severity"). Step 2's exit codes are still 1, 2, or 3 per §6.1.1; the dispatch is by error variant, not by some external severity ordering. The point of the "first" framing is that the phrase is never even read in step 3 if the ms1 already failed in step 2 — so a wrong-language phrase cannot mask an engraving-side error.
+The order matters: an engraver who typed back a corrupt ms1 AND supplied a wrong-language phrase should see the ms1-side error first (i.e., **before** phrase parsing — "first" here means "earlier in the validation pipeline," not "higher severity"). Step 2's exit code is 2 per §6.1.1; the dispatch is by error variant, not by some external severity ordering. The point of the "first" framing is that the phrase is never even read in step 3 if the ms1 already failed in step 2 — so a wrong-language phrase cannot mask an engraving-side error.
 
 `verify` is the engraver round-trip command: type back the engraved ms1, supply the original phrase, exit code tells you if the engraving + your record are mutually consistent.
 
@@ -260,7 +260,7 @@ enum Command {
     Inspect(InspectArgs),
 
     /// Verify an ms1 string is valid (and optionally round-trips against a phrase).
-    #[command(after_long_help = "EXAMPLES:\n  ms verify <ms1>                          # exit 0 = valid v0.1\n  ms verify <ms1> --phrase \"abandon … about\"   # round-trip; exit 4 on mismatch\n  ms verify <ms1> --phrase \"...\" --json    # structured outcome")]
+    #[command(after_long_help = "EXAMPLES:\n  ms verify <ms1>                          # exit 0 = valid v0.1\n  ms verify <ms1> --phrase \"abandon … about\"   # round-trip; exit 1 on mismatch\n  ms verify <ms1> --phrase \"...\" --json    # structured outcome")]
     Verify(VerifyArgs),
 
     /// Print the SHA-pinned v0.1 test-vector corpus as JSON.
@@ -411,7 +411,7 @@ JSON value types: `prefix_byte` is a JSON **number** (not a hex string) represen
   "error": {
     "kind": "Bip39",
     "message": "BIP-39 checksum failure (last word does not match the entropy)",
-    "exit_code": 1,
+    "exit_code": 2,
     "details": null
   }
 }
@@ -421,35 +421,53 @@ JSON value types: `prefix_byte` is a JSON **number** (not a hex string) represen
 
 | kind | exit | details |
 |---|---|---|
-| `BadInput` | 1 | `null` (`message` carries detail) |
-| `Bip39` | 1 | `null` |
-| `Codex32` | 1 | `null` |
-| `UnexpectedStringLength` | 1 | `{"got": <usize>, "allowed": [50, 56, 62, 69, 75]}` |
-| `PayloadLengthMismatch` | 1 | `{"got": <usize>, "expected": [16, 20, 24, 28, 32]}` |
+| `BadInput` | 2 | `null` (`message` carries detail) |
+| `Usage` | 64 | `null` |
+| `Refused` | 8 | `null` |
+| `Io` | 32 | `null` |
+| `Internal` | 101 | `null` |
+| `Bip39` | 2 | `null` |
+| `Codex32` | 2 | `null` |
+| `UnexpectedStringLength` | 2 | `{"got": <usize>, "allowed": [50, 56, 62, 69, 75]}` |
+| `PayloadLengthMismatch` | 2 | `{"got": <usize>, "expected": [16, 20, 24, 28, 32]}` |
 | `FormatViolation` | 2 | `{"underlying_kind": "<ms_codec_variant_name>", "fields": {...}}` |
-| `FutureFormat` | 3 | `{"tag": "seed"}` (or whichever reserved tag was decoded) |
-| `VerifyPhraseMismatch` | 4 | `null` (phrases are secrets — never in JSON output) |
+| `FutureFormat` | 2 | `{"tag": "seed"}` (or whichever reserved tag was decoded) |
+| `VerifyPhraseMismatch` | 1 | `null` (phrases are secrets — never in JSON output) |
 
 `details` is **always present** in the JSON; the field carries `null` when no structured data exists for the variant. (Avoids the "is the field missing or is the value null?" ambiguity for strict JSON-schema consumers.) `kind` strings are stable across v0.1.x.
 
-`exit_code` in JSON duplicates the process exit code for consumer convenience; the canonical signal is the process exit code itself.
+`exit_code` in JSON duplicates the process exit code for consumer convenience, and like it is a bit sum (§6; the constellation exit-code spec's R14); the canonical signal is the process exit code itself.
 
 ---
 
 ## §6. Error handling and exit codes
 
-Locked exit-code table:
+Locked exit-code table. **Replaced on 2026-11-26** by the constellation exit-code
+spec (`SPEC_constellation_exit_codes.md` in mnemonic-engrave's `design/`,
+revision 5, its decisions 3 and 8 and §7c taken as recommended). The codes are
+the constellation's: 1 to 63 are sums of six bits, and 64 and 101 never combine.
+The root `ms --help` ends with the constellation legend, and each verb's `-h`/`--help` with one `Exit status:` line for that verb.
 
-| code | category | CliError variants |
-|---|---|---|
-| 0 | success | (no error) |
-| 1 | user-input error | `BadInput`, `Bip39`, `Codex32`, `UnexpectedStringLength`, `PayloadLengthMismatch` |
-| 2 | format violation | `FormatViolation` (covers `WrongHrp`, `ThresholdNotZero`, `ShareIndexNotSecret`, `TagInvalidAlphabet`, `UnknownTag`, `ReservedPrefixViolation`) |
-| 3 | valid-but-future-version | `FutureFormat` (covers `ReservedTagNotEmittedInV01`) |
-| 4 | verify round-trip mismatch | `VerifyPhraseMismatch` |
-| 64 | usage error (clap) | usage / parse failure of argv |
+| code | name | `ms` cases | CliError variants |
+|---|---|---|---|
+| 0 | OK | success; `repair` of a clean string; `inspect` of a string that would decode | (no error) |
+| 1 | NO | `verify --phrase` mismatch (well-formed phrase, different entropy) | `VerifyPhraseMismatch` |
+| 2 | INVALID | a bad checksum or length; a wrong HRP, tag, prefix, share or kind; a reserved (future) tag; a bad BIP-39 phrase or hex; empty input (decision 3); an `@env:` value that is not UTF-8; a preimage plate given to a seed verb; `inspect` of a string that would not decode or a share that would not combine (decision 8, report printed); `repair` uncorrectable | `BadInput`, `Bip39`, `Codex32`, `UnexpectedStringLength`, `PayloadLengthMismatch`, `FormatViolation`, `FutureFormat` |
+| 4 | UNVERIFIED | only with 16, from `repair` (a single ms1 has no oracle) | — |
+| 8 | REFUSED | a secret on argv (the pre-parser guard, `--allow-argv-secret`); `--out` is the file stdout is on; `--out` exists (`split`, `hashlock --random`); a digest-shaped hashlock phrase (`--phrase-looks-like-digest-ok`) | `Refused`, `StdoutIsOut` |
+| 16 | REPAIRED | `repair` applied a correction (always with 4: 20) | — |
+| 32 | IO | `--in` missing or unreadable; stdin unreadable; an unwritable `--out` or `gen-man --out`; an unset `@env:` variable; no OS randomness; a stdout write error or a closed stdout (ADDED to the other bits, R8; a closed stdout is detected on Linux, Android, macOS and the BSDs, not on Windows or other Unix) | `Io`, `OutputWrite` |
+| 64 | USAGE | clap's errors; the verb's own checks on the command line alone: two readers on one stdin, `--in` with an argument, K or N out of range, `derive --account` of 2^31 or more, a source count, a flag gate, an invalid `@env:` name, non-UTF-8 argv; all judged before any input is read or any refusal runs (R2) | `Usage` |
+| 101 | INTERNAL | a panic, a serializer or BIP-32 derivation that cannot fail, an `ms_codec::Error` variant newer than this build (R13: a test fails on any variant of the workspace's ms-codec that has no class) | `Internal` |
 
-**Note on exit 64.** Clap's default usage-error exit code is 2, but ms-cli reserves 2 for ms1 format-violation errors. The clap derive root in `main.rs` overrides the usage-error path to exit 64 explicitly (matching md-cli precedent at `crates/md-cli/src/main.rs:180-193`):
+`repair` sums (a K-of-N share at an index other than `s` counts as a valid string: 0 clean and echoed, 20 corrected and filed, `--json` adds `share: {threshold, index}`): 0 clean; 20 a correction (16 + 4); 22 a correction whose result
+is not a card ms decodes (20 + 2: printed with the warning, `--out` not
+written; decision 6; `--json` adds `not_a_card: {kind, message}` after `verdict`); 2 uncorrectable or a clean string that is not a card
+(nothing printed). A failed stdout write adds 32 (a lost repair report: 52).
+
+**Note on exit 64.** Clap's default usage-error exit code is 2, but 2 is
+INVALID. The clap derive root in `main.rs` maps every parse error to 64 (help
+and version to 0):
 
 ```rust
 match Cli::try_parse() {
@@ -461,26 +479,37 @@ match Cli::try_parse() {
 }
 ```
 
-The 1/2 distinction matters: exit 1 = the user gave us garbage; exit 2 = the user gave us something that looks like an ms1 string but violates the wire format. Scripts can branch on this to distinguish "user typo" from "tool refused to accept malformed encoding."
-
-Exit 3 is the script-readable signal "this is a valid future-version string." Tooling that wants to be forward-compatible can read `inspect`'s output to extract the reserved tag and route accordingly.
-
-Exit 4 is the engraver's round-trip integrity signal: separate from generic exit 1 because it indicates a security-relevant inconsistency (engraving error, transcription bug, language mismatch, or worse) rather than a user-supplied-bad-input.
+The old 1/2 split (user garbage versus a malformed ms1) is gone: both are
+INVALID, 2, and `kind` in the JSON envelope still tells them apart. The old 3
+(valid future format) is 2: this version cannot use the string, and the
+message names the reserved tag. The old 4 for a phrase mismatch is 1, NO; 4 now
+means only "verify before trusting", from `repair`.
 
 ### §6.1 `CliError` enum
 
 ```rust
 #[derive(Debug)]
 pub enum CliError {
-    /// User-input error: bad hex, missing args (exit 1).
+    /// An input is wrong for this verb: bad hex, empty input (exit 2).
     BadInput(String),
-    /// BIP-39 phrase parse / checksum failure (exit 1).
+    /// The command line alone is wrong (exit 64).
+    Usage(String),
+    /// A safety or policy refusal a flag, channel or destination waives (exit 8).
+    Refused(String),
+    /// Something needed from the system failed or is missing (exit 32).
+    Io(String),
+    /// A failure no class covers (exit 101).
+    Internal(String),
+    /// A failed `--out` write (exit 32) / `--out` is stdout (exit 8): §6.3.
+    OutputWrite(String),
+    StdoutIsOut(String),
+    /// BIP-39 phrase parse / checksum failure (exit 2).
     Bip39(bip39::Error),
-    /// codex32 parse / checksum failure (exit 1).
+    /// codex32 parse / checksum failure (exit 2).
     Codex32(codex32::Error),
-    /// String length not in v0.1 set (exit 1).
+    /// String length not in v0.1 set (exit 2).
     UnexpectedStringLength { got: usize },
-    /// Payload byte length mismatch (exit 1).
+    /// Payload byte length mismatch (exit 2).
     PayloadLengthMismatch { got: usize },
     /// Format violation — wrong HRP/threshold/share/tag/prefix (exit 2).
     /// Carries the originating ms-codec variant name + any structured fields.
@@ -489,9 +518,9 @@ pub enum CliError {
         message: String,
         details: Option<serde_json::Value>,
     },
-    /// Valid-but-future format (exit 3).
+    /// Valid-but-future format (exit 2).
     FutureFormat { tag: [u8; 4] },
-    /// Verify round-trip phrase mismatch (exit 4).
+    /// Verify round-trip phrase mismatch (exit 1).
     VerifyPhraseMismatch,
 }
 ```
@@ -504,26 +533,32 @@ For each variant of `ms_codec::Error`, the table below specifies the CliError va
 
 | `ms_codec::Error` variant | → `CliError` | exit | JSON `details` |
 |---|---|---|---|
-| `Codex32(e)` | `Codex32(e)` | 1 | `null` (`message` carries `friendly_codex32(&e)` text) |
+| `Codex32(e)` | `Codex32(e)` | 2 | `null` (`message` carries `friendly_codex32(&e)` text) |
 | `WrongHrp { got }` | `FormatViolation { underlying_kind: "WrongHrp", … }` | 2 | `{"got": "<hrp-string>"}` |
+| `MnemUnknownLanguage(code)` | `FormatViolation { underlying_kind: "MnemUnknownLanguage", … }` | 2 | `{"got": <u8-as-number>}` |
 | `ThresholdNotZero { got }` | `FormatViolation { underlying_kind: "ThresholdNotZero", … }` | 2 | `{"got": "<ASCII-digit-as-string>"}` |
 | `ShareIndexNotSecret { got }` | `FormatViolation { underlying_kind: "ShareIndexNotSecret", … }` | 2 | `{"got": "<char>"}` |
 | `TagInvalidAlphabet { got }` | `FormatViolation { underlying_kind: "TagInvalidAlphabet", … }` | 2 | `{"got_hex": "<8-hex-chars>"}` (bytes may not be UTF-8) |
 | `UnknownTag { got }` | `FormatViolation { underlying_kind: "UnknownTag", … }` | 2 | `{"tag": "<utf8>"}` |
-| `ReservedTagNotEmittedInV01 { got }` | `FutureFormat { tag: got }` | 3 | `{"tag": "<utf8>"}` |
+| `ReservedTagNotEmittedInV01 { got }` | `FutureFormat { tag: got }` | 2 | `{"tag": "<utf8>"}` |
 | `ReservedPrefixViolation { got }` | `FormatViolation { underlying_kind: "ReservedPrefixViolation", … }` | 2 | `{"got": <u8-as-number>}` |
-| `UnexpectedStringLength { got, allowed }` | `UnexpectedStringLength { got }` | 1 | `{"got": <usize>, "allowed": [50, 56, 62, 69, 75]}` |
-| `PayloadLengthMismatch { tag, expected, got }` | `PayloadLengthMismatch { got }` | 1 | `{"tag": "<utf8>", "got": <usize>, "expected": [16, 20, 24, 28, 32]}` |
+| `UnexpectedStringLength { got, allowed }` | `UnexpectedStringLength { got }` | 2 | `{"got": <usize>, "allowed": [50, 56, 62, 69, 75]}` |
+| `PayloadLengthMismatch { tag, expected, got }` | `PayloadLengthMismatch { got }` | 2 | `{"tag": "<utf8>", "got": <usize>, "expected": [16, 20, 24, 28, 32]}` |
+| `TooManyErrors { bound }`, the K-of-N share variants, `PreimageLengthMismatch`, `TagKindMismatch` | `FormatViolation { … }` | 2 | per variant |
+| `InvalidThreshold`, `InvalidShareCount` | `Usage` (K and N are settings) | 64 | `null` |
+| `RandomnessUnavailable` | `Io` | 32 | `null` |
+| any variant not dispatched above (`#[non_exhaustive]`; only a newer ms-codec than the build's, since `from_ms_codec_every_variant_has_its_class` reads the workspace's enum) | `Internal` | 101 | `null` |
 
 CliError-only variants (no ms-codec source):
 
 | `CliError` variant | exit | JSON `details` |
 |---|---|---|
-| `BadInput(msg)` | 1 | `null` (`message` carries `msg`) |
-| `Bip39(e)` | 1 | `null` (`message` carries `friendly_bip39(&e)` text) |
-| `VerifyPhraseMismatch` | 4 | `null` (phrases are secrets — never in JSON output) |
+| `BadInput(msg)` | 2 | `null` (`message` carries `msg`) |
+| `Usage(msg)` / `Refused(msg)` / `Io(msg)` / `Internal(msg)` | 64 / 8 / 32 / 101 | `null` (`message` carries `msg`) |
+| `Bip39(e)` | 2 | `null` (`message` carries `friendly_bip39(&e)` text) |
+| `VerifyPhraseMismatch` | 1 | `null` (phrases are secrets — never in JSON output) |
 
-The `kind` field in the §5.4 error JSON is the discriminant of the CliError variant — for `FormatViolation` it's the `underlying_kind` (e.g., `"WrongHrp"`); for the other variants it's the variant name itself (e.g., `"BadInput"`, `"Bip39"`, `"Codex32"`, `"UnexpectedStringLength"`, `"PayloadLengthMismatch"`, `"FutureFormat"`, `"VerifyPhraseMismatch"`).
+The `kind` field in the §5.4 error JSON is the discriminant of the CliError variant — for `FormatViolation` it's the `underlying_kind` (e.g., `"WrongHrp"`); for the other variants it's the variant name itself (e.g., `"BadInput"`, `"Usage"`, `"Refused"`, `"Io"`, `"Internal"`, `"Bip39"`, `"Codex32"`, `"UnexpectedStringLength"`, `"PayloadLengthMismatch"`, `"FutureFormat"`, `"VerifyPhraseMismatch"`).
 
 ### §6.2 Friendly mappers
 
@@ -550,7 +585,7 @@ JSON-mode error display (stdout):
 
 Errors in JSON mode go to **stdout**, not stderr — consumers parse one stream. Process exit code matches `CliError::exit_code()`.
 
-Two errors are printed on stderr in both modes and never as an envelope. A failed `--out` write prints `ms: cannot write the output: <FILE>: <error>`, followed by `. <FILE> is unchanged.` (its bytes; io-lib may have set its mode to 0600) or `. Nothing was written.` when a second look at FILE confirms it, and exits 1 (the constellation's failed-write contract, T6). `--out` naming the same file as standard output prints `error: --out <FILE> and standard output are the same file ...` and exits 64: stdout is FILE, so an envelope would be written into it.
+Two errors are printed on stderr in both modes and never as an envelope. A failed `--out` write prints `ms: cannot write the output: <FILE>: <error>`, followed by `. <FILE> is unchanged.` (its bytes; io-lib may have set its mode to 0600) or `. Nothing was written.` when a second look at FILE confirms it, and exits 32 (the constellation's failed-write contract, T6; IO). `--out` naming the same file as standard output prints `error: --out <FILE> and standard output are the same file ...` and exits 8 (REFUSED): stdout is FILE, so an envelope would be written into it.
 
 ---
 
@@ -611,7 +646,7 @@ The 9 brainstorm decisions plus mechanical defaults plus 2 architect-review iter
 | Q7 | `inspect` verdict-first + structured fields below. | §2.3, §5.3 |
 | Q8 | Stdin uniform; whitespace-stripped. | §3.2 |
 | Q9 | `verify` = exit-code by default; `--phrase` round-trips. | §2.4 |
-| Mech-1 | Exit codes: 0/1/2/3/4/64 per §6 table. | §6 |
+| Mech-1 | Exit codes: 0/1/2/3/4/64 per §6 table (replaced 2026-11-26 by the constellation scheme). | §6 |
 | Mech-2 | BIP-39 checksum validated at encode time. | §2.1 |
 | Mech-3 | 10 BIP-39 languages via clap value-enum. | §7 |
 | Mech-4 | Chunking 5-char groups, 10 groups/line, never mid-chunk. | §4 |
@@ -708,7 +743,7 @@ No `anyhow` (we own `CliError`). No `getrandom` (no generate). No `tracing` / `l
 - `format::chunk(&str, 5)` correctness across all 5 v0.1 lengths {50, 56, 62, 69, 75}; line-wrap at chunk boundary; max line width 59.
 - `codex32_friendly` covers each upstream variant.
 - `bip39_friendly` covers each bip39 variant.
-- `CliError::exit_code()` returns 1/2/3/4 for each variant.
+- `CliError::exit_code()` returns each variant's constellation class (§6), pinned by `exit_code_table_per_variant`.
 - `From<ms_codec::Error> for CliError` dispatches each ms-codec variant into the right CliError.
 - `parse::strip_stdin_whitespace` handles canonical, chunked-back-typed, leading/trailing space, embedded newlines.
 - `language.rs` value-enum: each of 10 languages parses; unknown rejected; serde JSON round-trips kebab-case.
@@ -719,8 +754,8 @@ No `anyhow` (we own `CliError`). No `getrandom` (no generate). No `tracing` / `l
 encode_canonical_12_word.rs        — abandon-about → expected stdout (ms1 + chunked) + stderr engraving card
 encode_canonical_24_word.rs        — abandon-art likewise
 encode_hex_input.rs                — --hex 00…00 round-trips equivalent to --phrase
-encode_rejects_bad_checksum.rs     — flipped last word → exit 1
-encode_rejects_bad_language.rs     — Spanish words with --language english → exit 1
+encode_rejects_bad_checksum.rs     — flipped last word → exit 2
+encode_rejects_bad_language.rs     — Spanish words with --language english → exit 2
 encode_rejects_odd_length_hex.rs   — friendly error on odd-length hex
 encode_emits_passphrase_warning.rs — stderr contains "passphrase: not stored in ms1"
 encode_no_engraving_card.rs        — flag suppresses stderr block; stdout unchanged
@@ -728,21 +763,22 @@ decode_round_trip.rs               — labeled-block format; default-language wa
 decode_default_english_in_stdout.rs — stdout language line carries "(default — verify…)"
 decode_explicit_language_no_warning.rs — explicit --language removes both warnings
 inspect_valid_string.rs            — verdict OK + fields; --json schema check
-inspect_non_zero_prefix.rs         — verdict FAIL with rule 8 reason tag
+inspect_non_zero_prefix.rs         — verdict FAIL with rule 8 reason tag, exit 2
 inspect_reserved_tag.rs            — id="seed" → rule 7 reason tag
 inspect_multiple_failures.rs       — string with 2 violations reports both, sorted
 verify_quiet_pass.rs               — exit 0, OK summary
 verify_quiet_fail.rs               — exit 2, FAIL summary
-verify_future_format.rs            — id="seed" → exit 3, OK future format
+verify_future_format.rs            — id="seed" → exit 2, no OK line
 verify_phrase_round_trip_ok.rs     — exit 0
-verify_phrase_round_trip_mismatch.rs — exit 4 (no phrase echoed to output)
+verify_phrase_round_trip_mismatch.rs — exit 2 on a bad-checksum phrase (no phrase echoed to output)
 encode_pipe_to_verify.rs           — `ms encode | ms verify -` exit 0 (validates strip-whitespace)
 encode_pipe_to_decode.rs           — `ms encode | ms decode -` recovers original phrase
 back_typed_chunked_form_decodes.rs — `printf "ms10e ntrsq…" | ms decode -` works
 vectors_compact.rs                 — `ms vectors` parseable JSON; first vector matches spec
 vectors_pretty.rs                  — `--pretty` indented, same content
-inspect_codex32_parse_failure.rs   — bad-checksum input → exit 1; text-mode stderr error; --json error envelope on stdout (per §2.3.1)
+inspect_codex32_parse_failure.rs   — bad-checksum input → exit 2; text-mode stderr error; --json error envelope on stdout (per §2.3.1)
 json_error_envelope_per_kind.rs    — parametric: one assertion per CliError `kind` (BadInput/Bip39/Codex32/UnexpectedStringLength/PayloadLengthMismatch/FormatViolation/FutureFormat/VerifyPhraseMismatch); each verifies §5.4 schema
+exit_codes_constellation.rs        — one run per constellation class (2026-11-26)
 exit_codes_table.rs                — parametric: one row per CliError variant × text/JSON modes (~16 assertions)
 ```
 

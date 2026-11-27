@@ -27,12 +27,12 @@ fn repair(json: bool) -> (std::process::Output, tempfile::TempDir) {
 }
 
 #[test]
-fn bh1119_ms_i8_readme_exit_table_documents_candidate_exit_4() {
+fn bh1119_ms_i8_readme_exit_table_documents_candidate_exit_20() {
     let r = readme();
     assert!(
         r.lines()
-            .any(|l| l.starts_with("| `4` | **`VERIFY-ME` Candidate**")),
-        "README exit table has no `4` VERIFY-ME Candidate row (the code a correction returns)"
+            .any(|l| l.starts_with("| `20` | **`VERIFY-ME` Candidate**")),
+        "README exit table has no `20` VERIFY-ME Candidate row (the code a correction returns)"
     );
     assert!(
         !r.lines().any(|l| l.starts_with("| `5` |")),
@@ -45,7 +45,7 @@ fn bh1119_ms_i8_readme_repair_example_matches_cli() {
     let r = readme();
     assert!(r.contains(BROKEN), "README lacks the broken card");
     let (out, _dir) = repair(false);
-    assert_eq!(out.status.code(), Some(4));
+    assert_eq!(out.status.code(), Some(20));
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert_eq!(stdout.lines().last(), Some(FIXED));
     let stderr = String::from_utf8(out.stderr).unwrap();
@@ -57,7 +57,7 @@ fn bh1119_ms_i8_readme_repair_example_matches_cli() {
         );
     }
     assert!(
-        r.lines().any(|x| x == "# exit status: 4"),
+        r.lines().any(|x| x.starts_with("# exit status: 20 ")),
         "README example has no exit status line"
     );
 }
@@ -65,7 +65,7 @@ fn bh1119_ms_i8_readme_repair_example_matches_cli() {
 #[test]
 fn bh1119_ms_i8_control_readme_json_example_is_candidate() {
     let (out, _dir) = repair(true);
-    assert_eq!(out.status.code(), Some(4));
+    assert_eq!(out.status.code(), Some(20));
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["verdict"], "candidate");
     assert_eq!(v["corrected_chunks"][0], FIXED);

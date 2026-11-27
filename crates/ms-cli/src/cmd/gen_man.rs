@@ -28,10 +28,10 @@ pub struct GenManArgs {
 
 pub fn run(args: GenManArgs) -> Result<u8> {
     std::fs::create_dir_all(&args.out)
-        .map_err(|e| CliError::BadInput(format!("cannot create --out dir: {e}")))?;
+        .map_err(|e| CliError::Io(format!("cannot create --out dir: {e}")))?;
     // NAIVE call — NO pre-`.build()` (C-1). `generate_to` builds internally with
     // the help subcommand disabled, so the output carries zero `*-help*.1` pages.
     clap_mangen::generate_to(Cli::command(), &args.out)
-        .map_err(|e| CliError::BadInput(format!("man-page generation failed: {e}")))?;
+        .map_err(|e| CliError::Io(format!("man-page generation failed: {e}")))?;
     Ok(0)
 }

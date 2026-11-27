@@ -1,4 +1,4 @@
-//! BIP-39 bad-checksum phrase → exit 1 with friendly message.
+//! BIP-39 bad-checksum phrase → exit 2 with friendly message.
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -13,6 +13,6 @@ fn encode_rejects_bad_bip39_checksum() {
         .write_stdin((bad).to_string())
         .assert()
         .failure()
-        .code(1)
+        .code(2)
         .stderr(predicate::str::contains("BIP-39 checksum failure"));
 }

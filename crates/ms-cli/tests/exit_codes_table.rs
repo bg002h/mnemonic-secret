@@ -4,14 +4,14 @@ use assert_cmd::Command;
 
 #[test]
 fn exit_code_table_user_input() {
-    // Odd-length hex → exit 1.
+    // Odd-length hex → exit 2 (INVALID).
     Command::cargo_bin("ms")
         .unwrap()
         .args(["encode", "--hex", "-"])
         .write_stdin(("0").to_string())
         .assert()
         .failure()
-        .code(1);
+        .code(2);
 }
 
 #[test]
@@ -19,10 +19,10 @@ fn exit_code_table_format_violation() {
     Command::cargo_bin("ms")
         .unwrap()
         .args(["decode", "-"])
-        .write_stdin(("ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7p").to_string()) // bad cksum → Codex32 → exit 1
+        .write_stdin(("ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7p").to_string()) // bad cksum → Codex32 → exit 2
         .assert()
         .failure()
-        .code(1);
+        .code(2);
 }
 
 /// `CliError::Usage` — the verb's OWN usage error, SPEC §6's exit 64, as

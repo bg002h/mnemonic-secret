@@ -143,7 +143,7 @@ fn split_k_below_2_rejected() {
         .write_stdin((ENGLISH_12).to_string())
         .assert()
         .failure()
-        .code(1); // InvalidThreshold → BadInput (exit 1)
+        .code(64); // InvalidThreshold → Usage (K is a setting, exit 64)
 }
 
 #[test]
@@ -154,7 +154,7 @@ fn split_n_below_k_rejected() {
         .write_stdin((ENGLISH_12).to_string())
         .assert()
         .failure()
-        .code(1); // InvalidShareCount → BadInput (exit 1)
+        .code(64); // InvalidShareCount → Usage (N is a setting, exit 64)
 }
 
 #[test]
@@ -165,5 +165,5 @@ fn split_n_above_31_rejected() {
         .write_stdin((ENGLISH_12).to_string())
         .assert()
         .failure()
-        .code(1); // InvalidShareCount → BadInput (exit 1)
+        .code(64); // InvalidShareCount → Usage (N is a setting, exit 64)
 }

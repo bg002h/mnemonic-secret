@@ -171,7 +171,7 @@ fn repair_out_holds_the_corrected_ms1_alone_while_stdout_keeps_the_report() {
 
     assert_eq!(
         out.status.code(),
-        Some(4),
+        Some(20),
         "a correction is a VERIFY-ME candidate and the exit code says so: {}",
         String::from_utf8_lossy(&out.stderr)
     );

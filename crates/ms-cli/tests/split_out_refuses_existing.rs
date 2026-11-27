@@ -31,7 +31,7 @@ fn split_to(path: &std::path::Path, extra: &[&str]) -> std::process::Output {
 fn assert_refused(out: &std::process::Output, path: &std::path::Path) {
     assert_eq!(
         out.status.code(),
-        Some(64),
+        Some(8),
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
@@ -115,17 +115,17 @@ fn the_refusal_comes_before_the_secret_is_read() {
     assert_refused(&out, &p);
 }
 
-/// Under --json the refusal is the error envelope, exit 64, and no share.
+/// Under --json the refusal is the error envelope, exit 8, and no share.
 #[test]
-fn json_mode_refusal_is_the_usage_envelope() {
+fn json_mode_refusal_is_the_refused_envelope() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("shares.txt");
     std::fs::write(&p, "old\n").unwrap();
     let out = split_to(&p, &["--json"]);
-    assert_eq!(out.status.code(), Some(64));
+    assert_eq!(out.status.code(), Some(8));
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(v["error"]["kind"], "Usage");
-    assert_eq!(v["error"]["exit_code"], 64);
+    assert_eq!(v["error"]["kind"], "Refused");
+    assert_eq!(v["error"]["exit_code"], 8);
     assert_eq!(
         format!("error: {}\n", v["error"]["message"].as_str().unwrap()),
         refusal(&p)
@@ -135,13 +135,13 @@ fn json_mode_refusal_is_the_usage_envelope() {
 }
 
 /// Pins that pass before and after: a missing parent is still a write
-/// failure (exit 1), and hashlock's refusal text is byte-unchanged.
+/// failure (exit 32, IO), and hashlock's refusal text is byte-unchanged.
 #[test]
-fn a_missing_parent_directory_is_still_exit_1() {
+fn a_missing_parent_directory_is_a_write_failure_32() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("nodir").join("x.txt");
     let out = split_to(&p, &[]);
-    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(out.status.code(), Some(32));
     assert_eq!(
         String::from_utf8_lossy(&out.stderr),
         format!(
@@ -161,7 +161,7 @@ fn hashlock_random_refusal_text_is_unchanged() {
         .arg(&p)
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(64));
+    assert_eq!(out.status.code(), Some(8));
     assert_eq!(
         String::from_utf8_lossy(&out.stderr),
         format!(

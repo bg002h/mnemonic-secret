@@ -97,7 +97,7 @@ pub fn read_phrase_from(
     } else {
         reader.read_to_end(&mut buf)
     };
-    read.map_err(|e| CliError::BadInput(format!("failed to read stdin: {e}")))?;
+    read.map_err(|e| CliError::Io(format!("failed to read stdin: {e}")))?;
     strip_one_trailing_newline(&mut buf);
     Ok(buf)
 }

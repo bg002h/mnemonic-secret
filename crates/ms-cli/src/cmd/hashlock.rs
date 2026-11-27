@@ -72,7 +72,7 @@ pub struct HashlockArgs {
     /// Phrase -> preimage method (phrase sources only).
     #[arg(long, value_enum)]
     pub method: Option<Method>,
-    /// Write the preimage ms1 string here, owner-only; a failed write leaves an existing file unchanged. Never suppresses stdout, so stdout must not be this file (refused, exit 64).
+    /// Write the preimage ms1 string here, owner-only; a failed write leaves an existing file unchanged. Never suppresses stdout, so stdout must not be this file (refused, exit 8).
     #[arg(long, value_name = "FILE")]
     pub out: Option<PathBuf>,
     /// One JSON object on stdout in place of the record line. Carries the secret.
@@ -261,7 +261,8 @@ fn derive(args: &HashlockArgs, source: SourceKind) -> Result<Derived> {
                 // preimage and a sha256 digest are both 64 hex characters and
                 // are indistinguishable by shape. The message is the whole of
                 // the fix, which is why it has to be right.
-                return Err(CliError::BadInput(format!(
+                // An override exists (--phrase-looks-like-digest-ok): REFUSED, 8.
+                return Err(CliError::Refused(format!(
                     "that phrase is {chars} hex characters, the width of a digest. \
                      Hashing it commits the wallet to the ASCII of those characters, \
                      NOT to the digest they spell.\n\
@@ -389,11 +390,8 @@ fn method_line(d: &Derived) -> String {
 }
 
 pub fn run(args: HashlockArgs) -> Result<u8> {
-    // bh-ms-I1: hashlock always prints the record or the JSON on stdout, so stdout
-    // must not be the `--out` file (`--random` included); before anything is read.
-    if let Some(path) = args.out.as_deref() {
-        crate::out::refuse_stdout_alias(path)?;
-    }
+    // R2: the source count and the `--emit-record` gates are usage (64), judged
+    // from the command line alone, so they run before any refusal.
     let source = pick_source(&args)?;
     // Refused here rather than ignored: a flag that asks for a record and
     // silently produces none sends the operator looking for output that was
@@ -414,6 +412,11 @@ pub fn run(args: HashlockArgs) -> Result<u8> {
             "--emit-record has nowhere to print the `phrase:` record under --no-engraving-card: in text mode the record goes on the card, and stdout carries only the public digest. Add --json to get it in the JSON object (phrase_record), or drop --no-engraving-card to get it on the card."
                 .into(),
         ));
+    }
+    // bh-ms-I1: hashlock always prints the record or the JSON on stdout, so stdout
+    // must not be the `--out` file (`--random` included); before anything is read.
+    if let Some(path) = args.out.as_deref() {
+        crate::out::refuse_stdout_alias(path)?;
     }
     let is_random = matches!(source, SourceKind::Random);
     let d = derive(&args, source)?;

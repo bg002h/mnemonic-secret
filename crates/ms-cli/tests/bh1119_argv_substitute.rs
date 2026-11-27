@@ -162,7 +162,7 @@ fn argv_sub_in_missing_named_file_fails() {
             _ => vec![v, "--allow-argv-secret", "--in", N],
         };
         let o = run(d.path(), &args);
-        assert_eq!(o.rc, 1, "case {v}: {}", o.err);
+        assert_eq!(o.rc, 32, "case {v}: {}", o.err);
         assert_eq!(o.err, want, "case {v}");
         assert!(o.out.is_empty(), "case {v}: stdout {}", o.out);
     }
@@ -353,7 +353,7 @@ fn argv_sub_without_override_still_refuses() {
     let d = tempfile::tempdir().unwrap();
     put(d.path(), N, P15);
     let o = run(d.path(), &["encode", "--in", N, "--json"]);
-    assert_eq!(o.rc, 1, "{}", o.err);
+    assert_eq!(o.rc, 8, "{}", o.err);
     assert!(
         o.err.contains("is raw hex entropy, 32 characters long"),
         "{}",

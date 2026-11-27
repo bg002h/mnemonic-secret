@@ -51,7 +51,7 @@ ms repair --in broken.txt
 # stderr:
 #   warning: stdout carries private key material (can spend) — redirect or encrypt (e.g. '> file.txt' or '| age -e ...')
 #   repair: correction UNVERIFIED — a corrected seed card cannot be self-verified; confirm the derived address/xpub against a known-good copy before use; BIP-93 recommends confirming a corrected codex32 string
-# exit status: 4
+# exit status: 20 (16 a correction was applied + 4 verify before trusting)
 
 # Stdin via `-`:
 ms repair --ms1 - < broken.txt
@@ -61,14 +61,22 @@ ms repair --ms1 - < broken.txt
 ms repair --in broken.txt --json
 ```
 
+The codes are the constellation's (see the legend at the end of `ms --help`):
+1 to 63 are sums of 1 a check said no, 2 an input is invalid, 4 verify before
+trusting, 8 refused, 16 a correction was applied, 32 a file or device failed;
+64 is a bad command line and 101 an internal error.
+
 | Exit | Meaning |
 |---|---|
 | `0` | input already valid; no correction applied; echoed unchanged. |
-| `4` | **`VERIFY-ME` Candidate** (Cycle F, `ms1-repair-demote-to-candidate` — a funds fix) — at least one substitution corrected; stdout = repair report + corrected string; stderr carries an UNVERIFIED advisory. **Never exit 5** — see below. |
-| `2` | unrepairable (BCH-uncorrectable: > 4 substitution errors, or structural ms1 error before correction could run). |
-| `1` | I/O error or other generic failure. |
+| `20` | **`VERIFY-ME` Candidate** (16 + 4; Cycle F, `ms1-repair-demote-to-candidate` — a funds fix) — at least one substitution corrected; stdout = repair report + corrected string; stderr carries an UNVERIFIED advisory. A single ms1 has no oracle, so 16 never comes without 4. |
+| `22` | a correction was applied, but the corrected string is not an ms1 card this version decodes (20 + 2): it is printed with the warning, and `--out` is not written. |
+| `2` | unrepairable (BCH-uncorrectable: > 4 substitution errors, a structural ms1 error before correction could run, or a clean string that is not a card), or empty input. Nothing is printed. |
+| `8` | refused: secret on argv without `--allow-argv-secret`, or `--out` is the file stdout is on. |
+| `32` | a file failed: `--in` unreadable, `--out` unwritable, or stdout could not be written (added to the other bits: a lost report on a candidate is 52). |
+| `64` | bad command line. |
 
-**Confirm every exit-4 card before use.** Up to 4 substitutions are corrected back to the original string; beyond that a correction can still succeed and land on a different, valid card, and an ms1 string carries nothing else to catch it. Confirm the corrected card against an independent record: for a seed card, the derived address or xpub against a known-good copy; for a hashlock preimage card (`ms10hash…`), its hash against the hashlock it was made for. `ms repair` never exits 5.
+**Confirm every exit-20 card before use.** Up to 4 substitutions are corrected back to the original string; beyond that a correction can still succeed and land on a different, valid card, and an ms1 string carries nothing else to catch it. Confirm the corrected card against an independent record: for a seed card, the derived address or xpub against a known-good copy; for a hashlock preimage card (`ms10hash…`), its hash against the hashlock it was made for.
 
 `ms repair` wraps `ms_codec::decode_with_correction` (ms-codec v0.2.0+)
 and shares the `RepairJson` envelope schema byte-exact with the other

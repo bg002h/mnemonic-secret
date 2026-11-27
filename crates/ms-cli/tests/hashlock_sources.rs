@@ -20,7 +20,7 @@ fn hashlock_phrase_on_argv_is_refused_without_the_allow_flag_and_never_echoed() 
         .unwrap();
     assert_eq!(
         out.status.code(),
-        Some(1),
+        Some(8),
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
@@ -333,7 +333,7 @@ fn random_out_refuses_to_overwrite_but_other_sources_overwrite() {
         .unwrap();
     assert_eq!(
         out.status.code(),
-        Some(64),
+        Some(8),
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
@@ -386,7 +386,7 @@ fn hex_at_63_64_65_chars_both_cases() {
                     String::from_utf8_lossy(&out.stderr)
                 );
             } else {
-                assert_eq!(out.status.code(), Some(1), "{n} {upper}");
+                assert_eq!(out.status.code(), Some(2), "{n} {upper}");
                 let err = String::from_utf8_lossy(&out.stderr);
                 assert!(
                     err.contains("32 bytes (64 hex characters)") && err.contains("§8i"),
@@ -419,7 +419,7 @@ fn entr32_and_mnem_strings_are_refused_as_seed_backups() {
             .write_stdin(s.clone())
             .output()
             .unwrap();
-        assert_eq!(out.status.code(), Some(1), "{s}");
+        assert_eq!(out.status.code(), Some(2), "{s}");
         let err = String::from_utf8_lossy(&out.stderr);
         assert!(
             err.contains("that is a seed backup, not a hashlock preimage"),

@@ -340,24 +340,38 @@ pub enum PhraseRefusal {
 /// engraving card prints and therefore what an operator retypes, and a
 /// checksum test would answer false for it — so the guard would miss the one
 /// spelling it exists to catch.
+///
+/// It allocates nothing: the input can be a hashlock phrase, which is secret,
+/// and a normalised copy would be freed without being wiped. The test streams
+/// over the characters instead.
 pub fn looks_like_ms1(raw: &str) -> bool {
-    let t: String = raw
+    let mut n = 0usize;
+    for c in raw
         .trim()
-        .to_ascii_lowercase()
         .chars()
         .filter(|c| !c.is_whitespace() && *c != '-' && *c != ',')
-        .collect();
-    t.len() >= MIN_MS1_LEN
-        && t.starts_with("ms1")
-        && t[3..].chars().all(|c| BECH32_CHARSET.contains(c))
+        .map(|c| c.to_ascii_lowercase())
+    {
+        let ok = match n {
+            0 => c == 'm',
+            1 => c == 's',
+            2 => c == '1',
+            _ => BECH32_CHARSET.contains(c),
+        };
+        if !ok {
+            return false;
+        }
+        n += c.len_utf8();
+    }
+    n >= MIN_MS1_LEN
 }
 
 /// The rule. ORDER MATTERS and is the spec's: empty, printable ASCII,
 /// ms1-shape (BEFORE the cap, so a grouped plate string gets the `--in`
 /// remedy and not "too long"), the cap, 64-hex.
 ///
-/// It changes nothing: no trim, no case fold, no normalisation. The shape test
-/// works on a copy.
+/// It changes nothing: no trim, no case fold, no normalisation, and it makes
+/// no copy of the phrase (the shape test streams over it).
 pub fn validate_phrase(bytes: &[u8]) -> core::result::Result<(), PhraseRefusal> {
     if bytes.is_empty() {
         return Err(PhraseRefusal::Empty);
@@ -555,5 +569,51 @@ mod looks_like_digest_tests {
     #[test]
     fn the_empty_phrase_is_not_a_digest() {
         assert_eq!(looks_like_digest(b""), None);
+    }
+}
+
+#[cfg(test)]
+mod looks_like_ms1_tests {
+    use super::*;
+
+    /// The allocating predicate this replaced, kept as the oracle.
+    fn old(raw: &str) -> bool {
+        let t: String = raw
+            .trim()
+            .to_ascii_lowercase()
+            .chars()
+            .filter(|c| !c.is_whitespace() && *c != '-' && *c != ',')
+            .collect();
+        t.len() >= MIN_MS1_LEN
+            && t.starts_with("ms1")
+            && t[3..].chars().all(|c| BECH32_CHARSET.contains(c))
+    }
+
+    /// The streaming rewrite answers exactly what the allocating one did.
+    #[test]
+    fn streaming_predicate_matches_the_allocating_one() {
+        let body = "0entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq";
+        let cases = [
+            String::new(),
+            "ms1".into(),
+            format!("ms1{body}"),
+            format!("MS1{}", body.to_uppercase()),
+            format!("  ms1{body}  "),
+            format!("ms1{}-{}", &body[..10], &body[10..]),
+            format!("ms1 {} , {}", &body[..10], &body[10..]),
+            format!("ms1{}", &body[..44]),
+            format!("ms1{}", &body[..45]),
+            format!("ms1{}b", &body[..44]),
+            format!("ms1{}é", &body[..44]),
+            format!("mx1{body}"),
+            format!("1ms{body}"),
+            "ms1-2026-08-23-backup.txt".into(),
+            "correct horse battery staple".into(),
+            format!("m s 1{body}"),
+        ];
+        for c in &cases {
+            assert_eq!(looks_like_ms1(c), old(c), "{c:?}");
+        }
+        assert!(looks_like_ms1(&format!("ms1{body}")));
     }
 }

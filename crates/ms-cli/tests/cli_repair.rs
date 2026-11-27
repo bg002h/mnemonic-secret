@@ -13,14 +13,14 @@
 //! Cells (flipped cells noted; see plan Phase P1):
 //!   1. `repair_already_valid_input_exits_0` — unaffected (clean stays 0)
 //!   2. `repair_one_substitution_exits_4_candidate` (FLIP: was exit 5) — now
-//!      exit 4 + the "correction UNVERIFIED" / BIP-93 stderr advisory
+//!      exit 20 + the "correction UNVERIFIED" / BIP-93 stderr advisory
 //!   3. `repair_unrepairable_exits_2` — unaffected
-//!   4. `repair_json_envelope_shape` (FLIP: was exit 5) — now exit 4 +
+//!   4. `repair_json_envelope_shape` (FLIP: was exit 5) — now exit 20 +
 //!      `verdict == "candidate"`; schema byte-match with toolkit's
 //!      `RepairJson` (cross-CLI parser reuse)
 //!   5. `repair_json_clean_input_verdict_blessed` — clean input →
 //!      `verdict == "blessed"`
-//!   6. `repair_stdin_input_via_dash` (FLIP: was exit 5) — now exit 4
+//!   6. `repair_stdin_input_via_dash` (FLIP: was exit 5) — now exit 20
 //!
 //! Test fixture: the 12-word abandon canonical ms1 from
 //! `crates/ms-codec/tests/vectors/v0.1.json` (entry 0). Single-chunk per
@@ -106,7 +106,7 @@ fn repair_already_valid_input_exits_0() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Cell 2 (Cycle F FLIP — was exit 5): one substitution → exit 4 VERIFY-ME
+// Cell 2 (Cycle F FLIP — was exit 5): one substitution → exit 20 VERIFY-ME
 // candidate, 1 correction reported, ms1 restored + the "correction
 // UNVERIFIED" / BIP-93 stderr advisory (SPEC §5.2 / §2 — mirrors the
 // toolkit's `mnemonic repair --ms1` P0 demotion, cell_9). The corrected
@@ -114,7 +114,7 @@ fn repair_already_valid_input_exits_0() {
 // must inspect / independently verify it.
 // ──────────────────────────────────────────────────────────────────────────
 #[test]
-fn repair_one_substitution_exits_4_candidate() {
+fn repair_one_substitution_exits_20_candidate() {
     // Flip 1 char inside the entropy region (data-part pos 9 is well inside;
     // the abandon ms1 has 47 data-part chars and 13 chars of BCH tail).
     let corrupted = flip_at(ABANDON_MS1, 9);
@@ -123,8 +123,8 @@ fn repair_one_substitution_exits_4_candidate() {
     let code = out.status.code().expect("exited normally");
     assert_eq!(
         code,
-        4,
-        "expected exit 4 (VERIFY-ME candidate — Cycle F demotion); stderr={}",
+        20,
+        "expected exit 20 (16 REPAIRED + 4 UNVERIFIED, VERIFY-ME candidate — Cycle F demotion); stderr={}",
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8(out.stdout).expect("stdout utf-8");
@@ -225,8 +225,8 @@ fn repair_json_envelope_shape() {
     let code = out.status.code().expect("exited normally");
     assert_eq!(
         code,
-        4,
-        "expected exit 4 (VERIFY-ME candidate) for JSON-mode repair; stderr={}",
+        20,
+        "expected exit 20 (16 REPAIRED + 4 UNVERIFIED, VERIFY-ME candidate) for JSON-mode repair; stderr={}",
         String::from_utf8_lossy(&out.stderr)
     );
 
@@ -383,8 +383,8 @@ fn repair_stdin_input_via_dash() {
     let code = out.status.code().expect("exited normally");
     assert_eq!(
         code,
-        4,
-        "expected exit 4 (VERIFY-ME candidate) for stdin-with-corrupted-input; stderr={}",
+        20,
+        "expected exit 20 (16 REPAIRED + 4 UNVERIFIED, VERIFY-ME candidate) for stdin-with-corrupted-input; stderr={}",
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8(out.stdout).expect("stdout utf-8");

@@ -185,7 +185,7 @@ fn dash_beside_another_stdin_input_is_refused() {
             .write_stdin(format!("{CARD}\n"))
             .output()
             .unwrap();
-        assert_eq!(out.status.code(), Some(1), "{pp:?}");
+        assert_eq!(out.status.code(), Some(64), "{pp:?}");
         assert!(out.stdout.is_empty());
         let err = String::from_utf8(out.stderr).unwrap();
         assert!(err.contains("one stdin per invocation"), "{pp:?}: {err}");
@@ -251,7 +251,7 @@ fn the_guard_admits_the_env_channel_without_the_override() {
         .args(["derive", "--hex", "@env:F687_GUARD"])
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(out.status.code(), Some(8));
 }
 
 // ---------------------------------------------------------------------------
@@ -272,7 +272,7 @@ fn an_in_path_that_is_stdin_is_a_second_stdin_reader() {
                 .write_stdin(format!("{CARD}\n"))
                 .output()
                 .unwrap();
-            assert_eq!(out.status.code(), Some(1), "{path} {pp:?}");
+            assert_eq!(out.status.code(), Some(64), "{path} {pp:?}");
             assert!(out.stdout.is_empty());
             assert!(String::from_utf8_lossy(&out.stderr).contains("one stdin per invocation"));
         }
@@ -288,7 +288,7 @@ fn an_in_path_that_is_stdin_is_a_second_stdin_reader() {
         .stdin(std::fs::File::open(card.path()).unwrap())
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert_eq!(out.status.code(), Some(64), "{out:?}");
 }
 
 /// M2: the guard and the resolver agree on `-`: a padded dash is argv
@@ -312,7 +312,7 @@ fn a_padded_dash_is_material_in_every_spelling() {
             .write_stdin("TREZOR")
             .output()
             .unwrap();
-        assert_eq!(out.status.code(), Some(1), "{args:?}");
+        assert_eq!(out.status.code(), Some(8), "{args:?}");
         assert!(out.stdout.is_empty(), "{args:?}");
         assert!(String::from_utf8_lossy(&out.stderr).contains("BIP-39 passphrase"));
     }
@@ -336,7 +336,7 @@ fn non_utf8_input_is_refused_by_name_not_panicked() {
         .output()
         .unwrap();
     let err = String::from_utf8_lossy(&out.stderr);
-    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert_eq!(out.status.code(), Some(2), "{err}");
     assert!(
         err.contains("F687_PP") && err.contains("not valid UTF-8"),
         "{err}"

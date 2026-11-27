@@ -237,7 +237,7 @@ fn passphrase_stdin_preserves_multiword_matches_inline() {
 
 #[test]
 fn single_stdin_guard() {
-    // ms1 from stdin + --passphrase-stdin → BadInput (one stdin).
+    // ms1 from stdin + --passphrase-stdin → Usage (one stdin, exit 64).
     let card = ms1_of(ZEROS_HEX);
     let o = Command::cargo_bin("ms")
         .unwrap()
@@ -247,7 +247,7 @@ fn single_stdin_guard() {
         .unwrap();
     assert_eq!(
         o.status.code().unwrap(),
-        1,
+        64,
         "{}",
         String::from_utf8_lossy(&o.stderr)
     );
@@ -351,7 +351,7 @@ fn inline_secret_on_argv_is_now_refused_not_merely_advised() {
         .unwrap();
     assert_eq!(
         o.status.code(),
-        Some(1),
+        Some(8),
         "argv material must be REFUSED, not warned about: {}",
         String::from_utf8_lossy(&o.stderr)
     );

@@ -84,7 +84,7 @@ pub fn run() -> Result<u8> {
         subcommands,
     };
     let s = serde_json::to_string(&root)
-        .map_err(|e| CliError::BadInput(format!("gui-schema serialization: {}", e)))?;
+        .map_err(|e| CliError::Internal(format!("gui-schema serialization: {}", e)))?;
     println!("{}", s);
     Ok(0)
 }

@@ -1,4 +1,4 @@
-//! Odd-length --hex → exit 1 with friendly message.
+//! Odd-length --hex → exit 2 with friendly message.
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -11,7 +11,7 @@ fn encode_rejects_odd_length_hex() {
         .write_stdin(("0").to_string())
         .assert()
         .failure()
-        .code(1)
+        .code(2)
         .stderr(predicate::str::contains("even-length hex"));
 }
 
@@ -23,6 +23,6 @@ fn encode_rejects_non_hex_char() {
         .write_stdin(("ZZ").to_string())
         .assert()
         .failure()
-        .code(1)
+        .code(2)
         .stderr(predicate::str::contains("position 0"));
 }

@@ -473,7 +473,7 @@ pub(crate) fn read_stdin_passphrase() -> Result<Zeroizing<String>> {
                     }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(e) => return Err(CliError::BadInput(format!("failed to read stdin: {e}"))),
+                Err(e) => return Err(CliError::Io(format!("failed to read stdin: {e}"))),
             }
         }
         if bytes.last() != Some(&b'\n') {
@@ -505,26 +505,54 @@ fn is_valid_env_name(name: &str) -> bool {
     chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
 }
 
+/// The `--passphrase` checks judged from the command line alone (R2: 64
+/// before any input is read): one passphrase source, and an `@env:` NAME of
+/// the accepted form.
+pub(crate) fn check_usage(
+    value: Option<&str>,
+    stdin_flag: bool,
+    admitted: Option<&str>,
+) -> Result<()> {
+    if stdin_flag && value.is_some() {
+        return Err(CliError::Usage(
+            "--passphrase and --passphrase-stdin cannot both be given (one passphrase, one stdin)"
+                .into(),
+        ));
+    }
+    if source(value, stdin_flag, admitted) == PassphraseSource::Env {
+        let var = value.unwrap_or("").strip_prefix(ENV_PREFIX).unwrap_or("");
+        if !is_valid_env_name(var) {
+            return Err(CliError::Usage(format!(
+                "--passphrase: invalid env-var name `{var}`"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Resolve `--passphrase @env:VAR`. Unset is an ERROR naming `VAR`: treating
 /// it as the empty passphrase would silently derive a different wallet.
 fn resolve_env(value: &str) -> Result<Zeroizing<String>> {
     let var = value.strip_prefix(ENV_PREFIX).unwrap_or(value);
     if !is_valid_env_name(var) {
-        return Err(CliError::BadInput(format!(
+        // Judged from the command line alone: a usage error (64).
+        return Err(CliError::Usage(format!(
             "--passphrase: invalid env-var name `{var}`"
         )));
     }
-    let mut v = std::env::var(var).map(Zeroizing::new).map_err(|e| {
-        CliError::BadInput(match e {
-            // F-687 fold 1 (review N1): set-but-not-UTF-8 is not "not set".
-            std::env::VarError::NotUnicode(_) => format!(
+    let mut v = std::env::var(var)
+        .map(Zeroizing::new)
+        .map_err(|e| match e {
+            // F-687 fold 1 (review N1): set-but-not-UTF-8 is not "not set". The
+            // value is a malformed input (2); an unset variable is something the
+            // environment lacks (32, the exit-code spec's `@env:NAME` row).
+            std::env::VarError::NotUnicode(_) => CliError::BadInput(format!(
                 "--passphrase: env-var {var} referenced by sentinel is set but not valid UTF-8"
-            ),
-            std::env::VarError::NotPresent => {
-                format!("--passphrase: env-var {var} referenced by sentinel is not set")
-            }
-        })
-    })?;
+            )),
+            std::env::VarError::NotPresent => CliError::Io(format!(
+                "--passphrase: env-var {var} referenced by sentinel is not set"
+            )),
+        })?;
     strip_one_newline(&mut v);
     warn_if_empty(&format!("environment variable {var}"), &v);
     Ok(v)
@@ -549,12 +577,7 @@ pub(crate) fn resolve_or_empty(
     stdin_flag: bool,
     admitted: Option<&str>,
 ) -> Result<Zeroizing<String>> {
-    if stdin_flag && value.is_some() {
-        return Err(CliError::Usage(
-            "--passphrase and --passphrase-stdin cannot both be given (one passphrase, one stdin)"
-                .into(),
-        ));
-    }
+    check_usage(value, stdin_flag, admitted)?;
     match source(value, stdin_flag, admitted) {
         PassphraseSource::Absent => Ok(Zeroizing::new(String::new())),
         PassphraseSource::Stdin => read_stdin_passphrase(),

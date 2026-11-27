@@ -69,11 +69,23 @@ impl<'a> Source<'a> {
             && crate::argv_guard::admitted(self.channel).is_none()
     }
 
+    /// The empty-input error (decision 3: exit 2), naming where it was read.
+    fn empty(&self) -> CliError {
+        let from = match (self.in_path, self.arg) {
+            (Some(p), _) => format!("--in {}", p.display()),
+            (None, Some(s)) if s != "-" && !self.channel.is_empty() => self.channel.to_string(),
+            (None, Some(s)) if s != "-" => "the argument".to_string(),
+            _ if crate::argv_guard::admitted(self.channel).is_some() => self.channel.to_string(),
+            _ => "stdin".to_string(),
+        };
+        CliError::BadInput(format!("the input is empty ({from})"))
+    }
+
     /// The raw bytes this source names, as a scrub-on-drop `String`, or the
     /// contention refusal.
     fn read_raw(&self) -> Result<Zeroizing<String>> {
         match (self.in_path, self.arg) {
-            (Some(p), Some(_)) => Err(CliError::BadInput(format!(
+            (Some(p), Some(_)) => Err(CliError::Usage(format!(
                 "cannot read from both --in {} and the argument channel \
                  (one input source per invocation)",
                 p.display()
@@ -92,6 +104,16 @@ impl<'a> Source<'a> {
     }
 }
 
+/// A read failure's class: bytes that are not UTF-8 are a malformed input (2);
+/// anything else (missing, unreadable, a directory) is the system's (32).
+fn read_error(msg: String, e: &io::Error) -> CliError {
+    if e.kind() == io::ErrorKind::InvalidData {
+        CliError::BadInput(msg)
+    } else {
+        CliError::Io(msg)
+    }
+}
+
 /// Read `path` whole, naming it on failure.
 ///
 /// **It never falls back to stdin, and that is the control the row-1 gate
@@ -101,9 +123,10 @@ impl<'a> Source<'a> {
 pub(crate) fn read_in_file(path: &Path) -> Result<Zeroizing<String>> {
     let _echo = (crate::passphrase_input::path_is_stdin(path) && io::stdin().is_terminal())
         .then(crate::passphrase_input::EchoOff::new);
-    let buf: Zeroizing<String> = Zeroizing::new(std::fs::read_to_string(path).map_err(|e| {
-        CliError::BadInput(format!("failed to read --in {}: {}", path.display(), e))
-    })?);
+    let buf: Zeroizing<String> =
+        Zeroizing::new(std::fs::read_to_string(path).map_err(|e| {
+            read_error(format!("failed to read --in {}: {}", path.display(), e), &e)
+        })?);
     // Same treatment the stdin buffer gets: pin the freshly-read secret pages
     // for this function's scope (Cycle B SPEC §2 row 5).
     let _entropy_pin = crate::mlock::pin_pages_for(buf.as_bytes());
@@ -120,7 +143,11 @@ pub(crate) fn read_in_file(path: &Path) -> Result<Zeroizing<String>> {
 /// user explicitly requested stdin, or `Some(s)` when the user provided a value.
 pub fn read_input(src: Source) -> Result<String> {
     let raw: Zeroizing<String> = src.read_raw()?;
-    Ok(strip_whitespace(&raw))
+    let s = strip_whitespace(&raw);
+    if s.is_empty() {
+        return Err(src.empty());
+    }
+    Ok(s)
 }
 
 /// Read a BIP-39 phrase from either the supplied arg or stdin.
@@ -132,7 +159,11 @@ pub fn read_input(src: Source) -> Result<String> {
 /// move the secret-bearing buffer to a scrub-on-drop binding.
 pub fn read_phrase_input(src: Source) -> Result<Zeroizing<String>> {
     let raw: Zeroizing<String> = src.read_raw()?;
-    Ok(Zeroizing::new(normalize_phrase(&raw)))
+    let s = Zeroizing::new(normalize_phrase(&raw));
+    if s.is_empty() {
+        return Err(src.empty());
+    }
+    Ok(s)
 }
 
 /// Normalize a BIP-39 phrase: trim edges and collapse whitespace runs.
@@ -151,7 +182,7 @@ pub(crate) fn read_stdin() -> Result<Zeroizing<String>> {
         .then(crate::passphrase_input::EchoOff::new);
     io::stdin()
         .read_to_string(&mut buf)
-        .map_err(|e| CliError::BadInput(format!("failed to read stdin: {}", e)))?;
+        .map_err(|e| read_error(format!("failed to read stdin: {}", e), &e))?;
     // Cycle B Phase 3b Site 5 — pin the heap pages of the freshly-read
     // stdin buffer for the function-local scope. Per SPEC §2 row 5: scope-
     // bound to the buffer's lifetime within read_stdin. The buffer's heap

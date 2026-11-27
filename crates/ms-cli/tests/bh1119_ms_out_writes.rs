@@ -20,7 +20,7 @@ const H2: &str = "02020202020202020202020202020202020202020202020202020202020202
 const CARD0: &str = "ms10entrsqqqqqqqqqqqqqqqqqqqqqqqqqqqqcj9sxraq34v7f\n";
 
 fn bad() -> String {
-    // CARD0 with `q` at character 21 replaced by `p`: repair corrects it (exit 4).
+    // CARD0 with `q` at character 21 replaced by `p`: repair corrects it (exit 20).
     let mut s: Vec<char> = CARD0.chars().collect();
     assert_eq!(s[20], 'q');
     s[20] = 'p';
@@ -156,7 +156,7 @@ fn o1_encode_failed_overwrite_keeps_previous_card() {
         &["encode", "--hex", "-", "--out", "F", "--no-engraving-card"],
         B,
     );
-    assert_eq!(rc(&o), Some(1), "{}", err(&o));
+    assert_eq!(rc(&o), Some(32), "{}", err(&o));
     assert_eq!(err(&o), format!("{}. F is unchanged.\n", e27("F")));
     assert!(o.stdout.is_empty());
     assert_eq!(read(p, "F"), CARD0);
@@ -182,7 +182,7 @@ fn o2_hashlock_failed_overwrite_keeps_previous_plate() {
     assert_eq!(rc(&o), Some(0), "{}", err(&o));
     let before = read(p, "P");
     let o = limited(p, &a, H2);
-    assert_eq!(rc(&o), Some(1), "{}", err(&o));
+    assert_eq!(rc(&o), Some(32), "{}", err(&o));
     assert_eq!(err(&o), format!("{}. P is unchanged.\n", e27("P")));
     assert_eq!(read(p, "P"), before);
 }
@@ -194,7 +194,7 @@ fn o3_repair_failed_overwrite_keeps_previous_card() {
     std::fs::write(p.join("BAD"), bad()).unwrap();
     enc(p, A, "C");
     let o = limited(p, &["repair", "--in", "BAD", "--out", "C"], "");
-    assert_eq!(rc(&o), Some(1), "{}", err(&o));
+    assert_eq!(rc(&o), Some(32), "{}", err(&o));
     assert_eq!(err(&o), format!("{}. C is unchanged.\n", e27("C")));
     assert_eq!(read(p, "C"), CARD0);
 }
@@ -208,7 +208,7 @@ fn o4_absent_target_failed_write_leaves_nothing() {
         &["encode", "--hex", "-", "--out", "N", "--no-engraving-card"],
         A,
     );
-    assert_eq!(rc(&o), Some(1), "{}", err(&o));
+    assert_eq!(rc(&o), Some(32), "{}", err(&o));
     assert_eq!(err(&o), format!("{}. Nothing was written.\n", e27("N")));
     assert!(!p.join("N").exists());
     no_tmp(p);
@@ -229,7 +229,7 @@ fn o5_missing_directory_text_and_exit() {
         ],
         A,
     );
-    assert_eq!(rc(&o), Some(1), "{}", err(&o));
+    assert_eq!(rc(&o), Some(32), "{}", err(&o));
     assert_eq!(
         err(&o),
         "ms: cannot write the output: nodir/x.ms1: No such file or directory (os error 2). Nothing was written.\n"
@@ -259,7 +259,7 @@ fn o6_read_only_directory_refuses_and_keeps_file() {
         B,
     );
     std::fs::set_permissions(p.join("ro"), std::fs::Permissions::from_mode(0o700)).unwrap();
-    assert_eq!(rc(&o), Some(1), "{}", err(&o));
+    assert_eq!(rc(&o), Some(32), "{}", err(&o));
     assert_eq!(
         err(&o),
         "ms: cannot write the output: ro/F: Permission denied (os error 13). ro/F is unchanged.\n"
@@ -314,7 +314,7 @@ fn o8_stdio_alias_onto_a_file_names_no_state() {
             ..Default::default()
         },
     );
-    assert_eq!(rc(&o), Some(1), "{}", err(&o));
+    assert_eq!(rc(&o), Some(32), "{}", err(&o));
     let base = e27("/dev/stdout");
     let s2_intact = read(p, "S2") == old;
     let want = if s2_intact {
@@ -334,7 +334,7 @@ fn o9_create_new_failed_write_text() {
         &["split", "-k", "2", "-n", "3", "--hex", "-", "--out", "SH"],
         A,
     );
-    assert_eq!(rc(&o), Some(1), "{}", err(&o));
+    assert_eq!(rc(&o), Some(32), "{}", err(&o));
     let e = err(&o);
     assert_eq!(
         e.lines().last().unwrap(),
@@ -349,7 +349,7 @@ fn o9b_create_new_retry_after_failed_write() {
     let p = d.path();
     let a = ["split", "-k", "2", "-n", "3", "--hex", "-", "--out", "SH"];
     let o = limited(p, &a, A);
-    assert_eq!(rc(&o), Some(1), "{}", err(&o));
+    assert_eq!(rc(&o), Some(32), "{}", err(&o));
     let o = plain(p, &a, A);
     assert_eq!(rc(&o), Some(0), "{}", err(&o));
     let md = std::fs::metadata(p.join("SH")).unwrap();
@@ -367,7 +367,7 @@ fn o9c_random_preimage_failed_write_leaves_nothing() {
         &["hashlock", "--random", "--no-engraving-card", "--out", "R"],
         "",
     );
-    assert_eq!(rc(&o), Some(1), "{}", err(&o));
+    assert_eq!(rc(&o), Some(32), "{}", err(&o));
     let e = err(&o);
     assert_eq!(
         e.lines().last().unwrap(),
@@ -387,7 +387,7 @@ fn refused_same(p: &Path, args: &[&str], stdin: &str, stdout: File, typed: &str)
             ..Default::default()
         },
     );
-    assert_eq!(rc(&o), Some(64), "{}", err(&o));
+    assert_eq!(rc(&o), Some(8), "{}", err(&o));
     assert_eq!(err(&o), same(typed));
     o
 }
@@ -523,7 +523,7 @@ fn o18_split_out_with_stdout_on_it_refused_as_existing() {
             ..Default::default()
         },
     );
-    assert_eq!(rc(&o), Some(64), "{}", err(&o));
+    assert_eq!(rc(&o), Some(8), "{}", err(&o));
     assert_eq!(
         err(&o),
         "error: --out SH already exists; a new share set will not overwrite it (choose another file, or move the old one first)\n"
@@ -658,7 +658,7 @@ fn o25_json_failed_overwrite_line_on_stderr_no_envelope() {
     let p = d.path();
     enc(p, A, "F");
     let o = limited(p, &ENC_JSON, B);
-    assert_eq!(rc(&o), Some(1), "{}", err(&o));
+    assert_eq!(rc(&o), Some(32), "{}", err(&o));
     assert!(o.stdout.is_empty(), "no envelope on stdout");
     assert_eq!(err(&o), format!("{}. F is unchanged.\n", e27("F")));
     assert_eq!(read(p, "F"), CARD0);

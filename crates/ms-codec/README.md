@@ -73,7 +73,7 @@ corrects to a *different* valid string, the nearest codeword: the
 `BCH(93,80,8)` code cannot tell which original was meant. Treat every
 corrected result (a non-empty `CorrectionDetail` vector) as an unverified
 candidate and confirm it independently before use, as `ms repair` does
-(exit 4).
+(exit 20: corrected, and verify before use).
 
 ## Documentation
 
