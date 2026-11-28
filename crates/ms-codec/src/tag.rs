@@ -55,7 +55,7 @@ impl Tag {
 
     /// View the tag as a string slice. Always succeeds for `try_new`-constructed
     /// tags (codex32 alphabet is ASCII); for `from_raw_bytes`-constructed tags
-    /// containing non-UTF-8 bytes, returns "<non-utf8>".
+    /// containing non-UTF-8 bytes, returns `"<non-utf8>"`.
     pub fn as_str(&self) -> &str {
         std::str::from_utf8(&self.0).unwrap_or("<non-utf8>")
     }

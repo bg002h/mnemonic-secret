@@ -4,6 +4,11 @@ All notable changes to the `ms-codec` crate are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+**This file stops at 0.7.0 and is no longer updated.** ms-codec 0.8.0 and later
+(and every ms-cli release) are recorded in the repository's root
+[`CHANGELOG.md`](../../CHANGELOG.md), under `## ms-codec [X.Y.Z]` headings.
+The root file has no 0.7.0 entry; that release is recorded only here.
+
 ## [0.7.0] — 2026-06-23
 
 **MINOR (secret-memory-hygiene + dep-ownership) — codex32 is now VENDORED inline; `Codex32String` scrubs on drop + redacts Debug; the external `codex32` dep is dropped. Wire format BYTE-IDENTICAL. Cycle-B.**

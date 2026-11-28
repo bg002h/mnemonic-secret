@@ -4,12 +4,14 @@ Reference implementation of the **ms1** backup format — BIP-93 codex32 directl
 
 ms1 is a Bitcoin self-custody backup format designed to engrave alongside sibling formats `mk1` (xpubs) and `md1` (descriptors). The encoded string self-checks for up to 8 character substitutions and self-corrects up to 4 — far stronger than BIP-39's own 4-bit checksum, which is too weak to localize errors on engraved media.
 
-## v0.1 scope
+## Scope
 
-- **In:** BIP-39 entropy (16/20/24/28/32 B = 12/15/18/21/24 word counts). Tag: `entr`.
-- **Out:** Direct BIP-32 master seed and serialized xpriv — reserved-not-emitted; deferred to v0.2+ with separate framing.
-
-K-of-N share encoding planned for v0.2.
+- **Payload kinds** (`Payload` / `PayloadKind`), each with its own prefix byte:
+  - `Entr` — BIP-39 entropy (16/20/24/28/32 B = 12/15/18/21/24 words), id `entr`, prefix `0x00`.
+  - `Mnem { language, entropy }` — the same entropy plus its BIP-39 wordlist language (index into `consts::MNEM_LANGUAGE_NAMES`), id `entr`, prefix `0x02`.
+  - `Preimage` — a hashlock preimage, exactly 32 B, id `hash`, prefix `0x03` (see the `hashlock` module). Dispatch on the kind: a preimage is not entropy.
+- **K-of-N shares:** `encode_shares(tag, Threshold::new(k)?, n, &secret)` splits an `Entr` or `Mnem` secret into `n` shares (2 ≤ k ≤ n ≤ 31, k ≤ 9), and `combine_shares(&shares)` recombines any `k` of them. `decode` refuses a share with `Error::IsShareNotSingleString`.
+- **Out:** Direct BIP-32 master seed and serialized xpriv — reserved-not-emitted; they need framing outside BIP-93's length brackets.
 
 ## Quickstart
 
@@ -39,7 +41,7 @@ Then derive your BIP-32 master seed via the BIP-39 PBKDF2 (with optional passphr
 
 ## Engraving caveat: BIP-39 wordlist language
 
-ms1 v0.1 does **not** carry the BIP-39 wordlist language on the wire. A user whose original wallet used a non-English wordlist who recovers via English-defaulted wallet software will silently derive a different BIP-32 master seed → different addresses → empty wallet. Users with non-English wallets MUST record their wordlist language alongside the engraved card. A future v0.2+ payload kind `mnem` (reserved tag) is allocated to address this on the wire.
+An `Entr` card does **not** carry the BIP-39 wordlist language: the same entropy under another wordlist is a different wallet. A `Mnem` card carries it on the wire, and that byte is authoritative. Users with non-English wallets should still record their wordlist language alongside the engraved card, and should encode a non-English phrase as `Mnem` (`ms encode` does this for a non-English `--phrase`). The BIP-39 passphrase is never part of the card.
 
 ## BCH error correction (v0.2.0+)
 
@@ -81,14 +83,16 @@ Full design documents live in the [parent repo](https://github.com/bg002h/mnemon
 
 - `design/SPEC_ms_v0_1.md` — wire format, decoder rules, BIP-93 anchoring.
 - `design/BRAINSTORM_ms_v0_1.md` — the rationale chain.
-- `MIGRATION.md` — v0.1 → v0.2 share-encoding migration contract.
+- `design/SPEC_ms_v0_2_kofn.md` — K-of-N shares.
+- `design/SPEC_ms_hashlock.md` — the hashlock preimage kind.
+- `MIGRATION.md` — wire and API changes per release.
 
 ## Family
 
 - **md-codec** ([crates.io](https://crates.io/crates/md-codec)) — wallet descriptors / templates (`md1`, HRP `md`).
 - **mk-codec** ([crates.io](https://crates.io/crates/mk-codec)) — xpubs (`mk1`, HRP `mk`).
-- **ms-codec** (this crate) — BIP-39 entropy (`ms1`, HRP `ms`).
+- **ms-codec** (this crate) — secret material: BIP-39 entropy and hashlock preimages (`ms1`, HRP `ms`).
 
 ## License
 
-MIT License.
+Dual-licensed, at your option, under the MIT License or the Unlicense (SPDX `MIT OR Unlicense`).

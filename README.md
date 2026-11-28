@@ -1,8 +1,8 @@
 # mnemonic-secret (`ms1`)
 
-Reference implementation of the **ms1** backup format — BIP-93 codex32 directly applied to **BIP-39 entropy** for steel-engravable backups with strong BCH error correction. Sibling to [`md1`](https://github.com/bg002h/descriptor-mnemonic) (wallet descriptors) and [`mk1`](https://github.com/bg002h/mnemonic-key) (xpubs); the three engrave together as a coherent restoration bundle.
+Reference implementation of the **ms1** backup format — BIP-93 codex32 directly applied to **BIP-39 entropy** (and to hashlock preimages) for steel-engravable backups with strong BCH error correction. Sibling to [`md1`](https://github.com/bg002h/descriptor-mnemonic) (wallet descriptors) and [`mk1`](https://github.com/bg002h/mnemonic-key) (xpubs); the three engrave together as a coherent restoration bundle.
 
-Status: **v0.1.0** (entr-only). K-of-N share encoding planned for v0.2.
+Status: ms-codec 0.10.1 / ms-cli 0.21.0. Three payload kinds ship: `entr` (BIP-39 entropy), `mnem` (BIP-39 entropy plus its wordlist language) and the hashlock `preimage` (32 bytes, id `hash`). K-of-N share encoding of `entr` and `mnem` secrets ships too (`encode_shares` / `combine_shares`; `ms split` / `ms combine`). See [`MIGRATION.md`](MIGRATION.md) for when each arrived.
 
 ## What it does
 
@@ -58,25 +58,41 @@ If `man ms` can't find them (older `man-db`, or macOS/BSD `man` that doesn't aut
 
 ## Scope
 
-| | v0.1 (this release) | v0.2 (planned) | v0.2+ |
+| Payload | Prefix byte | Single string | K-of-N shares |
 |---|---|---|---|
-| BIP-39 entropy `entr` (16/20/24/28/32 B) | ✓ emit + accept | + K-of-N share encoding | |
-| BIP-32 master seed `seed` (64 B) | reserved-not-emitted | | + own framing |
-| BIP-32 xpriv `xprv` (78 B) | reserved-not-emitted | | + own framing |
-| K-of-N shares | not yet | ✓ for `entr` | + for other kinds |
+| BIP-39 entropy `entr` (16/20/24/28/32 B) | `0x00` | ✓ emit + accept (id `entr`) | ✓ (`ms split` / `ms combine`) |
+| BIP-39 entropy + wordlist language `mnem` | `0x02` | ✓ emit + accept (a non-English `--phrase`) | ✓ (the language survives the split) |
+| Hashlock preimage (exactly 32 B) | `0x03` | ✓ emit + accept (id `hash`, `ms hashlock`) | not offered by `ms split` |
+| BIP-32 master seed `seed` (64 B) | — | reserved-not-emitted; needs its own framing | — |
+| BIP-32 xpriv `xprv` (78 B) | — | reserved-not-emitted; needs its own framing | — |
+
+A reader dispatches on the payload kind: a hashlock preimage is not mnemonic
+entropy, and is never printed as words.
 
 The BIP-32 master seed backup use case is preserved at the application layer:
-`BIP-39 phrase → entropy → ms1 entr → engrave → recover entropy → BIP-39 mnemonic → PBKDF2 → 64-B BIP-32 master seed`. Direct `seed` and `xprv` payloads are deferred to v0.2+ because they overflow BIP-93 codex32's length brackets when prepended with the v0.2-migration prefix byte. See [`design/SPEC_ms_v0_1.md`](design/SPEC_ms_v0_1.md) §1.3 for full discussion.
+`BIP-39 phrase → entropy → ms1 entr → engrave → recover entropy → BIP-39 mnemonic → PBKDF2 → 64-B BIP-32 master seed`. Direct `seed` and `xprv` payloads are deferred because they overflow BIP-93 codex32's length brackets when prepended with the v0.2-migration prefix byte. See [`design/SPEC_ms_v0_1.md`](design/SPEC_ms_v0_1.md) §1.3 for full discussion.
 
 ## Engraving caveat: BIP-39 wordlist language
 
-ms1 v0.1 does NOT carry the BIP-39 wordlist language on the wire. A user whose original wallet used a non-English wordlist who recovers via English-defaulted wallet software will silently derive a different BIP-32 master seed → different addresses → empty wallet. Users with non-English wallets MUST record their wordlist language alongside the engraved card. A future v0.2+ payload kind `mnem` (reserved tag) is allocated for an "entropy + wordlist-language hint" payload that addresses this on the wire. See SPEC §6.3.
+An ms1 card made from **hex entropy or an English phrase** (payload kind
+`entr`) does NOT carry the BIP-39 wordlist language: the same entropy read
+with a different wordlist is a different wallet. A card made from a
+**non-English phrase** (`ms encode --phrase - --language <lang>`) is the `mnem`
+kind, which carries the language on the wire, and `ms decode` reads it from
+the card (`--language` is advisory there). Record your wordlist language
+alongside the card anyway: an `entr` card cannot tell you, and wallet software
+that does not read the language byte defaults to English. The BIP-39
+passphrase is never part of the card. See
+[`design/SPEC_ms_mnem_wordlist_language.md`](design/SPEC_ms_mnem_wordlist_language.md)
+and SPEC §6.3.
 
 ## Documentation
 
 - [`design/SPEC_ms_v0_1.md`](design/SPEC_ms_v0_1.md) — wire format, decoder rules, BIP-93 anchoring.
 - [`design/BRAINSTORM_ms_v0_1.md`](design/BRAINSTORM_ms_v0_1.md) — the rationale chain.
-- [`MIGRATION.md`](MIGRATION.md) — v0.1 → v0.2 contract.
+- [`design/SPEC_ms_v0_2_kofn.md`](design/SPEC_ms_v0_2_kofn.md) — K-of-N shares.
+- [`design/SPEC_ms_hashlock.md`](design/SPEC_ms_hashlock.md) — the hashlock preimage kind.
+- [`MIGRATION.md`](MIGRATION.md) — wire and API changes per release (K-of-N shares, `mnem`, the preimage kind).
 - [`design/RELEASE_PROCESS.md`](design/RELEASE_PROCESS.md) — release discipline.
 - [`design/IMPLEMENTATION_PLAN_ms_v0_1.md`](design/IMPLEMENTATION_PLAN_ms_v0_1.md) — phase-by-phase build plan.
 
@@ -86,7 +102,7 @@ ms1 v0.1 does NOT carry the BIP-39 wordlist language on the wire. A user whose o
 
 - **md-codec** ([repo](https://github.com/bg002h/descriptor-mnemonic)) — wallet descriptors / templates (`md1`, HRP `md`).
 - **mk-codec** ([repo](https://github.com/bg002h/mnemonic-key)) — xpubs (`mk1`, HRP `mk`).
-- **ms-codec** (this crate) — BIP-39 entropy (`ms1`, HRP `ms`).
+- **ms-codec** (this crate) — secret material: BIP-39 entropy and hashlock preimages (`ms1`, HRP `ms`).
 - **mnemonic-toolkit** ([repo](https://github.com/bg002h/mnemonic-toolkit)) — top-level integration: take a BIP-39 phrase, emit a complete ms1 + mk1 + md1 engravable bundle.
 
 ## Verifying your download
