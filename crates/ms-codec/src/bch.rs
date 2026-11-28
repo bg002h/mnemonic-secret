@@ -30,7 +30,7 @@ pub const GEN_REGULAR: [u128; 5] = [
 
 /// MS-domain target residue: codex32's "SECRETSHARE32" Fe-vec packed
 /// big-endian in 5-bit chunks — the value [`polymod_run`] (started from the
-/// codex32 initial residue [`POLYMOD_INIT`]) produces for ANY valid ms1
+/// codex32 initial residue `POLYMOD_INIT`) produces for ANY valid ms1
 /// input, independent of entropy length.
 ///
 /// `SECRETSHARE32 = [s,e,c,r,e,t,s,h,a,r,e,3,2] = [16,25,24,3,25,11,16,23,29,3,25,17,10]`

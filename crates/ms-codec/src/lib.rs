@@ -1,15 +1,16 @@
 //! `ms-codec` — reference implementation of the **ms1** backup format (HRP `ms`).
 //!
-//! ms1 is a Bitcoin self-custody backup format for BIP-39 entropy, layered atop
+//! ms1 is a Bitcoin self-custody backup format for BIP-39 entropy (and hashlock
+//! preimages), layered atop
 //! BIP-93 codex32 — vendored inline from Andrew Poelstra's `rust-codex32` (CC0)
 //! at [`crate::codex32`] (Cycle-B, shape A; see `src/codex32/`). Designed for
 //! steel-plate engraving alongside sibling formats `mk1` (xpubs) and `md1`
 //! (descriptors). Every wire-format decision is judged against "does this make
 //! a steel-plate backup more correct, or less?"
 //!
-//! See [`SPEC_ms_v0_1.md`](../../design/SPEC_ms_v0_1.md) for the full wire-format
-//! specification and [`MIGRATION.md`](../../MIGRATION.md) for the v0.1 → v0.2
-//! K-of-N share-encoding migration contract.
+//! See `design/SPEC_ms_v0_1.md` for the wire-format specification and
+//! `MIGRATION.md` for the per-release wire and API changes (K-of-N shares,
+//! the `mnem` kind, the hashlock preimage kind).
 //!
 //! # Quickstart
 //!
@@ -25,11 +26,17 @@
 //! assert_eq!(payload, Payload::Entr(entropy));
 //! ```
 //!
-//! # v0.1 scope
+//! # Scope
 //!
-//! - **In:** BIP-39 entropy (16/20/24/28/32 B). Tag: `entr`.
+//! - **Payload kinds** ([`Payload`]): `Entr` (BIP-39 entropy, 16/20/24/28/32 B,
+//!   prefix `0x00`), `Mnem` (the same entropy plus its BIP-39 wordlist
+//!   language, prefix `0x02`) and `Preimage` (a 32-byte hashlock preimage,
+//!   prefix `0x03`, id `hash`; see [`hashlock`]). Recovery code dispatches on
+//!   the kind: a preimage is not mnemonic entropy.
+//! - **K-of-N shares:** [`encode_shares`] splits an `Entr` or `Mnem` secret
+//!   into codex32 shares and [`combine_shares`] recombines them.
 //! - **Out:** Direct BIP-32 master seed (64 B) and serialized xpriv (78 B) —
-//!   reserved-not-emitted in v0.1; deferred to v0.2+ with separate framing
+//!   reserved-not-emitted; deferred with separate framing
 //!   (they overflow BIP-93 codex32's length brackets when prepended with
 //!   the v0.2-migration prefix byte). The master-seed backup use case is
 //!   preserved via the application-layer routing
